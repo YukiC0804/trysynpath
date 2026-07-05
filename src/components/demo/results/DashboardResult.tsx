@@ -31,11 +31,11 @@ export function DashboardResult({ prompt, completedActions, onAction }: Dashboar
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <MetricCard label="Orders at risk" value="3" valueClassName="text-red-400" />
-        <MetricCard label="Revenue at risk" value="£221k" valueClassName="text-red-400" />
+        <MetricCard label="Orders at risk" value="4" valueClassName="text-red-400" />
+        <MetricCard label="Revenue at risk" value="£268k" valueClassName="text-red-400" />
         <MetricCard label="Delayed jobs" value="4" valueClassName="text-amber-400" />
         <MetricCard label="Avg machine utilisation" value="80%" />
-        <MetricCard label="Material shortages" value="3" valueClassName="text-amber-400" />
+        <MetricCard label="Material shortages" value="4" valueClassName="text-amber-400" />
         <MetricCard label="Supplier delays" value="2" valueClassName="text-amber-400" />
       </div>
 
@@ -56,16 +56,22 @@ export function DashboardResult({ prompt, completedActions, onAction }: Dashboar
                 due: '12 Jul',
               },
               {
-                order: 'Siemens SO-1051',
-                risk: <StatusBadge variant="warning">Medium</StatusBadge>,
-                value: '£72,000',
-                due: '15 Jul',
+                order: 'Tesla SO-1073',
+                risk: <StatusBadge variant="danger">High</StatusBadge>,
+                value: '£58,000',
+                due: '10 Jul',
               },
               {
-                order: 'ABB SO-1055',
+                order: 'Airbus SO-1057',
                 risk: <StatusBadge variant="warning">Medium</StatusBadge>,
-                value: '£65,000',
-                due: '17 Jul',
+                value: '£52,000',
+                due: '14 Jul',
+              },
+              {
+                order: 'Siemens SO-1061',
+                risk: <StatusBadge variant="warning">Medium</StatusBadge>,
+                value: '£74,000',
+                due: '13 Jul',
               },
             ]}
             minWidth="360px"
@@ -123,9 +129,9 @@ export function DashboardResult({ prompt, completedActions, onAction }: Dashboar
               { key: 'po', header: 'Supplier PO' },
             ]}
             rows={[
-              { material: 'Aluminium Casing Blank', shortage: '280 units', po: 'PO-7782 · delayed' },
-              { material: 'PCB Board A', shortage: '40 units', po: 'PO confirmed' },
-              { material: 'Steel Bracket', shortage: '200 units', po: 'Supplier at risk' },
+              { material: 'Stainless Steel 316L', shortage: '65 kg', po: 'PO-7782 · delayed 1 day' },
+              { material: 'Aluminium 7075 billet', shortage: 'Tight', po: '46 kg on hand' },
+              { material: 'Packaging inserts PKG-44', shortage: '310 units', po: 'PO-7794 · 13 Jul' },
             ]}
             minWidth="320px"
           />
@@ -145,14 +151,19 @@ export function DashboardResult({ prompt, completedActions, onAction }: Dashboar
                 status: <StatusBadge variant="danger">Delayed</StatusBadge>,
               },
               {
-                job: 'J-894',
-                order: 'Siemens SO-1051',
+                job: 'J-912',
+                order: 'Tesla SO-1073',
+                status: <StatusBadge variant="warning">Awaiting capacity</StatusBadge>,
+              },
+              {
+                job: 'J-908',
+                order: 'Siemens SO-1061',
                 status: <StatusBadge variant="warning">At risk</StatusBadge>,
               },
               {
-                job: 'J-901',
-                order: 'ABB SO-1055',
-                status: <StatusBadge variant="neutral">In progress</StatusBadge>,
+                job: 'J-915',
+                order: 'Airbus SO-1057',
+                status: <StatusBadge variant="neutral">PO dependent</StatusBadge>,
               },
             ]}
             minWidth="320px"
@@ -164,9 +175,9 @@ export function DashboardResult({ prompt, completedActions, onAction }: Dashboar
         title="Recommended actions"
         actions={[
           'Expedite PO-7782 from MetalWorks Ltd',
-          'Move Job J-901 from Line 3 to Line 2',
-          'Review CNC-04 downtime and maintenance schedule',
-          'Reconfirm Siemens SO-1051 delivery promise',
+          'Approve CNC-04 overtime for Tesla SO-1073',
+          'Move Siemens SO-1061 finishing to CNC-02',
+          'Confirm PO-7811 arrival with AeroMetals UK',
         ]}
       />
 

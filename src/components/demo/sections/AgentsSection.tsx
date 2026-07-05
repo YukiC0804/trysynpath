@@ -101,7 +101,7 @@ export function AgentsSection({ createdState, onRunPrompt, showToast }: AgentsSe
               { label: 'Runs', value: 'Every weekday at 08:00' },
               { label: 'Owner', value: 'COO' },
               { label: 'Last run', value: 'Today 08:02' },
-              { label: 'Last finding', value: '3 orders at risk, £221k revenue affected' },
+              { label: 'Last finding', value: '4 orders at risk, £268k revenue affected' },
             ]}
             onView={() => openModal('daily-order-risk', 'view')}
             onRun={() => openModal('daily-order-risk', 'run')}
@@ -116,7 +116,7 @@ export function AgentsSection({ createdState, onRunPrompt, showToast }: AgentsSe
               { label: 'Runs', value: 'Daily at 07:30' },
               { label: 'Owner', value: 'Supply Chain Manager' },
               { label: 'Last run', value: 'Today 07:30' },
-              { label: 'Last finding', value: 'Aluminium Casing Blank shortage of 280 units' },
+              { label: 'Last finding', value: 'Stainless Steel 316L shortage for Bosch SO-1048' },
             ]}
             onView={() => openModal('material-shortage', 'view')}
             onRun={() => openModal('material-shortage', 'run')}
