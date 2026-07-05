@@ -17,6 +17,7 @@ import {
   type WorkspaceCreatedState,
   type WorkspaceSection,
 } from '../../types/workspace';
+import { SYNPATH_LOGO_SRC } from '../../data/demoWorkspace';
 
 export function DemoCommandCentre() {
   const [activeSection, setActiveSection] = useState<WorkspaceSection>('command');
@@ -153,7 +154,7 @@ export function DemoCommandCentre() {
           </AnimatePresence>
 
           <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2.5 md:hidden">
-            <img src="/synpath-logo.png" alt="" className="h-7 w-7 shrink-0 rounded object-contain" />
+            <img src={SYNPATH_LOGO_SRC} alt="" className="h-7 w-7 shrink-0 rounded object-contain" />
             <span className="text-sm font-semibold tracking-tight text-white/90">Synpath AI</span>
           </div>
         </div>
