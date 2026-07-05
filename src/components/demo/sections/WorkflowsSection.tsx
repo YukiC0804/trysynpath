@@ -34,21 +34,19 @@ export function WorkflowsSection() {
             { label: 'Last result', value: 'Quote draft generated for Schneider Electric' },
           ]}
           description={undefined}
+          content={workflowSteps([
+            'Extract RFQ requirements',
+            'Match to historical quotes',
+            'Estimate material, labour, machine, and finishing cost',
+            'Check capacity',
+            'Apply margin rules',
+            'Generate quote draft',
+            'Send to commercial manager for approval',
+          ])}
           actions={
             <>
-              {workflowSteps([
-                'Extract RFQ requirements',
-                'Match to historical quotes',
-                'Estimate material, labour, machine, and finishing cost',
-                'Check capacity',
-                'Apply margin rules',
-                'Generate quote draft',
-                'Send to commercial manager for approval',
-              ])}
-              <div className="mt-3 flex gap-2">
-                <CardButton variant="primary">View runs</CardButton>
-                <CardButton>Edit workflow</CardButton>
-              </div>
+              <CardButton variant="primary">View Runs</CardButton>
+              <CardButton>Edit Workflow</CardButton>
             </>
           }
         />
@@ -61,20 +59,18 @@ export function WorkflowsSection() {
             { label: 'Last run', value: 'Today 08:03' },
             { label: 'Last result', value: 'Recovery plan generated for Bosch SO-1048' },
           ]}
+          content={workflowSteps([
+            'Identify root cause',
+            'Check material shortage',
+            'Check capacity alternatives',
+            'Recommend reschedule',
+            'Draft supplier expedite email',
+            'Notify COO and production planner',
+          ])}
           actions={
             <>
-              {workflowSteps([
-                'Identify root cause',
-                'Check material shortage',
-                'Check capacity alternatives',
-                'Recommend reschedule',
-                'Draft supplier expedite email',
-                'Notify COO and production planner',
-              ])}
-              <div className="mt-3 flex gap-2">
-                <CardButton variant="primary">View runs</CardButton>
-                <CardButton>Edit workflow</CardButton>
-              </div>
+              <CardButton variant="primary">View Runs</CardButton>
+              <CardButton>Edit Workflow</CardButton>
             </>
           }
         />
@@ -87,19 +83,17 @@ export function WorkflowsSection() {
             { label: 'Last run', value: 'Today 06:45' },
             { label: 'Last result', value: 'CNC-04 breakdown response suggested' },
           ]}
+          content={workflowSteps([
+            'Identify affected jobs',
+            'Calculate customer impact',
+            'Search alternative machines',
+            'Generate reschedule plan',
+            'Notify maintenance and production manager',
+          ])}
           actions={
             <>
-              {workflowSteps([
-                'Identify affected jobs',
-                'Calculate customer impact',
-                'Search alternative machines',
-                'Generate reschedule plan',
-                'Notify maintenance and production manager',
-              ])}
-              <div className="mt-3 flex gap-2">
-                <CardButton variant="primary">View runs</CardButton>
-                <CardButton>Edit workflow</CardButton>
-              </div>
+              <CardButton variant="primary">View Runs</CardButton>
+              <CardButton>Edit Workflow</CardButton>
             </>
           }
         />
@@ -108,20 +102,18 @@ export function WorkflowsSection() {
           title="New Order Validation Workflow"
           status={{ label: 'Draft', variant: 'neutral' }}
           meta={[{ label: 'Trigger', value: 'New order submitted' }]}
+          content={workflowSteps([
+            'Validate customer and product',
+            'Check material availability',
+            'Check production capacity',
+            'Calculate delivery confidence',
+            'Request approval if order value > £50,000',
+            'Create production job',
+          ])}
           actions={
             <>
-              {workflowSteps([
-                'Validate customer and product',
-                'Check material availability',
-                'Check production capacity',
-                'Calculate delivery confidence',
-                'Request approval if order value > £50,000',
-                'Create production job',
-              ])}
-              <div className="mt-3 flex gap-2">
-                <CardButton variant="primary">Activate</CardButton>
-                <CardButton>Edit workflow</CardButton>
-              </div>
+              <CardButton variant="primary">Activate</CardButton>
+              <CardButton>Edit Workflow</CardButton>
             </>
           }
         />

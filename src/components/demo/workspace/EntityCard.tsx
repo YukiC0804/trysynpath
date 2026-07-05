@@ -7,6 +7,7 @@ interface EntityCardProps {
   status?: { label: string; variant: StatusVariant };
   meta?: { label: string; value: string }[];
   description?: string;
+  content?: ReactNode;
   metrics?: { label: string; value: string; valueClassName?: string }[];
   actions?: ReactNode;
   highlight?: boolean;
@@ -17,13 +18,14 @@ export function EntityCard({
   status,
   meta,
   description,
+  content,
   metrics,
   actions,
   highlight,
 }: EntityCardProps) {
   return (
     <div
-      className={`rounded-xl border bg-neutral-900/50 p-4 transition-colors ${
+      className={`flex h-full flex-col rounded-xl border bg-neutral-900/50 p-4 transition-colors ${
         highlight ? 'border-violet-500/30 bg-violet-500/5' : 'border-neutral-800'
       }`}
     >
@@ -56,7 +58,17 @@ export function EntityCard({
         </div>
       )}
 
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {content && <div className="flex-1">{content}</div>}
+
+      {actions && (
+        <div
+          className={`flex flex-wrap items-center gap-2 ${
+            content ? 'mt-4 border-t border-neutral-800 pt-4' : ''
+          }`}
+        >
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
@@ -76,8 +88,8 @@ export function CardButton({
       onClick={onClick}
       className={
         variant === 'primary'
-          ? 'rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-black hover:bg-neutral-200'
-          : 'rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-300 hover:border-neutral-500 hover:text-white'
+          ? 'rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-neutral-200'
+          : 'rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-500 hover:text-white'
       }
     >
       {children}
