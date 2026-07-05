@@ -12,7 +12,7 @@ export const COMPANY = {
   industry: 'Precision components manufacturer',
 };
 
-export const SYNPATH_LOGO_SRC = '/synpath-logo.png';
+export const SYNPATH_LOGO_SRC = '/synpath-logo.png?v=2';
 
 export const CONNECTED_SYSTEMS = [
   'ERP',
