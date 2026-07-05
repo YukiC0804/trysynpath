@@ -87,9 +87,9 @@ export function WorkspaceSidebar({
       )}
 
       <div className="mt-auto border-t border-neutral-800 p-3">
-        <div className="flex items-center gap-2.5 px-1">
-          <img src="/synpath-logo.png" alt="" className="h-7 w-7 shrink-0 rounded-md object-contain" />
-          <span className="text-sm font-semibold tracking-tight text-white">Synpath AI</span>
+        <div className="flex items-center gap-3 px-1">
+          <img src="/synpath-logo.png" alt="" className="h-8 w-8 shrink-0 rounded-md object-contain" />
+          <span className="text-base font-semibold tracking-tight text-white">Synpath AI</span>
         </div>
       </div>
     </aside>

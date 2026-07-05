@@ -152,9 +152,9 @@ export function DemoCommandCentre() {
             </motion.div>
           </AnimatePresence>
 
-          <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 md:hidden">
-            <img src="/synpath-logo.png" alt="" className="h-6 w-6 shrink-0 rounded object-contain" />
-            <span className="text-xs font-semibold tracking-tight text-white/90">Synpath AI</span>
+          <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2.5 md:hidden">
+            <img src="/synpath-logo.png" alt="" className="h-7 w-7 shrink-0 rounded object-contain" />
+            <span className="text-sm font-semibold tracking-tight text-white/90">Synpath AI</span>
           </div>
         </div>
       </div>
