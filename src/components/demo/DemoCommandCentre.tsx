@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import { useDemoAnalysis } from '../../hooks/useDemoAnalysis';
+import { useDemoToast } from '../../hooks/useDemoToast';
 import { WorkspaceTopBar } from './workspace/WorkspaceTopBar';
 import { WorkspaceSidebar } from './workspace/WorkspaceSidebar';
 import { CommandCentreSection } from './sections/CommandCentreSection';
@@ -12,6 +13,7 @@ import { AppsSection } from './sections/AppsSection';
 import { WorkflowsSection } from './sections/WorkflowsSection';
 import { DataSourcesSection } from './sections/DataSourcesSection';
 import { ActivitySection } from './sections/ActivitySection';
+import { DemoToast } from './interactive/DemoToast';
 import {
   DEFAULT_CREATED_STATE,
   type WorkspaceCreatedState,
@@ -24,6 +26,7 @@ export function DemoCommandCentre() {
   const [createdState, setCreatedState] = useState<WorkspaceCreatedState>(DEFAULT_CREATED_STATE);
   const analysis = useDemoAnalysis();
   const { theme, setWorkspaceTheme } = useWorkspaceTheme();
+  const { message: toastMessage, showToast } = useDemoToast();
 
   const handleNavigate = useCallback((section: WorkspaceSection) => {
     setActiveSection(section);
@@ -144,10 +147,26 @@ export function DemoCommandCentre() {
               {activeSection === 'alerts' && (
                 <AlertsSection onRunPromptFromAlert={runPromptFromAlert} />
               )}
-              {activeSection === 'agents' && <AgentsSection createdState={createdState} />}
-              {activeSection === 'dashboards' && <DashboardsSection createdState={createdState} />}
-              {activeSection === 'apps' && <AppsSection createdState={createdState} />}
-              {activeSection === 'workflows' && <WorkflowsSection />}
+              {activeSection === 'agents' && (
+                <AgentsSection
+                  createdState={createdState}
+                  onRunPrompt={runPromptFromAlert}
+                  showToast={showToast}
+                />
+              )}
+              {activeSection === 'dashboards' && (
+                <DashboardsSection
+                  createdState={createdState}
+                  onRunPrompt={runPromptFromAlert}
+                  showToast={showToast}
+                />
+              )}
+              {activeSection === 'apps' && (
+                <AppsSection createdState={createdState} showToast={showToast} />
+              )}
+              {activeSection === 'workflows' && (
+                <WorkflowsSection onRunPrompt={runPromptFromAlert} showToast={showToast} />
+              )}
               {activeSection === 'data' && <DataSourcesSection />}
               {activeSection === 'activity' && <ActivitySection createdState={createdState} />}
             </motion.div>
@@ -165,6 +184,8 @@ export function DemoCommandCentre() {
           </div>
         </div>
       </div>
+
+      <DemoToast message={toastMessage} />
     </div>
   );
 }

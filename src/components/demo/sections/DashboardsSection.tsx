@@ -1,260 +1,403 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { SectionHeader } from '../workspace/SectionHeader';
 import { WorkspaceSectionScroll } from '../workspace/WorkspaceSectionScroll';
 import { EntityCard, CardButton } from '../workspace/EntityCard';
 import { MetricCard } from '../MetricCard';
 import { DataTable } from '../DataTable';
 import { StatusBadge } from '../StatusBadge';
-import { RecommendedActions } from '../RecommendedActions';
+import {
+  ModalButton,
+  ModalField,
+  ModalSection,
+  WorkspaceModal,
+  modalInputClassName,
+  modalSelectClassName,
+} from '../interactive/WorkspaceModal';
+import {
+  DASHBOARD_DEFINITIONS,
+  DASHBOARD_METRIC_OPTIONS,
+  MACHINE_UTIL_ROWS,
+  ORDERS_AT_RISK_ROWS,
+  type DashboardId,
+} from '../../../data/demoInteractiveData';
 import type { WorkspaceCreatedState } from '../../../types/workspace';
 
 interface DashboardsSectionProps {
   createdState: WorkspaceCreatedState;
+  onRunPrompt?: (prompt: string) => void;
+  showToast?: (message: string) => void;
 }
 
-export function DashboardsSection({ createdState }: DashboardsSectionProps) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
+type DashboardModal = 'view' | 'edit' | 'schedule' | null;
 
-  useEffect(() => {
-    if (createdState.operationsDashboardSaved) {
-      setSelected('operations-risk');
-    }
-  }, [createdState.operationsDashboardSaved]);
+const toneClass = (tone?: 'danger' | 'warning') =>
+  tone === 'danger' ? 'text-red-400' : tone === 'warning' ? 'text-amber-400' : 'text-white';
 
-  useEffect(() => {
-    if (selected) {
-      previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [selected]);
+export function DashboardsSection({ createdState, onRunPrompt, showToast }: DashboardsSectionProps) {
+  const [modal, setModal] = useState<DashboardModal>(null);
+  const [selected, setSelected] = useState<DashboardId | null>(null);
+  const [dashboardName, setDashboardName] = useState('');
+  const [metrics, setMetrics] = useState<string[]>(DASHBOARD_METRIC_OPTIONS);
+  const [refreshFrequency, setRefreshFrequency] = useState('Every 15 minutes');
+  const [customerFilter, setCustomerFilter] = useState('All customers');
+  const [scheduleFrequency, setScheduleFrequency] = useState('Weekdays');
+  const [scheduleTime, setScheduleTime] = useState('08:00');
+  const [scheduleRecipients, setScheduleRecipients] = useState(['COO', 'Operations Director']);
+  const [scheduleDelivery, setScheduleDelivery] = useState(['Command Centre', 'Email']);
+
+  const open = (id: DashboardId, type: DashboardModal) => {
+    setSelected(id);
+    setModal(type);
+    setDashboardName(DASHBOARD_DEFINITIONS[id].title);
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setSelected(null);
+  };
+
+  const dashboard = selected ? DASHBOARD_DEFINITIONS[selected] : null;
+
+  const toggle = (list: string[], item: string) =>
+    list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
+
+  const dashboardActions = (id: DashboardId) => (
+    <>
+      <CardButton variant="primary" onClick={() => open(id, 'view')}>
+        View
+      </CardButton>
+      <CardButton onClick={() => open(id, 'edit')}>Edit</CardButton>
+      <CardButton onClick={() => open(id, 'schedule')}>Schedule</CardButton>
+    </>
+  );
 
   return (
     <WorkspaceSectionScroll>
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <SectionHeader
-        title="Dashboards"
-        subtitle="Generated operational dashboards built from connected manufacturing data."
-      />
-
-      <div className="mb-8 grid gap-4 sm:grid-cols-2">
-        <EntityCard
-          title="COO Daily Briefing"
-          status={{ label: 'AI', variant: 'ai' }}
-          meta={[
-            { label: 'Created by', value: 'AI' },
-            { label: 'Last updated', value: 'Today 08:05' },
-          ]}
-          metrics={[
-            { label: 'Orders at risk', value: '3', valueClassName: 'text-red-400' },
-            { label: 'Revenue at risk', value: '£221k', valueClassName: 'text-red-400' },
-            { label: 'Delayed jobs', value: '4', valueClassName: 'text-amber-400' },
-            { label: 'Material shortages', value: '3', valueClassName: 'text-amber-400' },
-          ]}
-          actions={<CardButton variant="primary" onClick={() => setSelected('coo-briefing')}>Open dashboard</CardButton>}
+        <SectionHeader
+          title="Dashboards"
+          subtitle="Generated operational dashboards built from connected manufacturing data."
         />
 
-        <EntityCard
-          title="Production Bottlenecks"
-          meta={[
-            { label: 'Created by', value: 'Production Manager' },
-            { label: 'Last updated', value: '12 minutes ago' },
-          ]}
-          metrics={[
-            { label: 'Line 3 utilisation', value: '96%', valueClassName: 'text-red-400' },
-            { label: 'CNC-04 downtime', value: '2.5h', valueClassName: 'text-amber-400' },
-            { label: 'Delayed jobs', value: '4' },
-            { label: 'Bottleneck machine', value: 'CNC-04' },
-          ]}
-          actions={<CardButton variant="primary" onClick={() => setSelected('bottlenecks')}>Open dashboard</CardButton>}
-        />
-
-        <EntityCard
-          title="Inventory Risk"
-          meta={[
-            { label: 'Created by', value: 'Supply Chain Manager' },
-            { label: 'Last updated', value: 'Today 07:45' },
-          ]}
-          metrics={[
-            { label: 'Materials below level', value: '3', valueClassName: 'text-amber-400' },
-            { label: 'Supplier delays', value: '2' },
-            { label: 'Highest risk material', value: 'Aluminium Casing Blank' },
-          ]}
-          actions={<CardButton variant="primary" onClick={() => setSelected('inventory')}>Open dashboard</CardButton>}
-        />
-
-        <EntityCard
-          title="Customer Delivery Risk"
-          meta={[
-            { label: 'Created by', value: 'COO' },
-            { label: 'Last updated', value: 'Today 08:00' },
-          ]}
-          metrics={[
-            { label: 'High-risk orders', value: '1', valueClassName: 'text-red-400' },
-            { label: 'Medium-risk orders', value: '2', valueClassName: 'text-amber-400' },
-            { label: 'Customers affected', value: 'Bosch, Siemens, ABB' },
-          ]}
-          actions={<CardButton variant="primary" onClick={() => setSelected('delivery')}>Open dashboard</CardButton>}
-        />
-
-        {createdState.operationsDashboardSaved && (
+        <div className="mb-8 grid gap-4 sm:grid-cols-2">
           <EntityCard
-            title="Operations Risk Dashboard"
-            highlight
-            status={{ label: 'New', variant: 'ai' }}
+            title="COO Operations Dashboard"
+            status={{ label: 'AI', variant: 'ai' }}
             meta={[
-              { label: 'Created by', value: 'AI · Command Centre' },
-              { label: 'Last updated', value: 'Just now' },
+              { label: 'Created by', value: 'AI' },
+              { label: 'Last updated', value: 'Today 08:05' },
             ]}
-            metrics={[
-              { label: 'Orders at risk', value: '3', valueClassName: 'text-red-400' },
-              { label: 'Revenue at risk', value: '£221k', valueClassName: 'text-red-400' },
-              { label: 'Delayed jobs', value: '4' },
-              { label: 'Material shortages', value: '3' },
-            ]}
-            actions={
-              <CardButton variant="primary" onClick={() => setSelected('operations-risk')}>
-                Open dashboard
-              </CardButton>
-            }
+            metrics={DASHBOARD_DEFINITIONS['coo-briefing'].metrics.map((m) => ({
+              label: m.label,
+              value: m.value,
+              valueClassName: toneClass(m.tone),
+            }))}
+            actions={dashboardActions('coo-briefing')}
           />
-        )}
-      </div>
 
-      {selected && (
-        <div ref={previewRef} className="rounded-xl border border-neutral-800 bg-[#0a0a0a] p-4 sm:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Operations Risk Dashboard</h3>
-              <p className="text-xs text-neutral-500">Northbridge Components Ltd · Live preview</p>
-            </div>
-            <StatusBadge variant="ai">Generated from prompt</StatusBadge>
-          </div>
+          <EntityCard
+            title="Machine Utilisation Dashboard"
+            meta={[
+              { label: 'Created by', value: 'Production Manager' },
+              { label: 'Last updated', value: '12 minutes ago' },
+            ]}
+            metrics={DASHBOARD_DEFINITIONS['production-bottlenecks'].metrics.map((m) => ({
+              label: m.label,
+              value: m.value,
+              valueClassName: toneClass(m.tone),
+            }))}
+            actions={dashboardActions('production-bottlenecks')}
+          />
 
-          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            <MetricCard label="Orders at risk" value="3" valueClassName="text-red-400" />
-            <MetricCard label="Revenue at risk" value="£221k" valueClassName="text-red-400" />
-            <MetricCard label="Delayed jobs" value="4" valueClassName="text-amber-400" />
-            <MetricCard label="Avg machine utilisation" value="80%" />
-            <MetricCard label="Material shortages" value="3" valueClassName="text-amber-400" />
-            <MetricCard label="Supplier delays" value="2" valueClassName="text-amber-400" />
-          </div>
+          <EntityCard
+            title="Supplier Risk Dashboard"
+            meta={[
+              { label: 'Created by', value: 'Supply Chain Manager' },
+              { label: 'Last updated', value: 'Today 07:45' },
+            ]}
+            metrics={DASHBOARD_DEFINITIONS['inventory-risk'].metrics.map((m) => ({
+              label: m.label,
+              value: m.value,
+              valueClassName: toneClass(m.tone),
+            }))}
+            actions={dashboardActions('inventory-risk')}
+          />
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Panel title="Orders at risk">
-              <DataTable
-                columns={[
-                  { key: 'customer', header: 'Customer' },
-                  { key: 'order', header: 'Order', className: 'text-white' },
-                  { key: 'risk', header: 'Risk' },
-                  { key: 'value', header: 'Value', align: 'right' },
-                  { key: 'due', header: 'Due', align: 'right' },
-                ]}
-                rows={[
-                  {
-                    customer: 'Bosch',
-                    order: 'SO-1048',
-                    risk: <StatusBadge variant="danger">High</StatusBadge>,
-                    value: '£84,000',
-                    due: '12 Jul',
-                  },
-                  {
-                    customer: 'Siemens',
-                    order: 'SO-1051',
-                    risk: <StatusBadge variant="warning">Medium</StatusBadge>,
-                    value: '£72,000',
-                    due: '15 Jul',
-                  },
-                  {
-                    customer: 'ABB',
-                    order: 'SO-1055',
-                    risk: <StatusBadge variant="warning">Medium</StatusBadge>,
-                    value: '£65,000',
-                    due: '17 Jul',
-                  },
-                ]}
-                minWidth="480px"
-              />
-            </Panel>
+          <EntityCard
+            title="Customer Impact Dashboard"
+            meta={[
+              { label: 'Created by', value: 'COO' },
+              { label: 'Last updated', value: 'Today 08:00' },
+            ]}
+            metrics={DASHBOARD_DEFINITIONS['customer-delivery'].metrics.map((m) => ({
+              label: m.label,
+              value: m.value,
+              valueClassName: toneClass(m.tone),
+            }))}
+            actions={dashboardActions('customer-delivery')}
+          />
 
-            <Panel title="Machine utilisation">
-              <DataTable
-                columns={[
-                  { key: 'machine', header: 'Machine', className: 'text-white' },
-                  { key: 'line', header: 'Line' },
-                  { key: 'util', header: 'Utilisation', align: 'right' },
-                  { key: 'status', header: 'Status' },
-                ]}
-                rows={[
-                  {
-                    machine: 'CNC-04',
-                    line: 'Line 3',
-                    util: '96%',
-                    status: <StatusBadge variant="danger">Bottleneck</StatusBadge>,
-                  },
-                  {
-                    machine: 'CNC-02',
-                    line: 'Line 2',
-                    util: '62%',
-                    status: <StatusBadge variant="healthy">Available</StatusBadge>,
-                  },
-                  {
-                    machine: 'ASM-01',
-                    line: 'Line 1',
-                    util: '78%',
-                    status: <StatusBadge variant="healthy">Healthy</StatusBadge>,
-                  },
-                  {
-                    machine: 'QA-03',
-                    line: 'Quality',
-                    util: '85%',
-                    status: <StatusBadge variant="healthy">Healthy</StatusBadge>,
-                  },
-                ]}
-                minWidth="400px"
-              />
-            </Panel>
-
-            <Panel title="Material shortages">
-              <DataTable
-                columns={[
-                  { key: 'material', header: 'Material', className: 'text-white' },
-                  { key: 'shortage', header: 'Shortage', align: 'right' },
-                  { key: 'status', header: 'PO status' },
-                ]}
-                rows={[
-                  { material: 'Aluminium Casing Blank', shortage: '280', status: 'PO delayed' },
-                  { material: 'PCB Board A', shortage: '40', status: 'PO confirmed' },
-                  { material: 'Steel Bracket', shortage: '200', status: 'Supplier at risk' },
-                ]}
-                minWidth="360px"
-              />
-            </Panel>
-          </div>
-
-          <div className="mt-4">
-            <RecommendedActions
-              title="Recommended actions"
-              actions={[
-                'Expedite PO-7782',
-                'Move J-901 to Line 2',
-                'Review CNC-04 downtime',
-                'Reconfirm Siemens delivery promise',
+          {createdState.operationsDashboardSaved && (
+            <EntityCard
+              title="Operations Risk Dashboard"
+              highlight
+              status={{ label: 'New', variant: 'ai' }}
+              meta={[
+                { label: 'Created by', value: 'AI · Command Centre' },
+                { label: 'Last updated', value: 'Just now' },
               ]}
+              metrics={DASHBOARD_DEFINITIONS['operations-risk'].metrics.map((m) => ({
+                label: m.label,
+                value: m.value,
+                valueClassName: toneClass(m.tone),
+              }))}
+              actions={dashboardActions('operations-risk')}
             />
-          </div>
+          )}
         </div>
-      )}
       </div>
-    </WorkspaceSectionScroll>
-  );
-}
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
-      <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">{title}</p>
-      {children}
-    </div>
+      <WorkspaceModal
+        open={modal === 'view' && !!dashboard}
+        onClose={closeModal}
+        title={dashboard?.title ?? ''}
+        subtitle="Live operational dashboard preview"
+        size="lg"
+        footer={
+          <>
+            <ModalButton
+              variant="primary"
+              onClick={() => {
+                onRunPrompt?.('Show me orders at risk and revenue impact this week');
+                closeModal();
+              }}
+            >
+              Open in Command Centre
+            </ModalButton>
+            <ModalButton onClick={() => selected && open(selected, 'edit')}>Edit dashboard</ModalButton>
+            <ModalButton onClick={closeModal}>Close</ModalButton>
+          </>
+        }
+      >
+        {dashboard && (
+          <>
+            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {dashboard.metrics.map((m) => (
+                <div key={m.label}>
+                  <MetricCard
+                    label={m.label}
+                    value={m.value}
+                    valueClassName={toneClass(m.tone)}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ModalSection title="Orders at risk">
+                <DataTable
+                  columns={[
+                    { key: 'customer', header: 'Customer' },
+                    { key: 'order', header: 'Order', className: 'text-white' },
+                    { key: 'risk', header: 'Risk' },
+                    { key: 'value', header: 'Value' },
+                    { key: 'cause', header: 'Cause' },
+                  ]}
+                  rows={ORDERS_AT_RISK_ROWS.map((row) => ({
+                    ...row,
+                    risk: (
+                      <StatusBadge variant={row.risk === 'High' ? 'danger' : 'warning'}>
+                        {row.risk}
+                      </StatusBadge>
+                    ),
+                  }))}
+                  minWidth="520px"
+                />
+              </ModalSection>
+              <ModalSection title="Machine utilisation">
+                <DataTable
+                  columns={[
+                    { key: 'machine', header: 'Machine', className: 'text-white' },
+                    { key: 'util', header: 'Utilisation' },
+                    { key: 'status', header: 'Status' },
+                  ]}
+                  rows={MACHINE_UTIL_ROWS.map((row) => ({
+                    ...row,
+                    status: (
+                      <StatusBadge
+                        variant={
+                          row.status === 'Bottleneck'
+                            ? 'danger'
+                            : row.status === 'Watch'
+                              ? 'warning'
+                              : 'healthy'
+                        }
+                      >
+                        {row.status}
+                      </StatusBadge>
+                    ),
+                  }))}
+                  minWidth="360px"
+                />
+              </ModalSection>
+            </div>
+          </>
+        )}
+      </WorkspaceModal>
+
+      <WorkspaceModal
+        open={modal === 'edit' && !!dashboard}
+        onClose={closeModal}
+        title="Edit Dashboard"
+        subtitle="Configure metrics, refresh frequency, and customer filters."
+        footer={
+          <>
+            <ModalButton onClick={closeModal}>Cancel</ModalButton>
+            <ModalButton
+              variant="primary"
+              onClick={() => {
+                showToast?.('Dashboard updated.');
+                closeModal();
+              }}
+            >
+              Save Dashboard
+            </ModalButton>
+          </>
+        }
+      >
+        <ModalField label="Dashboard name">
+          <input
+            className={modalInputClassName()}
+            value={dashboardName}
+            onChange={(e) => setDashboardName(e.target.value)}
+          />
+        </ModalField>
+
+        <ModalField label="Included metrics">
+          <div className="flex flex-wrap gap-2">
+            {DASHBOARD_METRIC_OPTIONS.map((metric) => (
+              <button
+                key={metric}
+                type="button"
+                onClick={() => setMetrics((prev) => toggle(prev, metric))}
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  metrics.includes(metric)
+                    ? 'border-violet-500/40 bg-violet-500/15 text-violet-200'
+                    : 'border-neutral-700 text-neutral-400'
+                }`}
+              >
+                {metric}
+              </button>
+            ))}
+          </div>
+        </ModalField>
+
+        <ModalField label="Refresh frequency">
+          <select
+            className={modalSelectClassName()}
+            value={refreshFrequency}
+            onChange={(e) => setRefreshFrequency(e.target.value)}
+          >
+            <option>Real-time</option>
+            <option>Every 15 minutes</option>
+            <option>Hourly</option>
+            <option>Daily at 08:00</option>
+          </select>
+        </ModalField>
+
+        <ModalField label="Filter">
+          <select
+            className={modalSelectClassName()}
+            value={customerFilter}
+            onChange={(e) => setCustomerFilter(e.target.value)}
+          >
+            <option>All customers</option>
+            <option>High-priority customers only</option>
+            <option>Bosch only</option>
+            <option>Siemens only</option>
+            <option>ABB only</option>
+          </select>
+        </ModalField>
+      </WorkspaceModal>
+
+      <WorkspaceModal
+        open={modal === 'schedule' && !!dashboard}
+        onClose={closeModal}
+        title="Schedule Daily COO Briefing"
+        subtitle="Send this dashboard automatically to operations leaders."
+        footer={
+          <>
+            <ModalButton onClick={closeModal}>Cancel</ModalButton>
+            <ModalButton
+              variant="primary"
+              onClick={() => {
+                showToast?.(`Daily briefing scheduled for ${scheduleFrequency.toLowerCase()} at ${scheduleTime}.`);
+                closeModal();
+              }}
+            >
+              Schedule Briefing
+            </ModalButton>
+          </>
+        }
+      >
+        <ModalField label="Frequency">
+          <select
+            className={modalSelectClassName()}
+            value={scheduleFrequency}
+            onChange={(e) => setScheduleFrequency(e.target.value)}
+          >
+            <option>Daily</option>
+            <option>Weekdays</option>
+            <option>Weekly</option>
+          </select>
+        </ModalField>
+
+        <ModalField label="Time">
+          <input
+            type="time"
+            className={modalInputClassName()}
+            value={scheduleTime}
+            onChange={(e) => setScheduleTime(e.target.value)}
+          />
+        </ModalField>
+
+        <ModalField label="Recipients">
+          <div className="flex flex-wrap gap-2">
+            {['COO', 'Operations Director', 'Production Planner'].map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setScheduleRecipients((prev) => toggle(prev, r))}
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  scheduleRecipients.includes(r)
+                    ? 'border-violet-500/40 bg-violet-500/15 text-violet-200'
+                    : 'border-neutral-700 text-neutral-400'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </ModalField>
+
+        <ModalField label="Delivery">
+          <div className="flex flex-wrap gap-2">
+            {['Command Centre', 'Email', 'Messenger'].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setScheduleDelivery((prev) => toggle(prev, d))}
+                className={`rounded-full border px-3 py-1.5 text-xs ${
+                  scheduleDelivery.includes(d)
+                    ? 'border-violet-500/40 bg-violet-500/15 text-violet-200'
+                    : 'border-neutral-700 text-neutral-400'
+                }`}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </ModalField>
+      </WorkspaceModal>
+    </WorkspaceSectionScroll>
   );
 }
