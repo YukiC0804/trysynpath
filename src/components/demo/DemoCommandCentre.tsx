@@ -153,12 +153,15 @@ export function DemoCommandCentre() {
             </motion.div>
           </AnimatePresence>
 
-          <div className="pointer-events-none absolute bottom-3 left-3 md:hidden">
-            <img
-              src={SYNPATH_LOGO_SRC}
-              alt="Synpath AI"
-              className="h-7 w-auto max-w-[160px] object-contain object-left"
-            />
+          <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2.5 md:hidden">
+            <div className="h-7 w-7 shrink-0 overflow-hidden rounded-md">
+              <img
+                src={SYNPATH_LOGO_SRC}
+                alt=""
+                className="h-full w-full object-cover object-left"
+              />
+            </div>
+            <span className="text-sm font-semibold tracking-tight text-white">Synpath AI</span>
           </div>
         </div>
       </div>
