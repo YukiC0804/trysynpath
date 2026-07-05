@@ -77,7 +77,7 @@ export function CommandCentreSection({ analysis, onAction, onViewAlerts }: Comma
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h2 className="text-base font-semibold tracking-tight text-white">Command Centre</h2>
-                  <p className="mt-0.5 text-sm text-neutral-500">
+                  <p className="mt-0.5 text-sm text-neutral-400">
                     AI operations agent connected to {COMPANY.name}.
                   </p>
                 </div>
@@ -96,7 +96,7 @@ export function CommandCentreSection({ analysis, onAction, onViewAlerts }: Comma
                     <h1 className="mx-auto max-w-3xl text-xl font-semibold leading-snug tracking-tight text-white sm:text-2xl">
                       What do you want the operations agent to investigate, decide, or build?
                     </h1>
-                    <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-neutral-500">
+                    <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-neutral-400">
                       Ask about orders, RFQs, machines, inventory, capacity, or operations — connected to{' '}
                       {COMPANY.name} data.
                     </p>
