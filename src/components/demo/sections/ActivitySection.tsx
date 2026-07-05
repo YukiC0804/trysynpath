@@ -16,6 +16,23 @@ interface ActivityEntry {
 
 const ACTIVITY_ENTRIES: ActivityEntry[] = [
   {
+    time: 'Today 10:31',
+    category: 'agents',
+    title: 'Material Shortage Agent flagged coverage gaps for jobs due before 15 Jul',
+    details: [
+      'Bosch SO-1048 at risk on Stainless Steel 316L and PKG-44',
+      'Recommended expediting PO-7782 and confirming PO-7811',
+    ],
+    badge: { label: 'Agent', variant: 'warning' },
+  },
+  {
+    time: 'Today 10:28',
+    category: 'alerts',
+    title: 'Urgent order signal detected for Tesla SO-1073',
+    details: ['10 Jul ship date conflicts with CNC-04 load from Bosch and Siemens jobs'],
+    badge: { label: 'Alert', variant: 'danger' },
+  },
+  {
     time: 'Today 09:12',
     category: 'workflows',
     title: 'RFQ to Quote Workflow generated quote draft for Schneider Electric',
@@ -26,7 +43,7 @@ const ACTIVITY_ENTRIES: ActivityEntry[] = [
     time: 'Today 08:05',
     category: 'dashboards',
     title: 'COO Daily Briefing dashboard refreshed',
-    details: ['3 orders at risk', '£221k revenue affected'],
+    details: ['4 orders at risk', '£268k revenue affected'],
     badge: { label: 'Dashboard', variant: 'neutral' },
   },
   {
@@ -67,8 +84,8 @@ const ACTIVITY_ENTRIES: ActivityEntry[] = [
   {
     time: 'Yesterday 15:22',
     category: 'workflows',
-    title: 'New Order Validation Workflow checked Siemens SO-1051',
-    details: ['Capacity warning raised'],
+    title: 'New Order Validation Workflow assessed Tesla SO-1073 capacity impact',
+    details: ['Accept-with-conditions recommended — CNC-04 overtime required'],
     badge: { label: 'Workflow', variant: 'warning' },
   },
 ];
@@ -106,7 +123,7 @@ export function ActivitySection({ createdState }: ActivitySectionProps) {
         time: 'Just now',
         category: 'dashboards',
         title: 'Operations Risk Dashboard saved from Command Centre',
-        details: ['3 orders at risk', '£221k revenue at risk', 'Pinned to dashboards'],
+        details: ['4 orders at risk', '£268k revenue at risk', 'Pinned to dashboards'],
         badge: { label: 'New', variant: 'ai' },
       });
     }

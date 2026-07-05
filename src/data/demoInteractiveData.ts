@@ -87,9 +87,10 @@ export const AGENT_DEFINITIONS: Record<
     ],
     recentOutput: [
       'Bosch SO-1048 flagged as High risk',
+      'Tesla SO-1073 flagged — CNC-04 capacity conflict',
       'PO-7782 delayed by 2 days',
       'Recommended recovery plan created',
-      '£84,000 revenue at risk',
+      '£268,000 revenue at risk',
     ],
     runSteps: [
       'Checking high-priority ERP orders...',
@@ -101,11 +102,11 @@ export const AGENT_DEFINITIONS: Record<
       'Generating recommended actions...',
     ],
     runSummary: [
-      { label: 'Orders checked', value: '3' },
-      { label: 'High-risk orders', value: '1' },
-      { label: 'Flagged order', value: 'Bosch SO-1048' },
-      { label: 'Revenue at risk', value: '£84,000' },
-      { label: 'Recommended action', value: 'Expedite PO-7782 from MetalWorks Ltd' },
+      { label: 'Orders checked', value: '5' },
+      { label: 'High-risk orders', value: '2' },
+      { label: 'Flagged orders', value: 'Bosch SO-1048, Tesla SO-1073' },
+      { label: 'Revenue at risk', value: '£268,000' },
+      { label: 'Recommended action', value: 'Accept Tesla with CNC-04 overtime + move Siemens to CNC-02' },
     ],
     commandCentrePrompt:
       'Bosch SO-1048 is due on 12 Jul. Are we actually on track to ship?',
@@ -119,9 +120,10 @@ export const AGENT_DEFINITIONS: Record<
     nextRun: 'Tomorrow 07:30',
     connectedData: ['Inventory', 'BOM', 'Purchase Orders', 'Production Plan', 'Supplier POs'],
     recentOutput: [
-      'Aluminium Casing Blank shortage of 280 units',
-      'PCB Board A below reorder point',
-      'Expedite PO recommended for PO-7782',
+      'Stainless Steel 316L shortage of 65 kg for Bosch SO-1048',
+      'Aluminium 7075 billet tight for Tesla SO-1073',
+      'Packaging inserts PKG-44 likely late for Bosch',
+      'Expedite PO-7782 recommended',
     ],
     runSteps: [
       'Reading inventory levels...',
@@ -132,10 +134,12 @@ export const AGENT_DEFINITIONS: Record<
     ],
     runSummary: [
       { label: 'Materials checked', value: '142' },
-      { label: 'Shortages found', value: '3' },
-      { label: 'Highest risk', value: 'Aluminium Casing Blank' },
-      { label: 'Recommended action', value: 'Expedite PO-7782' },
+      { label: 'Shortages found', value: '4' },
+      { label: 'Highest risk', value: 'Stainless Steel 316L' },
+      { label: 'Recommended action', value: 'Expedite PO-7782 and source emergency PKG-44' },
     ],
+    commandCentrePrompt:
+      'Do we have material coverage for all jobs due before 15 Jul, especially Bosch SO-1048, Airbus SO-1057, and Siemens SO-1061?',
   },
   'machine-downtime': {
     title: 'Machine Downtime Agent',
@@ -232,11 +236,11 @@ export const DASHBOARD_DEFINITIONS: Record<
   'coo-briefing': {
     title: 'COO Operations Dashboard',
     metrics: [
-      { label: 'Orders at risk', value: '3', tone: 'danger' },
-      { label: 'Revenue at risk', value: '£221k', tone: 'danger' },
+      { label: 'Orders at risk', value: '4', tone: 'danger' },
+      { label: 'Revenue at risk', value: '£268k', tone: 'danger' },
       { label: 'Delayed jobs', value: '4', tone: 'warning' },
       { label: 'Avg machine utilisation', value: '80%' },
-      { label: 'Material shortages', value: '3', tone: 'warning' },
+      { label: 'Material shortages', value: '4', tone: 'warning' },
       { label: 'Supplier delays', value: '2', tone: 'warning' },
     ],
   },
@@ -260,18 +264,18 @@ export const DASHBOARD_DEFINITIONS: Record<
   'customer-delivery': {
     title: 'Customer Impact Dashboard',
     metrics: [
-      { label: 'High-risk orders', value: '1', tone: 'danger' },
+      { label: 'High-risk orders', value: '2', tone: 'danger' },
       { label: 'Medium-risk orders', value: '2', tone: 'warning' },
-      { label: 'Customers affected', value: 'Bosch, Siemens, ABB' },
+      { label: 'Customers affected', value: 'Bosch, Tesla, Siemens, Airbus' },
     ],
   },
   'operations-risk': {
     title: 'Operations Risk Dashboard',
     metrics: [
-      { label: 'Orders at risk', value: '3', tone: 'danger' },
-      { label: 'Revenue at risk', value: '£221k', tone: 'danger' },
+      { label: 'Orders at risk', value: '4', tone: 'danger' },
+      { label: 'Revenue at risk', value: '£268k', tone: 'danger' },
       { label: 'Delayed jobs', value: '4', tone: 'warning' },
-      { label: 'Material shortages', value: '3', tone: 'warning' },
+      { label: 'Material shortages', value: '4', tone: 'warning' },
     ],
   },
 };
@@ -411,13 +415,16 @@ export const WORKFLOW_DEFINITIONS: Record<
       'Calculating delivery confidence...',
     ],
     runResult: 'Siemens order validated with capacity warning. Manager approval recommended.',
+    commandCentrePrompt:
+      'Tesla SO-1073 is an urgent order requested for 10 Jul. Can we accept it without delaying Bosch SO-1048 or Siemens SO-1061?',
   },
 };
 
 export const ORDERS_AT_RISK_ROWS = [
   { customer: 'Bosch', order: 'SO-1048', risk: 'High', value: '£84k', cause: 'Material + CNC downtime' },
-  { customer: 'Siemens', order: 'SO-1051', risk: 'Medium', value: '£72k', cause: 'Line 3 capacity' },
-  { customer: 'ABB', order: 'SO-1055', risk: 'Medium', value: '£65k', cause: 'Supplier delay' },
+  { customer: 'Tesla', order: 'SO-1073', risk: 'High', value: '£58k', cause: 'CNC-04 capacity conflict' },
+  { customer: 'Airbus', order: 'SO-1057', risk: 'Medium', value: '£52k', cause: 'Titanium PO dependent' },
+  { customer: 'Siemens', order: 'SO-1061', risk: 'Medium', value: '£74k', cause: 'CNC-04 contention' },
 ];
 
 export const MACHINE_UTIL_ROWS = [

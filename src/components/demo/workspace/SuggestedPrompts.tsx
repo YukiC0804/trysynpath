@@ -10,7 +10,7 @@ export function SuggestedPrompts({ onSelectPrompt }: SuggestedPromptsProps) {
       <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
         Suggested high-impact prompts
       </p>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {INITIAL_PROMPTS.map((prompt) => (
           <button
             key={prompt}

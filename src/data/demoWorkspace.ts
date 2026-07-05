@@ -1,5 +1,7 @@
 export type ResultType =
   | 'urgent-order'
+  | 'urgent-capacity'
+  | 'material-coverage'
   | 'rfq-quote'
   | 'rescheduling'
   | 'estimating'
@@ -31,6 +33,8 @@ export const INITIAL_PROMPTS = [
   'Read the Schneider Electric RFQ email and attached drawing. Create a quote draft.',
   'CNC-04 is down for 4 hours. Which jobs are affected and how should we reschedule?',
   'Create a COO dashboard for orders at risk, bottlenecks, shortages, and delayed jobs.',
+  'Tesla SO-1073 is an urgent order requested for 10 Jul. Can we accept it without delaying Bosch SO-1048 or Siemens SO-1061?',
+  'Do we have material coverage for all jobs due before 15 Jul, especially Bosch SO-1048, Airbus SO-1057, and Siemens SO-1061?',
 ];
 
 export const COMMAND_CHIPS = [
@@ -53,6 +57,25 @@ export const ANALYSIS_STEPS: Record<ResultType, string[]> = {
     'Checking production capacity…',
     'Calculating delivery risk…',
     'Generating recovery actions…',
+  ],
+  'urgent-capacity': [
+    'Checking ERP for Tesla SO-1073 order details…',
+    'Reviewing requested delivery date, quantity, margin, and operations…',
+    'Loading current production schedule…',
+    'Identifying required work centres: CNC-04, CNC-02, deburring, inspection, packing…',
+    'Comparing against Bosch SO-1048 and Siemens SO-1061 commitments…',
+    'Checking Aluminium 7075 billet availability…',
+    'Simulating capacity impact if order is accepted…',
+    'Generating accept / negotiate recommendation…',
+  ],
+  'material-coverage': [
+    'Loading all open jobs due before 15 Jul…',
+    'Pulling BOM material requirements from ERP…',
+    'Comparing required quantities against inventory…',
+    'Checking inbound supplier POs…',
+    'Linking shortages to affected sales orders…',
+    'Assessing Bosch SO-1048, Airbus SO-1057, Siemens SO-1061, Tesla SO-1073…',
+    'Generating material coverage report and recommended actions…',
   ],
   'rfq-quote': [
     'Reading Schneider Electric RFQ email…',
@@ -105,6 +128,15 @@ export const ANALYSIS_STEPS: Record<ResultType, string[]> = {
 
 export const DATA_SOURCES_BY_RESULT: Record<ResultType, string[]> = {
   'urgent-order': ['ERP', 'Inventory', 'Production Schedule', 'Machine Logs', 'Supplier POs', 'Quality Logs'],
+  'urgent-capacity': [
+    'ERP',
+    'Production Schedule',
+    'Machine Logs',
+    'Inventory',
+    'Capacity calendar',
+    'CRM',
+  ],
+  'material-coverage': ['ERP', 'Inventory', 'BOM', 'Supplier POs', 'Production Schedule', 'Excel Files'],
   'rfq-quote': [
     'RFQ Inbox',
     'Historical quotes',
@@ -127,6 +159,18 @@ export const FOLLOW_UP_PROMPTS: Record<ResultType, string[]> = {
     'Move Job J-901 from Line 3 to Line 2',
     'Create an agent to monitor Bosch SO-1048 daily',
     'Notify Bosch account manager with updated delivery confidence',
+  ],
+  'urgent-capacity': [
+    'Request CNC-04 overtime approval for Tesla SO-1073',
+    'Move Siemens SO-1061 finishing to CNC-02',
+    'Draft accept-with-conditions reply to Tesla',
+    'Check material coverage before confirming Tesla order',
+  ],
+  'material-coverage': [
+    'Expedite PO-7782 from MetalWorks Ltd',
+    'Confirm PO-7811 arrival with AeroMetals UK',
+    'Source emergency packaging inserts for Bosch SO-1048',
+    'Create material shortage agent for jobs due before 15 Jul',
   ],
   'rfq-quote': [
     'Generate quote PDF for Schneider Electric',
@@ -166,6 +210,12 @@ export const FOLLOW_UP_PROMPTS: Record<ResultType, string[]> = {
 export function routePrompt(prompt: string): ResultType {
   const p = prompt.toLowerCase();
 
+  if (/(tesla so-1073|alu-bracket-tx9|without delaying bosch so-1048|without delaying.*siemens so-1061)/.test(p)) {
+    return 'urgent-capacity';
+  }
+  if (/(material coverage|coverage for all jobs due before|jobs due before 15 jul)/.test(p)) {
+    return 'material-coverage';
+  }
   if (/(so-1048|bosch.*12 jul|on track to ship|actually on track)/.test(p)) {
     return 'urgent-order';
   }
@@ -184,7 +234,7 @@ export function routePrompt(prompt: string): ResultType {
   if (/(coo dashboard|orders at risk.*bottleneck|bottlenecks.*shortages)/.test(p)) {
     return 'dashboard';
   }
-  if (/(urgent order|orders at risk|delivery risk|\blate\b)/.test(p)) {
+  if (/(urgent order|orders at risk|delivery risk|\blate\b)/.test(p) && !/tesla/.test(p)) {
     return 'urgent-order';
   }
   if (/\brfq\b|quotation|quote draft/.test(p)) {

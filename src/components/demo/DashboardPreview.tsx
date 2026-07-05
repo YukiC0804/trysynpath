@@ -7,8 +7,9 @@ import { RecommendedActions } from './RecommendedActions';
 
 const ORDERS_AT_RISK = [
   { order: 'Bosch SO-1048', risk: 'High', value: '£84,000' },
-  { order: 'Siemens SO-1051', risk: 'Medium', value: '£72,000' },
-  { order: 'ABB SO-1055', risk: 'Medium', value: '£65,000' },
+  { order: 'Tesla SO-1073', risk: 'High', value: '£58,000' },
+  { order: 'Airbus SO-1057', risk: 'Medium', value: '£52,000' },
+  { order: 'Siemens SO-1061', risk: 'Medium', value: '£74,000' },
 ];
 
 const MACHINE_UTIL = [
@@ -19,21 +20,23 @@ const MACHINE_UTIL = [
 ];
 
 const MATERIAL_SHORTAGES = [
-  { material: 'Aluminium Casing Blank', shortage: '280 units' },
-  { material: 'PCB Board A', shortage: '40 units' },
-  { material: 'Steel Bracket', shortage: '200 units' },
+  { material: 'Stainless Steel 316L', shortage: '65 kg' },
+  { material: 'Aluminium 7075 billet', shortage: 'Tight' },
+  { material: 'Packaging inserts PKG-44', shortage: '310 units' },
 ];
 
 const DELAYED_JOBS = [
   { job: 'J-883', status: 'Delayed', customer: 'Bosch' },
-  { job: 'J-894', status: 'At risk', customer: 'Siemens' },
-  { job: 'J-901', status: 'In progress', customer: 'ABB' },
+  { job: 'J-912', status: 'Awaiting capacity', customer: 'Tesla' },
+  { job: 'J-908', status: 'At risk', customer: 'Siemens' },
+  { job: 'J-915', status: 'PO dependent', customer: 'Airbus' },
 ];
 
 const DASHBOARD_ACTIONS = [
-  'Expedite PO-7782 for aluminium casing blanks',
-  'Move J-901 from Line 3 to Line 2 to relieve CNC-04 bottleneck',
-  'Notify Bosch account manager on SO-1048 delivery confidence',
+  'Expedite PO-7782 for Stainless Steel 316L',
+  'Approve CNC-04 overtime for Tesla SO-1073',
+  'Move Siemens SO-1061 finishing to CNC-02',
+  'Confirm PO-7811 arrival with AeroMetals UK',
 ];
 
 export function DashboardPreview() {
@@ -51,9 +54,9 @@ export function DashboardPreview() {
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <MetricCard label="Orders at risk" value="3" valueClassName="text-red-400" />
-        <MetricCard label="Delayed jobs" value="3" valueClassName="text-amber-400" />
-        <MetricCard label="Revenue at risk" value="£221,000" valueClassName="text-red-400" />
+        <MetricCard label="Orders at risk" value="4" valueClassName="text-red-400" />
+        <MetricCard label="Delayed jobs" value="4" valueClassName="text-amber-400" />
+        <MetricCard label="Revenue at risk" value="£268,000" valueClassName="text-red-400" />
         <MetricCard label="Supplier delays" value="2" valueClassName="text-amber-400" />
       </div>
 

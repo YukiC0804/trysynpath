@@ -7,6 +7,8 @@ import { DataSourceBadges } from '../workspace/DataSourceBadges';
 import { AlertsNotificationStrip } from '../workspace/AlertsNotificationStrip';
 import { ConnectedSystemsStrip } from '../workspace/ConnectedSystemsStrip';
 import { UrgentOrderImpactResult } from '../results/UrgentOrderImpactResult';
+import { UrgentCapacityResult } from '../results/UrgentCapacityResult';
+import { MaterialCoverageResult } from '../results/MaterialCoverageResult';
 import { RFQQuoteResult } from '../results/RFQQuoteResult';
 import { RescheduleResult } from '../results/RescheduleResult';
 import { EstimateResult } from '../results/EstimateResult';
@@ -207,6 +209,10 @@ function GeneratedResult({
   switch (resultType) {
     case 'urgent-order':
       return <UrgentOrderImpactResult {...props} />;
+    case 'urgent-capacity':
+      return <UrgentCapacityResult {...props} />;
+    case 'material-coverage':
+      return <MaterialCoverageResult {...props} />;
     case 'rfq-quote':
       return <RFQQuoteResult {...props} />;
     case 'rescheduling':

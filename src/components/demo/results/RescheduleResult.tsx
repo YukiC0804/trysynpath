@@ -69,7 +69,7 @@ export function RescheduleResult({ completedActions, onAction }: RescheduleResul
             },
             {
               job: 'J-894',
-              order: 'Siemens SO-1051',
+              order: 'Siemens SO-1061',
               line: 'Line 3',
               priority: <StatusBadge variant="warning">Medium</StatusBadge>,
               impact: <span className="text-amber-400">Monitor closely</span>,

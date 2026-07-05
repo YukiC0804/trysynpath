@@ -28,9 +28,9 @@ export interface OperationalAlert {
 }
 
 export const ALERT_SUMMARY = {
-  activeAlerts: 5,
-  highPriority: 2,
-  revenueAtRisk: '£149k',
+  activeAlerts: 7,
+  highPriority: 3,
+  revenueAtRisk: '£268k',
   newRfqs: 1,
   machineEvents: 1,
 };
@@ -142,6 +142,55 @@ export const OPERATIONAL_ALERTS: OperationalAlert[] = [
         { label: 'Request', value: 'Price and lead time within customer target window' },
       ],
       suggestedAction: 'Run estimate',
+    },
+  },
+  {
+    id: 'tesla-so-1073',
+    source: 'ERP + CRM + Production Schedule + Inventory',
+    severity: 'high',
+    timestamp: 'Detected 10:28 today',
+    title: 'Tesla SO-1073 urgent order may conflict with CNC-04 capacity',
+    businessObjects: 'SO-1073 · ALU-BRACKET-TX9 · Bosch SO-1048 · Siemens SO-1061',
+    detectedSignal:
+      'Commercial escalation for 280 units by 10 Jul. CNC-04 is already loaded with Bosch recovery work and Siemens finishing operations.',
+    businessImpact: '£58,000 new order at risk; Bosch and Siemens deliveries may slip if accepted as-is',
+    suggestedPrompt:
+      'Tesla SO-1073 is an urgent order requested for 10 Jul. Can we accept it without delaying Bosch SO-1048 or Siemens SO-1061?',
+    buttonLabel: 'Run capacity impact workflow',
+    preview: {
+      heading: 'Urgent order signal',
+      lines: [
+        { label: 'Order', value: 'SO-1073 (Tesla)' },
+        { label: 'Part', value: 'ALU-BRACKET-TX9 · 280 units' },
+        { label: 'Requested ship', value: '10 Jul' },
+        { label: 'CNC-04 time', value: '7.5 hours required' },
+        { label: 'Conflict', value: 'Bosch SO-1048 recovery + Siemens SO-1061 finishing' },
+      ],
+      suggestedAction: 'Run capacity impact workflow',
+    },
+  },
+  {
+    id: 'material-coverage-jul15',
+    source: 'ERP + Inventory + BOM + Supplier POs',
+    severity: 'medium',
+    timestamp: 'Detected 10:31 today',
+    title: 'Material coverage gaps for jobs due before 15 Jul',
+    businessObjects: 'SO-1048 · SO-1057 · SO-1061 · SO-1073 · PO-7782 · PO-7811',
+    detectedSignal:
+      'BOM demand for four open orders shows Stainless Steel 316L shortage, tight Aluminium 7075, and late packaging inserts for Bosch final packing.',
+    businessImpact: 'Bosch SO-1048 and Airbus SO-1057 at risk unless supplier POs are expedited',
+    suggestedPrompt:
+      'Do we have material coverage for all jobs due before 15 Jul, especially Bosch SO-1048, Airbus SO-1057, and Siemens SO-1061?',
+    buttonLabel: 'Run material coverage check',
+    preview: {
+      heading: 'Material coverage signal',
+      lines: [
+        { label: 'Orders checked', value: '4 jobs due before 15 Jul' },
+        { label: 'Shortage risk', value: 'Stainless Steel 316L · 65 kg short' },
+        { label: 'Inbound PO', value: 'PO-7782 delayed 1 day · PO-7811 due 12 Jul' },
+        { label: 'Packaging', value: 'PKG-44 inserts likely late for Bosch' },
+      ],
+      suggestedAction: 'Run material coverage check',
     },
   },
   {
