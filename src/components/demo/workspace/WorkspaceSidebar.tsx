@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { WorkspaceSection } from '../../../types/workspace';
 import { ALERT_SUMMARY } from '../../../data/demoAlerts';
+import { SYNPATH_LOGO_SRC } from '../../../data/demoWorkspace';
 
 const NAV_ITEMS: { id: WorkspaceSection; label: string; icon: typeof Command; badge?: number }[] = [
   { id: 'command', label: 'Command Centre', icon: Command },
@@ -85,6 +86,19 @@ export function WorkspaceSidebar({
           </ul>
         </div>
       )}
+
+      <div className="mt-auto border-t border-neutral-800 p-4">
+        <div className="flex items-center gap-4 px-1">
+          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg">
+            <img
+              src={SYNPATH_LOGO_SRC}
+              alt=""
+              className="h-full w-full object-cover object-left"
+            />
+          </div>
+          <span className="text-[2rem] font-semibold leading-none tracking-tight text-white">Synpath AI</span>
+        </div>
+      </div>
     </aside>
   );
 }
