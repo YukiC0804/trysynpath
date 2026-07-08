@@ -195,7 +195,7 @@ export function WorkflowsSection({ onRunPrompt, showToast }: WorkflowsSectionPro
               {
                 time: '09:15',
                 workflow: 'Acrylic Price Update',
-                trigger: '6mm acrylic cost stale 42 days',
+                trigger: '6mm acrylic cost stale 5 days',
                 result: 'Material cost updated to $69.80',
                 status: <StatusBadge variant="warning">Awaiting approval</StatusBadge>,
               },

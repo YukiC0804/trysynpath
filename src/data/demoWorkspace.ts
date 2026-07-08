@@ -88,7 +88,7 @@ export const ANALYSIS_STEPS: Record<ResultType, string[]> = {
   ],
   'acrylic-pricing': [
     'Checking material cost table for stale pricing…',
-    'Identifying Clear Cast Acrylic Sheet — last updated 42 days ago…',
+    'Identifying Clear Cast Acrylic Sheet — last updated 5 days ago…',
     'Preparing pricing requests for 3 approved suppliers…',
     'Sending supplier emails for 6mm acrylic sheet (250 sheets)…',
     'Reading incoming supplier replies…',

@@ -200,10 +200,10 @@ export const OPERATIONAL_ALERTS: OperationalAlert[] = [
     source: 'Material cost table + Mailbox + Supplier master',
     severity: 'medium',
     timestamp: 'Detected 09:01 today',
-    title: '6mm clear acrylic material cost not updated in 42 days',
+    title: '6mm clear acrylic material cost not updated in 5 days',
     businessObjects: 'Clear Cast Acrylic Sheet · Suppliers A/B/C',
     detectedSignal:
-      'Material cost table shows $68.50/sheet last updated 42 days ago. Synpath can request updated pricing from approved acrylic suppliers.',
+      'Material cost table shows $68.50/sheet last updated 5 days ago. Synpath can request updated pricing from approved acrylic suppliers.',
     businessImpact: 'Quote accuracy risk for acrylic jobs using stale material cost',
     suggestedPrompt: ACRYLIC_PRICING_PROMPT,
     buttonLabel: 'Run acrylic pricing workflow',
@@ -212,7 +212,7 @@ export const OPERATIONAL_ALERTS: OperationalAlert[] = [
       lines: [
         { label: 'Material', value: 'Clear Cast Acrylic Sheet · 6mm' },
         { label: 'Current cost', value: '$68.50 / sheet' },
-        { label: 'Last updated', value: '42 days ago' },
+        { label: 'Last updated', value: '5 days ago' },
         { label: 'Target qty', value: '250 sheets' },
       ],
       suggestedAction: 'Run acrylic pricing workflow',

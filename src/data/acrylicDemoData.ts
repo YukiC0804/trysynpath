@@ -8,7 +8,7 @@ export const ACRYLIC_MATERIAL = {
   spec: '6mm, 1220mm x 2440mm',
   previousCost: '$68.50',
   updatedCost: '$69.80',
-  lastUpdatedDays: 42,
+  lastUpdatedDays: 5,
   targetQuantity: 250,
 };
 
@@ -56,7 +56,7 @@ export const ACRYLIC_SUPPLIER_REPLIES = [
 
 export const ACRYLIC_PRICING_TIMELINE = [
   '09:01 — Material price check triggered',
-  '09:02 — Synpath identified acrylic cost last updated 42 days ago',
+  '09:02 — Synpath identified acrylic cost last updated 5 days ago',
   '09:03 — Pricing requests sent to 3 suppliers',
   '09:06 — Supplier A replied',
   '09:08 — Supplier B replied',
