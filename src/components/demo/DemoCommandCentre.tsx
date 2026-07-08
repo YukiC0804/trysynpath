@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import { useDemoAnalysis } from '../../hooks/useDemoAnalysis';
@@ -19,6 +20,7 @@ import {
 } from '../../types/workspace';
 
 export function DemoCommandCentre() {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<WorkspaceSection>('command');
   const [createdState, setCreatedState] = useState<WorkspaceCreatedState>(DEFAULT_CREATED_STATE);
   const analysis = useDemoAnalysis();
@@ -69,9 +71,8 @@ export function DemoCommandCentre() {
   }, []);
 
   const handleBackToHome = useCallback(() => {
-    setActiveSection('command');
-    analysis.reset();
-  }, [analysis]);
+    navigate('/');
+  }, [navigate]);
 
   return (
     <div
