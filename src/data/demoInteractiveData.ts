@@ -23,7 +23,9 @@ export type WorkflowId =
   | 'rfq-quote'
   | 'urgent-recovery'
   | 'breakdown-response'
-  | 'order-validation';
+  | 'order-validation'
+  | 'acrylic-pricing'
+  | 'acrylic-inventory';
 
 export interface AgentRules {
   priorityFilter: 'High only' | 'High + Medium' | 'All customer orders';
@@ -121,8 +123,8 @@ export const AGENT_DEFINITIONS: Record<
     connectedData: ['Inventory', 'BOM', 'Purchase Orders', 'Production Plan', 'Supplier POs'],
     recentOutput: [
       'Stainless Steel 316L shortage of 65 kg for Bosch SO-1048',
+      '6mm clear acrylic shortage of 60 sheets for Order #1052',
       'Aluminium 7075 billet tight for Tesla SO-1073',
-      'Packaging inserts PKG-44 likely late for Bosch',
       'Expedite PO-7782 recommended',
     ],
     runSteps: [
@@ -417,6 +419,53 @@ export const WORKFLOW_DEFINITIONS: Record<
     runResult: 'Siemens order validated with capacity warning. Manager approval recommended.',
     commandCentrePrompt:
       'Tesla SO-1073 is an urgent order requested for 10 Jul. Can we accept it without delaying Bosch SO-1048 or Siemens SO-1061?',
+  },
+  'acrylic-pricing': {
+    title: 'Acrylic Material Price Update Workflow',
+    steps: [
+      'Identify stale material pricing',
+      'Email approved acrylic suppliers',
+      'Read supplier replies',
+      'Extract price, availability, and lead time',
+      'Compare suppliers',
+      'Update material cost table',
+      'Request human approval',
+    ],
+    connectedSystems: ['Mailbox', 'Supplier master', 'Material cost table', 'ERP', 'Excel Files'],
+    runSteps: [
+      'Checking material cost table...',
+      'Sending pricing requests to 3 suppliers...',
+      'Reading supplier replies...',
+      'Extracting structured pricing data...',
+      'Updating material cost to $69.80/sheet...',
+    ],
+    runResult:
+      'Acrylic sheet cost updated to $69.80/sheet via Supplier B. Total cost impact +$325 for 250 sheets.',
+    commandCentrePrompt:
+      'Ask suppliers for updated acrylic material pricing and update material cost',
+  },
+  'acrylic-inventory': {
+    title: 'Acrylic Inventory Management Workflow',
+    steps: [
+      'Scan upcoming acrylic orders',
+      'Check stock by thickness',
+      'Flag shortages and reorder risks',
+      'Calculate replenishment quantities',
+      'Link to supplier pricing workflow',
+      'Generate purchase recommendation',
+      'Request human approval',
+    ],
+    connectedSystems: ['Inventory', 'ERP', 'Production Schedule', 'BOM', 'Supplier POs', 'Mailbox'],
+    runSteps: [
+      'Scanning upcoming acrylic orders...',
+      'Checking 3mm, 6mm, and 10mm stock levels...',
+      'Detecting 6mm acrylic shortage...',
+      'Calculating replenishment quantities...',
+      'Preparing purchase recommendation...',
+    ],
+    runResult:
+      '6mm acrylic shortage of 60 sheets flagged for Order #1052. Recommended purchase: 140 sheets from Supplier B.',
+    commandCentrePrompt: 'Check acrylic inventory risk for upcoming orders',
   },
 };
 

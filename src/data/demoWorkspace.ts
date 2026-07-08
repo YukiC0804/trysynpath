@@ -1,7 +1,14 @@
+import {
+  ACRYLIC_PRICING_PROMPT,
+  ACRYLIC_INVENTORY_PROMPT,
+} from './acrylicDemoData';
+
 export type ResultType =
   | 'urgent-order'
   | 'urgent-capacity'
   | 'material-coverage'
+  | 'acrylic-pricing'
+  | 'acrylic-inventory'
   | 'rfq-quote'
   | 'rescheduling'
   | 'estimating'
@@ -35,6 +42,8 @@ export const INITIAL_PROMPTS = [
   'Create a COO dashboard for orders at risk, bottlenecks, shortages, and delayed jobs.',
   'Tesla SO-1073 is an urgent order requested for 10 Jul. Can we accept it without delaying Bosch SO-1048 or Siemens SO-1061?',
   'Do we have material coverage for all jobs due before 15 Jul, especially Bosch SO-1048, Airbus SO-1057, and Siemens SO-1061?',
+  ACRYLIC_PRICING_PROMPT,
+  ACRYLIC_INVENTORY_PROMPT,
 ];
 
 export const COMMAND_CHIPS = [
@@ -76,6 +85,27 @@ export const ANALYSIS_STEPS: Record<ResultType, string[]> = {
     'Linking shortages to affected sales orders…',
     'Assessing Bosch SO-1048, Airbus SO-1057, Siemens SO-1061, Tesla SO-1073…',
     'Generating material coverage report and recommended actions…',
+  ],
+  'acrylic-pricing': [
+    'Checking material cost table for stale pricing…',
+    'Identifying Clear Cast Acrylic Sheet — last updated 42 days ago…',
+    'Preparing pricing requests for 3 approved suppliers…',
+    'Sending supplier emails for 6mm acrylic sheet (250 sheets)…',
+    'Reading incoming supplier replies…',
+    'Extracting price, availability, and lead time…',
+    'Comparing suppliers and selecting recommended cost…',
+    'Updating material cost table…',
+    'Preparing human approval request…',
+  ],
+  'acrylic-inventory': [
+    'Scanning upcoming acrylic-related orders…',
+    'Loading 3mm, 6mm, and 10mm clear acrylic inventory…',
+    'Allocating stock against Order #1048, #1052, #1057…',
+    'Checking reorder thresholds…',
+    'Flagging 6mm acrylic shortage for Order #1052…',
+    'Calculating replenishment quantities…',
+    'Linking inventory needs to supplier pricing workflow…',
+    'Generating purchase recommendation…',
   ],
   'rfq-quote': [
     'Reading Schneider Electric RFQ email…',
@@ -137,6 +167,8 @@ export const DATA_SOURCES_BY_RESULT: Record<ResultType, string[]> = {
     'CRM',
   ],
   'material-coverage': ['ERP', 'Inventory', 'BOM', 'Supplier POs', 'Production Schedule', 'Excel Files'],
+  'acrylic-pricing': ['Mailbox', 'Supplier master', 'Material cost table', 'ERP', 'Excel Files'],
+  'acrylic-inventory': ['Inventory', 'ERP', 'Production Schedule', 'BOM', 'Supplier POs', 'Mailbox'],
   'rfq-quote': [
     'RFQ Inbox',
     'Historical quotes',
@@ -171,6 +203,18 @@ export const FOLLOW_UP_PROMPTS: Record<ResultType, string[]> = {
     'Confirm PO-7811 arrival with AeroMetals UK',
     'Source emergency packaging inserts for Bosch SO-1048',
     'Create material shortage agent for jobs due before 15 Jul',
+  ],
+  'acrylic-pricing': [
+    'Approve material cost update for 6mm acrylic',
+    'Switch to Supplier C lowest-price option',
+    'Set auto-refresh for acrylic pricing every 30 days',
+    'Check acrylic inventory risk for upcoming orders',
+  ],
+  'acrylic-inventory': [
+    'Approve purchase recommendation for 6mm acrylic',
+    'Request acrylic supplier quotes for all thicknesses',
+    'Create inventory alert agent for acrylic materials',
+    'Ask suppliers for updated acrylic material pricing and update material cost',
   ],
   'rfq-quote': [
     'Generate quote PDF for Schneider Electric',
@@ -210,6 +254,12 @@ export const FOLLOW_UP_PROMPTS: Record<ResultType, string[]> = {
 export function routePrompt(prompt: string): ResultType {
   const p = prompt.toLowerCase();
 
+  if (/(ask suppliers for updated acrylic|acrylic material pricing|update material cost)/.test(p)) {
+    return 'acrylic-pricing';
+  }
+  if (/(acrylic inventory risk|check acrylic inventory|upcoming acrylic orders)/.test(p)) {
+    return 'acrylic-inventory';
+  }
   if (/(tesla so-1073|alu-bracket-tx9|without delaying bosch so-1048|without delaying.*siemens so-1061)/.test(p)) {
     return 'urgent-capacity';
   }

@@ -1,3 +1,5 @@
+import { ACRYLIC_PRICING_PROMPT, ACRYLIC_INVENTORY_PROMPT } from './acrylicDemoData';
+
 export type AlertSeverity = 'high' | 'medium' | 'low';
 
 export interface MonitoringSource {
@@ -28,7 +30,7 @@ export interface OperationalAlert {
 }
 
 export const ALERT_SUMMARY = {
-  activeAlerts: 7,
+  activeAlerts: 9,
   highPriority: 3,
   revenueAtRisk: '£268k',
   newRfqs: 1,
@@ -191,6 +193,51 @@ export const OPERATIONAL_ALERTS: OperationalAlert[] = [
         { label: 'Packaging', value: 'PKG-44 inserts likely late for Bosch' },
       ],
       suggestedAction: 'Run material coverage check',
+    },
+  },
+  {
+    id: 'acrylic-price-stale',
+    source: 'Material cost table + Mailbox + Supplier master',
+    severity: 'medium',
+    timestamp: 'Detected 09:01 today',
+    title: '6mm clear acrylic material cost not updated in 42 days',
+    businessObjects: 'Clear Cast Acrylic Sheet · Suppliers A/B/C',
+    detectedSignal:
+      'Material cost table shows $68.50/sheet last updated 42 days ago. Synpath can request updated pricing from approved acrylic suppliers.',
+    businessImpact: 'Quote accuracy risk for acrylic jobs using stale material cost',
+    suggestedPrompt: ACRYLIC_PRICING_PROMPT,
+    buttonLabel: 'Run acrylic pricing workflow',
+    preview: {
+      heading: 'Material pricing signal',
+      lines: [
+        { label: 'Material', value: 'Clear Cast Acrylic Sheet · 6mm' },
+        { label: 'Current cost', value: '$68.50 / sheet' },
+        { label: 'Last updated', value: '42 days ago' },
+        { label: 'Target qty', value: '250 sheets' },
+      ],
+      suggestedAction: 'Run acrylic pricing workflow',
+    },
+  },
+  {
+    id: 'acrylic-inventory-risk',
+    source: 'Inventory + ERP + Production Schedule',
+    severity: 'high',
+    timestamp: 'Detected 10:01 today',
+    title: '6mm clear acrylic shortage risk for upcoming orders',
+    businessObjects: 'Order #1052 · 3mm/6mm/10mm acrylic stock',
+    detectedSignal:
+      'Order #1052 requires 150 sheets of 6mm acrylic but only 90 sheets are in stock. 3mm and 10mm acrylic will fall below reorder thresholds after allocation.',
+    businessImpact: 'Order #1052 at risk — 60 sheet shortage on 6mm clear acrylic',
+    suggestedPrompt: ACRYLIC_INVENTORY_PROMPT,
+    buttonLabel: 'Run inventory risk workflow',
+    preview: {
+      heading: 'Inventory risk signal',
+      lines: [
+        { label: 'High risk', value: '6mm acrylic short 60 sheets' },
+        { label: 'Order', value: '#1052 · due in 9 days' },
+        { label: 'Medium risk', value: '3mm and 10mm below threshold after orders' },
+      ],
+      suggestedAction: 'Run inventory risk workflow',
     },
   },
   {

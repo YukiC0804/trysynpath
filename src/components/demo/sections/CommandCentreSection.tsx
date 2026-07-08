@@ -9,6 +9,8 @@ import { ConnectedSystemsStrip } from '../workspace/ConnectedSystemsStrip';
 import { UrgentOrderImpactResult } from '../results/UrgentOrderImpactResult';
 import { UrgentCapacityResult } from '../results/UrgentCapacityResult';
 import { MaterialCoverageResult } from '../results/MaterialCoverageResult';
+import { AcrylicPricingResult } from '../results/AcrylicPricingResult';
+import { AcrylicInventoryResult } from '../results/AcrylicInventoryResult';
 import { RFQQuoteResult } from '../results/RFQQuoteResult';
 import { RescheduleResult } from '../results/RescheduleResult';
 import { EstimateResult } from '../results/EstimateResult';
@@ -213,6 +215,10 @@ function GeneratedResult({
       return <UrgentCapacityResult {...props} />;
     case 'material-coverage':
       return <MaterialCoverageResult {...props} />;
+    case 'acrylic-pricing':
+      return <AcrylicPricingResult {...props} />;
+    case 'acrylic-inventory':
+      return <AcrylicInventoryResult {...props} />;
     case 'rfq-quote':
       return <RFQQuoteResult {...props} />;
     case 'rescheduling':

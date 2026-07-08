@@ -104,7 +104,7 @@ export function WorkflowsSection({ onRunPrompt, showToast }: WorkflowsSectionPro
           subtitle="Operational workflows created in natural language and connected to manufacturing systems."
         />
 
-        <div className="mb-8 grid gap-4 sm:grid-cols-2">
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <EntityCard
             title="RFQ to Quote Workflow"
             status={{ label: 'Active', variant: 'healthy' }}
@@ -148,6 +148,30 @@ export function WorkflowsSection({ onRunPrompt, showToast }: WorkflowsSectionPro
             content={workflowStepsPreview('order-validation')}
             actions={workflowActions('order-validation', 'Activate')}
           />
+
+          <EntityCard
+            title="Acrylic Material Price Update"
+            status={{ label: 'Active', variant: 'healthy' }}
+            meta={[
+              { label: 'Trigger', value: 'Material cost stale > 30 days' },
+              { label: 'Last run', value: 'Today 09:15' },
+              { label: 'Last result', value: '6mm acrylic updated to $69.80/sheet' },
+            ]}
+            content={workflowStepsPreview('acrylic-pricing')}
+            actions={workflowActions('acrylic-pricing')}
+          />
+
+          <EntityCard
+            title="Acrylic Inventory Management"
+            status={{ label: 'Active', variant: 'warning' }}
+            meta={[
+              { label: 'Trigger', value: 'Upcoming acrylic orders' },
+              { label: 'Last run', value: 'Today 10:08' },
+              { label: 'Last result', value: '6mm shortage flagged — purchase recommended' },
+            ]}
+            content={workflowStepsPreview('acrylic-inventory')}
+            actions={workflowActions('acrylic-inventory')}
+          />
         </div>
 
         <div className="rounded-xl border border-neutral-800 bg-[#0a0a0a] p-4">
@@ -161,6 +185,20 @@ export function WorkflowsSection({ onRunPrompt, showToast }: WorkflowsSectionPro
               { key: 'status', header: 'Status' },
             ]}
             rows={[
+              {
+                time: '10:08',
+                workflow: 'Acrylic Inventory',
+                trigger: 'Orders #1048, #1052, #1057 scanned',
+                result: 'Purchase recommendation prepared',
+                status: <StatusBadge variant="warning">Awaiting approval</StatusBadge>,
+              },
+              {
+                time: '09:15',
+                workflow: 'Acrylic Price Update',
+                trigger: '6mm acrylic cost stale 42 days',
+                result: 'Material cost updated to $69.80',
+                status: <StatusBadge variant="warning">Awaiting approval</StatusBadge>,
+              },
               {
                 time: '09:12',
                 workflow: 'RFQ to Quote',
