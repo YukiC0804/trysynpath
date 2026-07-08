@@ -16,6 +16,20 @@ interface ActivityEntry {
 
 const ACTIVITY_ENTRIES: ActivityEntry[] = [
   {
+    time: 'Today 10:08',
+    category: 'workflows',
+    title: 'Acrylic inventory workflow prepared purchase recommendation',
+    details: ['6mm acrylic shortage of 60 sheets for Order #1052', 'Waiting for human approval'],
+    badge: { label: 'Workflow', variant: 'warning' },
+  },
+  {
+    time: 'Today 09:15',
+    category: 'workflows',
+    title: 'Acrylic material pricing workflow updated 6mm sheet cost',
+    details: ['Material cost updated to $69.80/sheet via Supplier B', 'Human approval requested'],
+    badge: { label: 'Workflow', variant: 'ai' },
+  },
+  {
     time: 'Today 10:31',
     category: 'agents',
     title: 'Material Shortage Agent flagged coverage gaps for jobs due before 15 Jul',
