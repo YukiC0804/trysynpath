@@ -10,7 +10,7 @@
     },
     {
       "source": "/api/integrations/sage/:path*",
-      "destination": "/api/sage/:path*"
+      "destination": "/api/sage?__sagePath=:path*"
     },
     {
       "source": "/((?!api/).*)",
