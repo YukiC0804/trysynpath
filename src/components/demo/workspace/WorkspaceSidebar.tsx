@@ -7,7 +7,9 @@ import {
   Activity,
   Command,
   Bell,
+  Building2,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { WorkspaceSection } from '../../../types/workspace';
 import { ALERT_SUMMARY } from '../../../data/demoAlerts';
 import { SYNPATH_LOGO_SRC } from '../../../data/demoWorkspace';
@@ -64,6 +66,22 @@ export function WorkspaceSidebar({
           );
         })}
       </nav>
+
+      <div className="border-t border-neutral-800 px-3 py-3">
+        <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-600">
+          Customer demos
+        </p>
+        <Link
+          to="/sage-integration"
+          className="flex w-full items-center gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-left text-sm text-emerald-300 transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-200"
+        >
+          <Building2 className="h-4 w-4 shrink-0" />
+          <span className="flex-1 leading-tight">
+            <span className="block font-medium text-emerald-200">Ghost Boards</span>
+            <span className="block text-[11px] text-emerald-400/70">Sage Integration</span>
+          </span>
+        </Link>
+      </div>
 
       {recentPrompts.length > 0 && activeSection === 'command' && (
         <div className="border-t border-neutral-800 p-3">

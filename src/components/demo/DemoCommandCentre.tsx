@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspaceTheme } from '../../hooks/useWorkspaceTheme';
 import { useDemoAnalysis } from '../../hooks/useDemoAnalysis';
 import { useDemoToast } from '../../hooks/useDemoToast';
+import { Link } from 'react-router-dom';
 import { WorkspaceTopBar } from './workspace/WorkspaceTopBar';
 import { WorkspaceSidebar } from './workspace/WorkspaceSidebar';
 import { CommandCentreSection } from './sections/CommandCentreSection';
@@ -101,6 +102,12 @@ export function DemoCommandCentre() {
         {/* Mobile section tabs */}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div className="flex gap-1 overflow-x-auto border-b border-neutral-800 bg-[#0a0a0a] px-2 py-2 md:hidden">
+            <Link
+              to="/sage-integration"
+              className="shrink-0 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300"
+            >
+              Ghost Boards
+            </Link>
             {(
               [
                 ['command', 'Command'],
