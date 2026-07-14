@@ -28,9 +28,33 @@ import { clearCookie, json, missingConfigResponse, sageConfigStatus } from './ht
 import { COOKIE_OAUTH_STATE, SAGE_REQUIRED_ENV } from './types';
 
 function segments(req: VercelRequest): string[] {
+  // Prefer catch-all query param when Vercel provides it.
   const raw = req.query.path;
-  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
-  if (typeof raw === 'string' && raw.length > 0) return raw.split('/').filter(Boolean);
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.flatMap((part) => String(part).split('/')).filter(Boolean);
+  }
+  if (typeof raw === 'string' && raw.length > 0) {
+    return raw.split('/').filter(Boolean);
+  }
+
+  // Fallback: parse from the request URL. Some Vercel Node runtimes leave
+  // req.query.path empty for nested catch-all files even when the URL has segments.
+  const pathname = (req.url ?? '').split('?')[0] ?? '';
+  const marker = '/api/integrations/sage/';
+  const idx = pathname.indexOf(marker);
+  if (idx >= 0) {
+    return pathname
+      .slice(idx + marker.length)
+      .split('/')
+      .map((part) => decodeURIComponent(part))
+      .filter(Boolean);
+  }
+
+  // Exact /api/integrations/sage with no trailing segment.
+  if (/\/api\/integrations\/sage\/?$/.test(pathname)) {
+    return [];
+  }
+
   return [];
 }
 
@@ -67,9 +91,14 @@ async function requireAuth(req: VercelRequest, res: VercelResponse) {
 
 export async function handleSageRequest(req: VercelRequest, res: VercelResponse) {
   const method = req.method ?? 'GET';
-  const path = segments(req);
+  let path = segments(req);
 
   try {
+    // Empty path → treat GET as health so /api/integrations/sage is never a dead end.
+    if (method === 'GET' && path.length === 0) {
+      path = ['health'];
+    }
+
     // Health: never throws from missing secrets; only reports presence.
     if (method === 'GET' && path[0] === 'health') {
       const { present, missing, configured } = envPresence(SAGE_REQUIRED_ENV);
@@ -467,6 +496,7 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
       error: 'Unknown Sage integration route',
       path,
       method,
+      hint: 'Use /api/integrations/sage/health, /connect, /callback, /status, /stock-items, /suppliers',
     });
   } catch (error) {
     const status = error instanceof SageApiError ? error.status : 500;
