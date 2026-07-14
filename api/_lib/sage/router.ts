@@ -101,13 +101,14 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
 
     // Health: never throws from missing secrets; only reports presence.
     if (method === 'GET' && path[0] === 'health') {
-      const { present, missing, configured } = envPresence(SAGE_REQUIRED_ENV);
+      const { present, missing, configured, redeployHint } = envPresence(SAGE_REQUIRED_ENV);
       return json(res, 200, {
         ok: true,
         service: 'sage-integration',
         configured,
         env: present,
         missing,
+        redeployHint: missing.length ? redeployHint : undefined,
       });
     }
 

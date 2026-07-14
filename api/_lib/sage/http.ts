@@ -12,6 +12,7 @@ export function missingConfigResponse(res: VercelResponse, missing: string[]) {
     ok: false,
     error: 'Missing required server configuration',
     missing,
+    hint: 'Environment variables are injected at deploy time. If the key exists in Vercel Project Settings, create a new deployment (redeploy Preview/Production) so process.env receives it.',
   });
 }
 
