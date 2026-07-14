@@ -13,7 +13,7 @@ export function SageLayout({ children }: { children: ReactNode }) {
       className="demo-workspace min-h-screen bg-black text-neutral-200"
       data-theme={theme}
     >
-      <header className="sticky top-0 z-40 border-b border-neutral-800 bg-black/90 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-neutral-800 bg-[#0a0a0a] backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-4">
             <Link to="/" className="shrink-0 text-sm font-semibold text-white">
