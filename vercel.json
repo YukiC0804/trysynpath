@@ -1,6 +1,18 @@
 {
   "rewrites": [
     {
+      "source": "/api/integrations/sage",
+      "destination": "/api/sage"
+    },
+    {
+      "source": "/api/integrations/sage/",
+      "destination": "/api/sage"
+    },
+    {
+      "source": "/api/integrations/sage/:path*",
+      "destination": "/api/sage/:path*"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

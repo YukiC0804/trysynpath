@@ -94,12 +94,13 @@ export async function createStockItem(payload: Record<string, unknown>) {
 }
 
 export async function updateStockItem(id: string, payload: Record<string, unknown>) {
-  // Body-based update avoids deep catch-all path 404s on some Vercel deployments.
-  const res = await fetch('/api/integrations/sage/stock-items/update', {
+  // Use the same single-segment URL as create — nested /stock-items/update returns
+  // Vercel NOT_FOUND with the previous deep catch-all layout.
+  const res = await fetch('/api/integrations/sage/stock-items', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, ...payload }),
+    body: JSON.stringify({ action: 'update', id, ...payload }),
   });
   return parseJson(res) as Promise<{
     before: NormalizedStockItem;
