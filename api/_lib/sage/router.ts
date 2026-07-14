@@ -40,18 +40,20 @@ function segments(req: VercelRequest): string[] {
   // Fallback: parse from the request URL. Some Vercel Node runtimes leave
   // req.query.path empty for nested catch-all files even when the URL has segments.
   const pathname = (req.url ?? '').split('?')[0] ?? '';
-  const marker = '/api/integrations/sage/';
-  const idx = pathname.indexOf(marker);
-  if (idx >= 0) {
-    return pathname
-      .slice(idx + marker.length)
-      .split('/')
-      .map((part) => decodeURIComponent(part))
-      .filter(Boolean);
+  const markers = ['/api/integrations/sage/', '/api/sage/'];
+  for (const marker of markers) {
+    const idx = pathname.indexOf(marker);
+    if (idx >= 0) {
+      return pathname
+        .slice(idx + marker.length)
+        .split('/')
+        .map((part) => decodeURIComponent(part))
+        .filter(Boolean);
+    }
   }
 
-  // Exact /api/integrations/sage with no trailing segment.
-  if (/\/api\/integrations\/sage\/?$/.test(pathname)) {
+  // Exact /api/integrations/sage or /api/sage with no trailing segment.
+  if (/\/api\/(integrations\/)?sage\/?$/.test(pathname)) {
     return [];
   }
 
@@ -379,6 +381,13 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
 
       if (method === 'POST' && path.length === 1) {
         const body = parseBody(req);
+        // Single-segment update avoids Vercel NOT_FOUND on nested /stock-items/:id paths.
+        if (String(body.action ?? '').toLowerCase() === 'update') {
+          const id = String(body.id ?? '').trim();
+          if (!id) return json(res, 400, { error: 'id is required for stock item update' });
+          return applyStockItemUpdate(req, res, auth.accessToken, businessId, id, body);
+        }
+
         const sku = String(body.item_code ?? body.sku ?? '').trim();
         if (!sku) return json(res, 400, { error: 'item_code is required' });
         const existing = await findStockItemBySku(auth.accessToken, businessId, sku);
@@ -446,7 +455,7 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
         });
       }
 
-      // Prefer body-based update so deep path segments cannot 404 on catch-all routing.
+      // Nested /stock-items/update and /stock-items/:id after rewrite (optional).
       if (method === 'POST' && path[1] === 'update') {
         const body = parseBody(req);
         const id = String(body.id ?? '').trim();
