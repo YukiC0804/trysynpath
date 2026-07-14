@@ -47,7 +47,7 @@ async function sageFetch(
       detail = '';
     }
     throw new SageApiError(
-      `Sage API ${options.method ?? 'GET'} ${path} failed (${response.status})${detail ? `: ${detail.slice(0, 240)}` : ''}`,
+      `Sage API ${options.method ?? 'GET'} ${path} failed (${response.status})${detail ? `: ${detail.slice(0, 400)}` : ''}`,
       response.status,
     );
   }
@@ -60,6 +60,16 @@ function salesPriceFromItem(item: SageStockItem): number {
   if (item.sales_price != null) return Number(item.sales_price);
   const first = item.sales_prices?.[0]?.price;
   return first != null ? Number(first) : 0;
+}
+
+function refId(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && value !== null && 'id' in value) {
+    const id = (value as { id?: unknown }).id;
+    return id != null ? String(id) : undefined;
+  }
+  return undefined;
 }
 
 export function normalizeStockItem(item: SageStockItem) {
@@ -76,6 +86,11 @@ export function normalizeStockItem(item: SageStockItem) {
     supplierId: item.usual_supplier?.id ?? '',
     supplierPartNumber: item.supplier_part_number ?? '',
     active: item.active !== false,
+    salesLedgerAccountId: refId(item.sales_ledger_account) ?? refId(item.sales_ledger_account_id),
+    purchaseLedgerAccountId:
+      refId(item.purchase_ledger_account) ?? refId(item.purchase_ledger_account_id),
+    salesTaxRateId: refId(item.sales_tax_rate) ?? refId(item.sales_tax_rate_id),
+    purchaseTaxRateId: refId(item.purchase_tax_rate) ?? refId(item.purchase_tax_rate_id),
     raw: item,
   };
 }
@@ -121,6 +136,111 @@ export async function findStockItemBySku(accessToken: string, businessId: string
   return items.find((item) => item.sku.toLowerCase() === sku.toLowerCase()) ?? null;
 }
 
+export type StockItemDefaults = {
+  sales_ledger_account_id: string;
+  purchase_ledger_account_id: string;
+  sales_tax_rate_id?: string;
+  purchase_tax_rate_id?: string;
+};
+
+type LedgerLike = { id: string; displayed_as?: string; nominal_code?: string; name?: string };
+type TaxRateLike = { id: string; displayed_as?: string };
+
+export function pickLedgerAccount(
+  ledgers: LedgerLike[],
+  kind: 'sales' | 'purchase',
+): LedgerLike | undefined {
+  const scored = ledgers
+    .map((ledger) => {
+      const label = `${ledger.displayed_as ?? ''} ${ledger.name ?? ''} ${ledger.nominal_code ?? ''}`.toLowerCase();
+      let score = 0;
+      if (kind === 'sales') {
+        if (/sales/.test(label) && /product/.test(label)) score += 40;
+        if (/sales/.test(label)) score += 25;
+        if (ledger.nominal_code === '4000' || /4000/.test(label)) score += 30;
+        if (/income|revenue/.test(label)) score += 10;
+      } else {
+        if (/\bstock\b/.test(label) && !/sales/.test(label)) score += 40;
+        if (/purchase|cost of sales|cos\b/.test(label)) score += 25;
+        if (ledger.nominal_code === '1000' || /1000/.test(label)) score += 30;
+        if (/inventory/.test(label)) score += 20;
+      }
+      return { ledger, score };
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.ledger ?? ledgers[0];
+}
+
+export function pickTaxRate(taxRates: TaxRateLike[]): TaxRateLike | undefined {
+  const preferred = taxRates.find((rate) => /standard|gb_standard|20/.test(String(rate.id ?? rate.displayed_as ?? '').toLowerCase()));
+  return preferred ?? taxRates[0];
+}
+
+/**
+ * Sage requires sales_ledger_account_id + purchase_ledger_account_id on create.
+ * Prefer copying from an existing stock item in the same business; fall back to chart of accounts.
+ */
+export async function resolveStockItemDefaults(
+  accessToken: string,
+  businessId: string,
+  options: {
+    salesLedgerAccountId?: string;
+    purchaseLedgerAccountId?: string;
+    salesTaxRateId?: string;
+    purchaseTaxRateId?: string;
+  } = {},
+): Promise<StockItemDefaults> {
+  if (options.salesLedgerAccountId && options.purchaseLedgerAccountId) {
+    return {
+      sales_ledger_account_id: options.salesLedgerAccountId,
+      purchase_ledger_account_id: options.purchaseLedgerAccountId,
+      sales_tax_rate_id: options.salesTaxRateId,
+      purchase_tax_rate_id: options.purchaseTaxRateId,
+    };
+  }
+
+  const existing = await listStockItems(accessToken, businessId);
+  const template =
+    existing.find((item) => item.salesLedgerAccountId && item.purchaseLedgerAccountId) ?? null;
+
+  if (template?.salesLedgerAccountId && template.purchaseLedgerAccountId) {
+    return {
+      sales_ledger_account_id: options.salesLedgerAccountId ?? template.salesLedgerAccountId,
+      purchase_ledger_account_id:
+        options.purchaseLedgerAccountId ?? template.purchaseLedgerAccountId,
+      sales_tax_rate_id: options.salesTaxRateId ?? template.salesTaxRateId,
+      purchase_tax_rate_id: options.purchaseTaxRateId ?? template.purchaseTaxRateId,
+    };
+  }
+
+  const [ledgers, taxRates] = await Promise.all([
+    listLedgerAccounts(accessToken, businessId),
+    listTaxRates(accessToken, businessId),
+  ]);
+  const sales = options.salesLedgerAccountId
+    ? { id: options.salesLedgerAccountId }
+    : pickLedgerAccount(ledgers, 'sales');
+  const purchase = options.purchaseLedgerAccountId
+    ? { id: options.purchaseLedgerAccountId }
+    : pickLedgerAccount(ledgers, 'purchase');
+  const tax = pickTaxRate(taxRates);
+
+  if (!sales?.id || !purchase?.id) {
+    throw new SageApiError(
+      'Could not resolve sales/purchase ledger accounts required to create a Sage stock item. Create one stock item in Sage first, then retry.',
+      422,
+    );
+  }
+
+  return {
+    sales_ledger_account_id: sales.id,
+    purchase_ledger_account_id: purchase.id,
+    sales_tax_rate_id: options.salesTaxRateId ?? tax?.id,
+    purchase_tax_rate_id: options.purchaseTaxRateId ?? tax?.id,
+  };
+}
+
 export async function createStockItem(
   accessToken: string,
   businessId: string,
@@ -133,8 +253,19 @@ export async function createStockItem(
     reorder_quantity?: number;
     supplier_part_number?: string;
     usual_supplier_id?: string;
+    sales_ledger_account_id?: string;
+    purchase_ledger_account_id?: string;
+    sales_tax_rate_id?: string;
+    purchase_tax_rate_id?: string;
   },
 ) {
+  const defaults = await resolveStockItemDefaults(accessToken, businessId, {
+    salesLedgerAccountId: payload.sales_ledger_account_id,
+    purchaseLedgerAccountId: payload.purchase_ledger_account_id,
+    salesTaxRateId: payload.sales_tax_rate_id,
+    purchaseTaxRateId: payload.purchase_tax_rate_id,
+  });
+
   const body = {
     stock_item: {
       item_code: payload.item_code,
@@ -144,7 +275,15 @@ export async function createStockItem(
       reorder_level: payload.reorder_level ?? 0,
       reorder_quantity: payload.reorder_quantity ?? 0,
       supplier_part_number: payload.supplier_part_number ?? '',
-      ...(payload.usual_supplier_id ? { usual_supplier: { id: payload.usual_supplier_id } } : {}),
+      sales_ledger_account_id: defaults.sales_ledger_account_id,
+      purchase_ledger_account_id: defaults.purchase_ledger_account_id,
+      ...(defaults.sales_tax_rate_id ? { sales_tax_rate_id: defaults.sales_tax_rate_id } : {}),
+      ...(defaults.purchase_tax_rate_id
+        ? { purchase_tax_rate_id: defaults.purchase_tax_rate_id }
+        : {}),
+      ...(payload.usual_supplier_id
+        ? { usual_supplier: { id: payload.usual_supplier_id } }
+        : {}),
     },
   };
   const created = (await sageFetch('/stock_items', accessToken, {
@@ -168,6 +307,10 @@ export async function updateStockItem(
     supplier_part_number: string;
   }>,
 ) {
+  if (!id || id === 'undefined' || id === 'null') {
+    throw new SageApiError('Stock item id is required for update', 400);
+  }
+
   const body = { stock_item: updates };
   const updated = (await sageFetch(`/stock_items/${id}`, accessToken, {
     method: 'PUT',
@@ -192,8 +335,8 @@ export async function listSuppliers(accessToken: string, businessId: string) {
 export async function listLedgerAccounts(accessToken: string, businessId: string) {
   const data = (await sageFetch('/ledger_accounts', accessToken, {
     businessId,
-    query: { items_per_page: '100' },
-  })) as { $items?: Array<{ id: string; displayed_as?: string; nominal_code?: string }> };
+    query: { items_per_page: '200' },
+  })) as { $items?: LedgerLike[] };
   return data.$items ?? [];
 }
 
@@ -201,7 +344,7 @@ export async function listTaxRates(accessToken: string, businessId: string) {
   const data = (await sageFetch('/tax_rates', accessToken, {
     businessId,
     query: { items_per_page: '50' },
-  })) as { $items?: Array<{ id: string; displayed_as?: string }> };
+  })) as { $items?: TaxRateLike[] };
   return data.$items ?? [];
 }
 

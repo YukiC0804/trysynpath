@@ -70,6 +70,69 @@ function parseBody(req: VercelRequest): Record<string, unknown> {
   return req.body as Record<string, unknown>;
 }
 
+async function applyStockItemUpdate(
+  req: VercelRequest,
+  res: VercelResponse,
+  accessToken: string,
+  businessId: string,
+  id: string,
+  body: Record<string, unknown>,
+) {
+  const before = await getStockItem(accessToken, businessId, id);
+  const updates: Record<string, string | number> = {};
+  if (body.description != null) updates.description = String(body.description);
+  if (body.cost_price != null || body.costPrice != null) {
+    updates.cost_price = Number(body.cost_price ?? body.costPrice);
+  }
+  if (body.sales_price != null || body.salesPrice != null) {
+    updates.sales_price = Number(body.sales_price ?? body.salesPrice);
+  }
+  if (body.reorder_level != null || body.reorderLevel != null) {
+    updates.reorder_level = Number(body.reorder_level ?? body.reorderLevel);
+  }
+  if (body.reorder_quantity != null || body.reorderQuantity != null) {
+    updates.reorder_quantity = Number(body.reorder_quantity ?? body.reorderQuantity);
+  }
+  if (body.supplier_part_number != null || body.supplierPartNumber != null) {
+    updates.supplier_part_number = String(body.supplier_part_number ?? body.supplierPartNumber);
+  }
+  if (Object.keys(updates).length === 0) {
+    return json(res, 400, { error: 'No updatable fields provided' });
+  }
+  await updateStockItem(accessToken, businessId, id, updates);
+  const after = await getStockItem(accessToken, businessId, id);
+  const verification = {
+    description: {
+      expected: updates.description ?? before.description,
+      actual: after.description,
+      ok: String(updates.description ?? before.description) === String(after.description),
+    },
+    costPrice: {
+      expected: Number(updates.cost_price ?? before.costPrice),
+      actual: after.costPrice,
+      ok: Number(updates.cost_price ?? before.costPrice) === Number(after.costPrice),
+    },
+    reorderLevel: {
+      expected: Number(updates.reorder_level ?? before.reorderLevel),
+      actual: after.reorderLevel,
+      ok: Number(updates.reorder_level ?? before.reorderLevel) === Number(after.reorderLevel),
+    },
+  };
+  const reorderRequired = after.quantityInStock < after.reorderLevel;
+  appendAudit(req, res, {
+    action: 'sage.stock_items.update',
+    detail: `Updated stock item ${after.sku || id}`,
+    status: 'success',
+  });
+  return json(res, 200, {
+    before,
+    after,
+    verification,
+    reorderRequired,
+    message: reorderRequired ? 'Reorder Required' : 'Updated and verified in Sage',
+  });
+}
+
 async function requireAuth(req: VercelRequest, res: VercelResponse) {
   const config = sageConfigStatus();
   if (!config.configured) {
@@ -342,6 +405,26 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
             : body.usualSupplierId
               ? String(body.usualSupplierId)
               : undefined,
+          sales_ledger_account_id: body.sales_ledger_account_id
+            ? String(body.sales_ledger_account_id)
+            : body.salesLedgerAccountId
+              ? String(body.salesLedgerAccountId)
+              : undefined,
+          purchase_ledger_account_id: body.purchase_ledger_account_id
+            ? String(body.purchase_ledger_account_id)
+            : body.purchaseLedgerAccountId
+              ? String(body.purchaseLedgerAccountId)
+              : undefined,
+          sales_tax_rate_id: body.sales_tax_rate_id
+            ? String(body.sales_tax_rate_id)
+            : body.salesTaxRateId
+              ? String(body.salesTaxRateId)
+              : undefined,
+          purchase_tax_rate_id: body.purchase_tax_rate_id
+            ? String(body.purchase_tax_rate_id)
+            : body.purchaseTaxRateId
+              ? String(body.purchaseTaxRateId)
+              : undefined,
         });
         const verified = await findStockItemBySku(auth.accessToken, businessId, sku);
         const matches =
@@ -363,66 +446,23 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
         });
       }
 
-      if (path.length === 2 && path[1]) {
-        const id = path[1];
+      // Prefer body-based update so deep path segments cannot 404 on catch-all routing.
+      if (method === 'POST' && path[1] === 'update') {
+        const body = parseBody(req);
+        const id = String(body.id ?? '').trim();
+        if (!id) return json(res, 400, { error: 'id is required' });
+        return applyStockItemUpdate(req, res, auth.accessToken, businessId, id, body);
+      }
+
+      if (path.length === 2 && path[1] && path[1] !== 'update') {
+        const id = decodeURIComponent(path[1]);
         if (method === 'GET') {
           const item = await getStockItem(auth.accessToken, businessId, id);
           return json(res, 200, { item });
         }
-        if (method === 'PUT') {
+        if (method === 'PUT' || method === 'POST') {
           const body = parseBody(req);
-          const before = await getStockItem(auth.accessToken, businessId, id);
-          const updates: Record<string, string | number> = {};
-          if (body.description != null) updates.description = String(body.description);
-          if (body.cost_price != null || body.costPrice != null) {
-            updates.cost_price = Number(body.cost_price ?? body.costPrice);
-          }
-          if (body.sales_price != null || body.salesPrice != null) {
-            updates.sales_price = Number(body.sales_price ?? body.salesPrice);
-          }
-          if (body.reorder_level != null || body.reorderLevel != null) {
-            updates.reorder_level = Number(body.reorder_level ?? body.reorderLevel);
-          }
-          if (body.reorder_quantity != null || body.reorderQuantity != null) {
-            updates.reorder_quantity = Number(body.reorder_quantity ?? body.reorderQuantity);
-          }
-          if (body.supplier_part_number != null || body.supplierPartNumber != null) {
-            updates.supplier_part_number = String(
-              body.supplier_part_number ?? body.supplierPartNumber,
-            );
-          }
-          await updateStockItem(auth.accessToken, businessId, id, updates);
-          const after = await getStockItem(auth.accessToken, businessId, id);
-          const verification = {
-            description: {
-              expected: updates.description ?? before.description,
-              actual: after.description,
-              ok: String(updates.description ?? before.description) === String(after.description),
-            },
-            costPrice: {
-              expected: Number(updates.cost_price ?? before.costPrice),
-              actual: after.costPrice,
-              ok: Number(updates.cost_price ?? before.costPrice) === Number(after.costPrice),
-            },
-            reorderLevel: {
-              expected: Number(updates.reorder_level ?? before.reorderLevel),
-              actual: after.reorderLevel,
-              ok: Number(updates.reorder_level ?? before.reorderLevel) === Number(after.reorderLevel),
-            },
-          };
-          const reorderRequired = after.quantityInStock < after.reorderLevel;
-          appendAudit(req, res, {
-            action: 'sage.stock_items.update',
-            detail: `Updated stock item ${after.sku || id}`,
-            status: 'success',
-          });
-          return json(res, 200, {
-            before,
-            after,
-            verification,
-            reorderRequired,
-            message: reorderRequired ? 'Reorder Required' : 'Updated and verified in Sage',
-          });
+          return applyStockItemUpdate(req, res, auth.accessToken, businessId, id, body);
         }
       }
     }
