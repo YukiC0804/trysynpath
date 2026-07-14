@@ -11,6 +11,10 @@ export type NormalizedStockItem = {
   supplierId?: string;
   supplierPartNumber?: string;
   active?: boolean;
+  salesLedgerAccountId?: string;
+  purchaseLedgerAccountId?: string;
+  salesTaxRateId?: string;
+  purchaseTaxRateId?: string;
 };
 
 export type SageStatus = {
@@ -29,9 +33,21 @@ export type SageStatus = {
 };
 
 async function parseJson(res: Response) {
-  const data = await res.json().catch(() => ({}));
+  const text = await res.text();
+  let data: Record<string, unknown> = {};
+  if (text) {
+    try {
+      data = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      data = {};
+    }
+  }
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
+    const message =
+      (typeof data.error === 'string' && data.error) ||
+      (typeof data.message === 'string' && data.message) ||
+      `Request failed (${res.status})${text && !data.error ? `: ${text.slice(0, 180)}` : ''}`;
+    throw new Error(message);
   }
   return data;
 }
@@ -78,11 +94,12 @@ export async function createStockItem(payload: Record<string, unknown>) {
 }
 
 export async function updateStockItem(id: string, payload: Record<string, unknown>) {
-  const res = await fetch(`/api/integrations/sage/stock-items/${encodeURIComponent(id)}`, {
-    method: 'PUT',
+  // Body-based update avoids deep catch-all path 404s on some Vercel deployments.
+  const res = await fetch('/api/integrations/sage/stock-items/update', {
+    method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ id, ...payload }),
   });
   return parseJson(res) as Promise<{
     before: NormalizedStockItem;
@@ -100,7 +117,9 @@ export async function fetchCapabilities() {
 
 export async function fetchAuditLog() {
   const res = await fetch('/api/integrations/sage/audit', { credentials: 'include' });
-  return parseJson(res) as Promise<{ entries: Array<{ id: string; at: string; action: string; detail: string; status: string }> }>;
+  return parseJson(res) as Promise<{
+    entries: Array<{ id: string; at: string; action: string; detail: string; status: string }>;
+  }>;
 }
 
 export async function fetchBusinesses() {

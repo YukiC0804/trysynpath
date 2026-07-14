@@ -22,6 +22,34 @@ describe('Sage capability discovery', () => {
   });
 });
 
+describe('ledger account picker', () => {
+  it('prefers sales products and stock accounts when resolving defaults', async () => {
+    const { pickLedgerAccount, pickTaxRate } = await import('../api/_lib/sage/client');
+    const sales = pickLedgerAccount(
+      [
+        { id: 'a', displayed_as: 'Bank Current (1200)', nominal_code: '1200' },
+        { id: 'b', displayed_as: 'Sales - Products (4000)', nominal_code: '4000' },
+        { id: 'c', displayed_as: 'Other Income (4900)', nominal_code: '4900' },
+      ],
+      'sales',
+    );
+    const purchase = pickLedgerAccount(
+      [
+        { id: 'd', displayed_as: 'Office Costs (7500)', nominal_code: '7500' },
+        { id: 'e', displayed_as: 'Stock (1000)', nominal_code: '1000' },
+      ],
+      'purchase',
+    );
+    const tax = pickTaxRate([
+      { id: 'GB_ZERO', displayed_as: 'Zero rated' },
+      { id: 'GB_STANDARD', displayed_as: 'Standard 20.00%' },
+    ]);
+    expect(sales?.id).toBe('b');
+    expect(purchase?.id).toBe('e');
+    expect(tax?.id).toBe('GB_STANDARD');
+  });
+});
+
 describe('duplicate SKU guard logic', () => {
   it('treats matching SKUs as duplicates regardless of case', () => {
     const existing = [{ sku: 'ACR-WHT-3MM-48X96' }];
