@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { getEnv } from './http';
+import { getEnv } from './config';
 
 const ALGO = 'aes-256-gcm';
 
@@ -8,7 +8,6 @@ function getKey(): Buffer {
   if (!raw) {
     throw new Error('TOKEN_ENCRYPTION_KEY is not configured');
   }
-  // Derive a 32-byte key from the provided secret without logging the secret.
   return crypto.createHash('sha256').update(raw).digest();
 }
 

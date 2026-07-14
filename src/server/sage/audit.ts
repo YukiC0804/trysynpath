@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { decryptJson, encryptJson } from './crypto';
+import { decryptJson, encryptJson } from './tokenStore';
 import { generateRandomToken, parseCookies, setCookie } from './http';
 import { COOKIE_AUDIT, type AuditEntry } from './types';
 
@@ -31,7 +31,7 @@ export function appendAudit(
   try {
     setCookie(res, COOKIE_AUDIT, encryptJson(next), { maxAge: 60 * 60 * 24 * 14 });
   } catch {
-    // If encryption key is missing in preview, skip durable audit cookie.
+    // Skip durable audit cookie if encryption key is unavailable.
   }
   return next;
 }

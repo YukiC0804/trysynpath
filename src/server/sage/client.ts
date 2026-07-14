@@ -1,4 +1,4 @@
-import { getEnv } from './http';
+import { getEnv } from './config';
 import type { SageBusiness, SageStockItem } from './types';
 
 export class SageApiError extends Error {
@@ -46,7 +46,6 @@ async function sageFetch(
     } catch {
       detail = '';
     }
-    // Never include tokens; truncate response detail.
     throw new SageApiError(
       `Sage API ${options.method ?? 'GET'} ${path} failed (${response.status})${detail ? `: ${detail.slice(0, 240)}` : ''}`,
       response.status,
@@ -91,14 +90,17 @@ export function pickAccountingBusiness(businesses: SageBusiness[]): SageBusiness
   return (
     businesses.find((b) => {
       const type = typeof b.business_type === 'string' ? b.business_type : b.business_type?.id;
-      return String(type ?? '').toLowerCase().includes('sbc_accounting') || String(type ?? '').toLowerCase() === 'accounting';
+      return (
+        String(type ?? '').toLowerCase().includes('sbc_accounting') ||
+        String(type ?? '').toLowerCase() === 'accounting'
+      );
     }) ??
     businesses.find((b) => String(b.subscription ?? b.product ?? '').toLowerCase().includes('accounting')) ??
     businesses[0]
   );
 }
 
-export async function listStockItems(accessToken: string, businessId: string): Promise<ReturnType<typeof normalizeStockItem>[]> {
+export async function listStockItems(accessToken: string, businessId: string) {
   const data = (await sageFetch('/stock_items', accessToken, {
     businessId,
     query: { items_per_page: '200', attributes: 'all' },
@@ -142,9 +144,7 @@ export async function createStockItem(
       reorder_level: payload.reorder_level ?? 0,
       reorder_quantity: payload.reorder_quantity ?? 0,
       supplier_part_number: payload.supplier_part_number ?? '',
-      ...(payload.usual_supplier_id
-        ? { usual_supplier: { id: payload.usual_supplier_id } }
-        : {}),
+      ...(payload.usual_supplier_id ? { usual_supplier: { id: payload.usual_supplier_id } } : {}),
     },
   };
   const created = (await sageFetch('/stock_items', accessToken, {
