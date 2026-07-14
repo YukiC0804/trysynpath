@@ -7,12 +7,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"],
-    "resolveJsonModule": true,
-    "baseUrl": "../..",
-    "paths": {
-      "@/*": ["./*"]
-    }
+    "types": ["node"]
   },
-  "include": ["./**/*.ts", "../../src/server/sage/**/*.ts"]
+  "include": ["./**/*.ts"]
 }

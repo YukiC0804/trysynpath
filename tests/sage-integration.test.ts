@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractPricingFromEmail, MOCK_GMAIL_EMAIL } from '../src/data/sageIntegrationData';
-import { discoverCapabilities } from '../src/server/sage/client';
+import { discoverCapabilities } from '../api/_lib/sage/client';
 
 describe('Gmail mock extraction', () => {
   it('extracts acrylic SKUs and new costs from the demo email body', () => {
