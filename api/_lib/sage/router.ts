@@ -28,7 +28,16 @@ import { clearCookie, json, missingConfigResponse, sageConfigStatus } from './ht
 import { COOKIE_OAUTH_STATE, SAGE_REQUIRED_ENV } from './types';
 
 function segments(req: VercelRequest): string[] {
-  // Prefer catch-all query param when Vercel provides it.
+  // Preferred: path remainder injected by vercel.json rewrite.
+  const rewritten = req.query.__sagePath;
+  if (Array.isArray(rewritten) && rewritten.length > 0) {
+    return rewritten.flatMap((part) => String(part).split('/')).filter(Boolean);
+  }
+  if (typeof rewritten === 'string' && rewritten.length > 0) {
+    return rewritten.split('/').filter(Boolean);
+  }
+
+  // Legacy catch-all query param (if ever invoked as a directory route).
   const raw = req.query.path;
   if (Array.isArray(raw) && raw.length > 0) {
     return raw.flatMap((part) => String(part).split('/')).filter(Boolean);
@@ -37,8 +46,7 @@ function segments(req: VercelRequest): string[] {
     return raw.split('/').filter(Boolean);
   }
 
-  // Fallback: parse from the request URL. Some Vercel Node runtimes leave
-  // req.query.path empty for nested catch-all files even when the URL has segments.
+  // Fallback: parse from the request URL.
   const pathname = (req.url ?? '').split('?')[0] ?? '';
   const markers = ['/api/integrations/sage/', '/api/sage/'];
   for (const marker of markers) {
@@ -52,7 +60,6 @@ function segments(req: VercelRequest): string[] {
     }
   }
 
-  // Exact /api/integrations/sage or /api/sage with no trailing segment.
   if (/\/api\/(integrations\/)?sage\/?$/.test(pathname)) {
     return [];
   }
