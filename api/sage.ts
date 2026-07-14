@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleSageRequest } from '../_lib/sage/router';
-import { errorMessage } from '../_lib/sage/config';
+import { handleSageRequest } from './_lib/sage/router';
+import { errorMessage } from './_lib/sage/config';
 
 /**
  * Single Hobby-plan-safe Vercel Function.
