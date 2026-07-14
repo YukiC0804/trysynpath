@@ -32,6 +32,12 @@ export function WorkspaceTopBar({ onBackToHome, theme, onThemeChange }: Workspac
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <a
+          href="/sage-integration"
+          className="hidden rounded-lg border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-300 transition-colors hover:border-violet-500/50 sm:inline-flex"
+        >
+          Sage Integration
+        </a>
         <ThemeToggle theme={theme} onChange={onThemeChange} />
         <span className="hidden items-center gap-1.5 text-xs text-emerald-400 sm:flex">
           <Circle className="h-2 w-2 fill-emerald-400 text-emerald-400" />

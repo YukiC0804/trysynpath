@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { OperationsDemoPage } from './pages/OperationsDemoPage';
+import { SageIntegrationPage } from './pages/SageIntegrationPage';
 
 export default function App() {
   return (
@@ -7,6 +8,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<OperationsDemoPage />} />
         <Route path="/demo" element={<OperationsDemoPage />} />
+        <Route path="/sage-integration" element={<SageIntegrationPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
