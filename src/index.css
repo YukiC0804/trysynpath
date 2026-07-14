@@ -123,6 +123,12 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #f4f4f5 !important;
 }
 
+.demo-workspace[data-theme='light'] .bg-black\/70,
+.demo-workspace[data-theme='light'] .bg-black\/80,
+.demo-workspace[data-theme='light'] .bg-black\/90 {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
 .demo-workspace[data-theme='light'] .bg-violet-500\/5 {
   background-color: #f5f3ff !important;
 }
