@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { extractPricingFromEmail, MOCK_GMAIL_EMAIL } from '../src/data/sageIntegrationData';
 import { discoverCapabilities } from '../api/_lib/sage/client';
-import { SAGE_DEMO_BASELINE } from '../api/_lib/sage/demoBaseline';
+import {
+  SAGE_DEMO_BASELINE,
+  SAGE_DEMO_CREATED_SKUS,
+} from '../api/_lib/sage/demoBaseline';
 
 describe('Gmail mock extraction', () => {
   it('extracts acrylic SKUs and new costs from the demo email body', () => {
@@ -18,14 +21,17 @@ describe('Gmail mock extraction', () => {
 });
 
 describe('Sage demo reset baseline', () => {
-  it('covers every SKU changed or created by the demo workflows', () => {
+  it('restores original SKUs and removes the Workflow 1-created SKU', () => {
     expect(SAGE_DEMO_BASELINE.map((item) => item.sku)).toEqual(
       expect.arrayContaining([
         'ACR-MIR-SLV-3MM',
         'ACR-CLR-3MM-48X96',
         'ACR-CLR-6MM-48X96',
-        'ACR-WHT-3MM-48X96',
       ]),
+    );
+    expect(SAGE_DEMO_CREATED_SKUS).toContain('ACR-WHT-3MM-48X96');
+    expect(SAGE_DEMO_BASELINE.map((item) => item.sku)).not.toContain(
+      'ACR-WHT-3MM-48X96',
     );
     expect(SAGE_DEMO_BASELINE.find((item) => item.sku === 'ACR-MIR-SLV-3MM')).toMatchObject({
       description: 'Silver Mirror Acrylic Sheet 3mm',
@@ -40,6 +46,7 @@ describe('Sage capability discovery', () => {
     expect(caps.purchaseOrders.available).toBe(false);
     expect(caps.stockItems.create).toBe(true);
     expect(caps.stockItems.update).toBe(true);
+    expect(caps.stockItems.delete).toBe(true);
   });
 });
 

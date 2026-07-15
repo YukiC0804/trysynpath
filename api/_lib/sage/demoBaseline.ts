@@ -9,7 +9,7 @@ export type DemoStockBaseline = {
 };
 
 /**
- * Original values for every stock item changed by the Sage demo workflows.
+ * Original values for the stock items that existed before the demo.
  * Reset deliberately ignores non-demo Sage products.
  */
 export const SAGE_DEMO_BASELINE: readonly DemoStockBaseline[] = [
@@ -41,13 +41,7 @@ export const SAGE_DEMO_BASELINE: readonly DemoStockBaseline[] = [
     salesPrice: 0,
     reorderLevel: 40,
   },
-  {
-    sku: 'ACR-WHT-3MM-48X96',
-    description: 'White Acrylic Sheet 3mm 48 × 96',
-    costPrice: 51.4,
-    salesPrice: 0,
-    reorderLevel: 30,
-    reorderQuantity: 50,
-    supplierPartNumber: 'PAC-WHT-3MM-4896',
-  },
 ] as const;
+
+/** Stock items created by Workflow 1 and removed when resetting the demo. */
+export const SAGE_DEMO_CREATED_SKUS = ['ACR-WHT-3MM-48X96'] as const;

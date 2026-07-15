@@ -11,6 +11,7 @@ import {
 } from './auth';
 import {
   createStockItem,
+  deleteStockItem,
   discoverCapabilities,
   findStockItemBySku,
   getStockItem,
@@ -23,7 +24,7 @@ import {
   SageApiError,
   updateStockItem,
 } from './client';
-import { SAGE_DEMO_BASELINE } from './demoBaseline';
+import { SAGE_DEMO_BASELINE, SAGE_DEMO_CREATED_SKUS } from './demoBaseline';
 import { envPresence, errorMessage, getEnv } from './config';
 import { clearCookie, json, missingConfigResponse, sageConfigStatus } from './http';
 import { COOKIE_OAUTH_STATE, SAGE_REQUIRED_ENV } from './types';
@@ -393,6 +394,7 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
           const items = await listStockItems(auth.accessToken, businessId);
           const bySku = new Map(items.map((item) => [item.sku.toUpperCase(), item]));
           const restored: string[] = [];
+          const deleted: string[] = [];
           const missing: string[] = [];
 
           for (const baseline of SAGE_DEMO_BASELINE) {
@@ -416,38 +418,51 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
             restored.push(baseline.sku);
           }
 
+          for (const sku of SAGE_DEMO_CREATED_SKUS) {
+            const item = bySku.get(sku.toUpperCase());
+            if (!item) continue;
+            await deleteStockItem(auth.accessToken, businessId, item.id);
+            deleted.push(sku);
+          }
+
           const verifiedItems = await listStockItems(auth.accessToken, businessId);
           const verifiedBySku = new Map(
             verifiedItems.map((item) => [item.sku.toUpperCase(), item]),
           );
-          const verified = restored.length > 0 && restored.every((sku) => {
-            const baseline = SAGE_DEMO_BASELINE.find((row) => row.sku === sku)!;
-            const item = verifiedBySku.get(sku.toUpperCase());
-            return (
-              item?.description === baseline.description &&
-              Number(item.costPrice) === baseline.costPrice &&
-              Number(item.salesPrice) === baseline.salesPrice &&
-              Number(item.reorderLevel) === baseline.reorderLevel &&
-              (baseline.reorderQuantity == null ||
-                Number(item.reorderQuantity) === baseline.reorderQuantity) &&
-              (baseline.supplierPartNumber == null ||
-                item.supplierPartNumber === baseline.supplierPartNumber)
+          const verified =
+            restored.length > 0 &&
+            restored.every((sku) => {
+              const baseline = SAGE_DEMO_BASELINE.find((row) => row.sku === sku)!;
+              const item = verifiedBySku.get(sku.toUpperCase());
+              return (
+                item?.description === baseline.description &&
+                Number(item.costPrice) === baseline.costPrice &&
+                Number(item.salesPrice) === baseline.salesPrice &&
+                Number(item.reorderLevel) === baseline.reorderLevel &&
+                (baseline.reorderQuantity == null ||
+                  Number(item.reorderQuantity) === baseline.reorderQuantity) &&
+                (baseline.supplierPartNumber == null ||
+                  item.supplierPartNumber === baseline.supplierPartNumber)
+              );
+            }) &&
+            SAGE_DEMO_CREATED_SKUS.every(
+              (sku) => !verifiedBySku.has(sku.toUpperCase()),
             );
-          });
 
           appendAudit(req, res, {
             action: 'sage.demo.reset',
-            detail: `Restored ${restored.length} demo stock item(s)${
+            detail: `Restored ${restored.length} and deleted ${deleted.length} demo stock item(s)${
               missing.length ? `; ${missing.length} missing` : ''
             }`,
             status: verified ? 'success' : 'warning',
           });
           return json(res, 200, {
             restored,
+            deleted,
             missing,
             verified,
             message: verified
-              ? `Restored ${restored.length} Sage demo item(s) to the original values`
+              ? `Restored ${restored.length} original item(s) and removed ${deleted.length} Workflow 1 item(s)`
               : 'Demo reset completed, but read-back verification found a mismatch',
           });
         }
