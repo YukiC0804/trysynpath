@@ -2,10 +2,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { appendAudit, readAudit } from './audit';
 import {
   beginOAuth,
+  clearForceReauth,
   clearSession,
   exchangeCodeForTokens,
   getValidAccessToken,
+  markForceReauth,
   readSession,
+  revokeSageToken,
+  shouldForceLogin,
   validateOAuthState,
   writeSession,
 } from './auth';
@@ -230,12 +234,50 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
         });
         return missingConfigResponse(res, config.missing);
       }
-      const { url } = beginOAuth(res);
+      // Drop any leftover app session so Connect always starts a fresh OAuth round-trip.
+      clearSession(res);
+      const forceLogin = shouldForceLogin(req);
+      if (forceLogin) clearForceReauth(res);
+      const { url } = beginOAuth(res, { forceLogin: true });
       appendAudit(req, res, {
         action: 'sage.connect',
-        detail: 'Redirecting to Sage OAuth authorization',
+        detail: forceLogin
+          ? 'Post-disconnect reauth: Sage logout bounce then OAuth with forced login'
+          : 'Redirecting to Sage OAuth with forced login',
         status: 'info',
       });
+
+      // After disconnect, clear Sage browser SSO before authorize so Connect cannot
+      // silently re-attach the previous account.
+      if (forceLogin) {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reconnecting Sage…</title>
+  <style>
+    body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e5e5;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+    p{opacity:.8;font-size:14px}
+  </style>
+</head>
+<body>
+  <p>Signing out of Sage, then opening the login page…</p>
+  <iframe src="https://www.sageone.com/logout" title="Sage logout" style="display:none"></iframe>
+  <iframe src="https://app.sageone.com/logout" title="Sage app logout" style="display:none"></iframe>
+  <script>
+    setTimeout(function () {
+      window.location.replace(${JSON.stringify(url)});
+    }, 1200);
+  </script>
+</body>
+</html>`);
+        return;
+      }
+
       res.writeHead(302, { Location: url });
       return res.end();
     }
@@ -294,6 +336,7 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
           country: business?.country,
         });
         clearCookie(res, COOKIE_OAUTH_STATE);
+        clearForceReauth(res);
         appendAudit(req, res, {
           action: 'sage.callback',
           detail: `Sage connected${business ? ` · ${business.name ?? business.displayed_as}` : ''}`,
@@ -303,6 +346,7 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
         return res.end();
       } catch (error) {
         clearSession(res);
+        markForceReauth(res);
         appendAudit(req, res, {
           action: 'sage.callback',
           detail: errorMessage(error),
@@ -316,13 +360,23 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
     }
 
     if ((method === 'POST' || method === 'GET') && path[0] === 'disconnect') {
+      const session = readSession(req);
+      let revoked = false;
+      if (session?.tokens) {
+        const accessRevoked = await revokeSageToken(session.tokens.accessToken, session.country);
+        const refreshRevoked = await revokeSageToken(session.tokens.refreshToken, session.country);
+        revoked = accessRevoked || refreshRevoked;
+      }
       clearSession(res);
+      markForceReauth(res);
       appendAudit(req, res, {
         action: 'sage.disconnect',
-        detail: 'Sage session cleared',
+        detail: revoked
+          ? 'Sage tokens revoked and session cleared — next Connect requires login'
+          : 'Sage session cleared — next Connect requires login',
         status: 'info',
       });
-      return json(res, 200, { disconnected: true });
+      return json(res, 200, { disconnected: true, requireReauth: true, revoked });
     }
 
     if (method === 'GET' && path[0] === 'businesses') {

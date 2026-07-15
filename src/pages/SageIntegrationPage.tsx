@@ -268,14 +268,24 @@ export function SageIntegrationPage() {
           {status?.connected ? (
             <button
               type="button"
-              onClick={() => void disconnectSage().then(refresh)}
+              onClick={() =>
+                void disconnectSage()
+                  .then(() => {
+                    setItems([]);
+                    setNotice(null);
+                    setCreateResult(null);
+                    setUpdateResult(null);
+                    setVerification(null);
+                  })
+                  .then(refresh)
+              }
               className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:text-white"
             >
               Disconnect Sage
             </button>
           ) : (
             <a
-              href="/api/integrations/sage/connect"
+              href="/api/integrations/sage/connect?force=1"
               className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
             >
               Connect Sage
