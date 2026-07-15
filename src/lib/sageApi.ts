@@ -121,7 +121,32 @@ export async function resetSageDemoData() {
   return parseJson(res) as Promise<{
     restored: string[];
     deleted: string[];
+    deletedInvoices: string[];
     missing: string[];
+    verified: boolean;
+    message: string;
+  }>;
+}
+
+export type SagePurchaseInvoice = {
+  id: string;
+  reference: string;
+  vendorReference: string;
+  displayedAs: string;
+  totalAmount: number;
+  status: string;
+};
+
+export async function createSagePurchaseInvoice() {
+  const res = await fetch('/api/integrations/sage/purchase-invoices', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'create-demo' }),
+  });
+  return parseJson(res) as Promise<{
+    invoice: SagePurchaseInvoice;
+    created: boolean;
     verified: boolean;
     message: string;
   }>;

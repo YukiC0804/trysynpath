@@ -337,12 +337,21 @@ export async function deleteStockItem(
 export async function listSuppliers(accessToken: string, businessId: string) {
   const data = (await sageFetch('/contacts', accessToken, {
     businessId,
-    query: { contact_type: 'VENDOR', items_per_page: '200' },
-  })) as { $items?: Array<{ id: string; name?: string; displayed_as?: string; reference?: string }> };
+    query: { contact_type: 'VENDOR', items_per_page: '200', attributes: 'all' },
+  })) as {
+    $items?: Array<{
+      id: string;
+      name?: string;
+      displayed_as?: string;
+      reference?: string;
+      main_address?: Record<string, unknown>;
+    }>;
+  };
   return (data.$items ?? []).map((c) => ({
     id: c.id,
     name: c.name ?? c.displayed_as ?? '',
     reference: c.reference ?? '',
+    mainAddress: c.main_address,
   }));
 }
 
@@ -350,6 +359,14 @@ export async function listLedgerAccounts(accessToken: string, businessId: string
   const data = (await sageFetch('/ledger_accounts', accessToken, {
     businessId,
     query: { items_per_page: '200' },
+  })) as { $items?: LedgerLike[] };
+  return data.$items ?? [];
+}
+
+export async function listPurchaseLedgerAccounts(accessToken: string, businessId: string) {
+  const data = (await sageFetch('/ledger_accounts', accessToken, {
+    businessId,
+    query: { items_per_page: '200', visible_in: 'purchases' },
   })) as { $items?: LedgerLike[] };
   return data.$items ?? [];
 }
@@ -362,9 +379,66 @@ export async function listTaxRates(accessToken: string, businessId: string) {
   return data.$items ?? [];
 }
 
+export type NormalizedPurchaseInvoice = {
+  id: string;
+  reference: string;
+  vendorReference: string;
+  displayedAs: string;
+  totalAmount: number;
+  status: string;
+};
+
+function normalizePurchaseInvoice(invoice: Record<string, unknown>): NormalizedPurchaseInvoice {
+  const status = invoice.status as { displayed_as?: string; id?: string } | undefined;
+  return {
+    id: String(invoice.id ?? ''),
+    reference: String(invoice.reference ?? ''),
+    vendorReference: String(invoice.vendor_reference ?? ''),
+    displayedAs: String(invoice.displayed_as ?? invoice.reference ?? ''),
+    totalAmount: Number(invoice.total_amount ?? 0),
+    status: status?.displayed_as ?? status?.id ?? '',
+  };
+}
+
+export async function listPurchaseInvoices(accessToken: string, businessId: string) {
+  const data = (await sageFetch('/purchase_invoices', accessToken, {
+    businessId,
+    query: { items_per_page: '200', attributes: 'all' },
+  })) as { $items?: Array<Record<string, unknown>> };
+  return (data.$items ?? []).map(normalizePurchaseInvoice);
+}
+
+export async function createPurchaseInvoice(
+  accessToken: string,
+  businessId: string,
+  purchaseInvoice: Record<string, unknown>,
+) {
+  const created = (await sageFetch('/purchase_invoices', accessToken, {
+    method: 'POST',
+    businessId,
+    body: { purchase_invoice: purchaseInvoice },
+  })) as Record<string, unknown>;
+  return normalizePurchaseInvoice(created);
+}
+
+export async function deletePurchaseInvoice(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  if (!id || id === 'undefined' || id === 'null') {
+    throw new SageApiError('Purchase invoice id is required for delete', 400);
+  }
+  await sageFetch(`/purchase_invoices/${id}`, accessToken, {
+    method: 'DELETE',
+    businessId,
+  });
+}
+
 export function discoverCapabilities() {
   return {
     stockItems: { list: true, get: true, create: true, update: true, delete: true },
+    purchaseInvoices: { list: true, create: true, delete: true },
     purchaseOrders: {
       available: false,
       reason:

@@ -4,6 +4,7 @@ import { discoverCapabilities } from '../api/_lib/sage/client';
 import {
   SAGE_DEMO_BASELINE,
   SAGE_DEMO_CREATED_SKUS,
+  SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
 } from '../api/_lib/sage/demoBaseline';
 
 describe('Gmail mock extraction', () => {
@@ -37,6 +38,7 @@ describe('Sage demo reset baseline', () => {
       description: 'Silver Mirror Acrylic Sheet 3mm',
       reorderLevel: 10,
     });
+    expect(SAGE_DEMO_PURCHASE_INVOICE_REFERENCE).toBe('SYN-PO-2026-0714-001');
   });
 });
 
@@ -47,6 +49,8 @@ describe('Sage capability discovery', () => {
     expect(caps.stockItems.create).toBe(true);
     expect(caps.stockItems.update).toBe(true);
     expect(caps.stockItems.delete).toBe(true);
+    expect(caps.purchaseInvoices.create).toBe(true);
+    expect(caps.purchaseInvoices.delete).toBe(true);
   });
 });
 

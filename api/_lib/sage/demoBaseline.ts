@@ -45,3 +45,6 @@ export const SAGE_DEMO_BASELINE: readonly DemoStockBaseline[] = [
 
 /** Stock items created by Workflow 1 and removed when resetting the demo. */
 export const SAGE_DEMO_CREATED_SKUS = ['ACR-WHT-3MM-48X96'] as const;
+
+/** Reference used to identify invoices created by Workflow 4 during reset. */
+export const SAGE_DEMO_PURCHASE_INVOICE_REFERENCE = 'SYN-PO-2026-0714-001';
