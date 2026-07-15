@@ -8,6 +8,7 @@ import {
   setCookie,
 } from './http';
 import {
+  COOKIE_FORCE_REAUTH,
   COOKIE_OAUTH_STATE,
   COOKIE_SESSION,
   type SageSession,
@@ -17,7 +18,12 @@ import {
 const AUTH_URL = 'https://www.sageone.com/oauth2/auth/central';
 const TOKEN_URL = 'https://oauth.accounting.sage.com/token';
 
-export function buildAuthorizeUrl(state: string): string {
+export type AuthorizeOptions = {
+  /** Force Sage to show the login / account selection UI instead of SSO auto-approve. */
+  forceLogin?: boolean;
+};
+
+export function buildAuthorizeUrl(state: string, options: AuthorizeOptions = {}): string {
   const clientId = getEnv('SAGE_CLIENT_ID');
   const redirectUri = getEnv('SAGE_REDIRECT_URI');
   if (!clientId || !redirectUri) {
@@ -31,13 +37,21 @@ export function buildAuthorizeUrl(state: string): string {
     state,
     filter: 'apiv3.1',
   });
+  if (options.forceLogin) {
+    // OIDC-style hints so Sage does not silently reuse the previous browser SSO session.
+    params.set('prompt', 'login');
+    params.set('max_age', '0');
+  }
   return `${AUTH_URL}?${params.toString()}`;
 }
 
-export function beginOAuth(res: VercelResponse): { url: string; state: string } {
+export function beginOAuth(
+  res: VercelResponse,
+  options: AuthorizeOptions = {},
+): { url: string; state: string } {
   const state = generateRandomToken(24);
   setCookie(res, COOKIE_OAUTH_STATE, state, { maxAge: 600 });
-  return { url: buildAuthorizeUrl(state), state };
+  return { url: buildAuthorizeUrl(state, options), state };
 }
 
 export function validateOAuthState(req: VercelRequest, state: string | undefined): boolean {
@@ -130,6 +144,33 @@ export async function refreshTokens(refreshToken: string): Promise<SageTokens> {
   };
 }
 
+/** Country-specific revoke endpoints for Sage Business Cloud Accounting. */
+export function revokeEndpointForCountry(country?: string): string {
+  const c = (country ?? 'GB').toUpperCase();
+  if (c === 'US' || c === 'CA') return 'https://oauth.na.sageone.com/revoke';
+  if (c === 'DE' || c === 'ES' || c === 'FR') return 'https://oauth.eu.sageone.com/revoke';
+  return 'https://app.sageone.com/oauth2/revoke';
+}
+
+/**
+ * Best-effort token revoke so disconnect invalidates Sage-side credentials.
+ * Returns true when Sage acknowledged the revoke (2xx).
+ */
+export async function revokeSageToken(token: string, country?: string): Promise<boolean> {
+  const clientId = getEnv('SAGE_CLIENT_ID');
+  if (!clientId || !token) return false;
+  try {
+    const response = await fetch(revokeEndpointForCountry(country), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      body: new URLSearchParams({ client_id: clientId, token }),
+    });
+    return response.ok || response.status === 204;
+  } catch {
+    return false;
+  }
+}
+
 export function readSession(req: VercelRequest): SageSession | null {
   const cookies = parseCookies(req);
   const raw = cookies[COOKIE_SESSION];
@@ -149,6 +190,28 @@ export function writeSession(res: VercelResponse, session: SageSession) {
 export function clearSession(res: VercelResponse) {
   clearCookie(res, COOKIE_SESSION);
   clearCookie(res, COOKIE_OAUTH_STATE);
+}
+
+export function markForceReauth(res: VercelResponse) {
+  setCookie(res, COOKIE_FORCE_REAUTH, '1', { maxAge: 60 * 60 * 24 * 7 });
+}
+
+export function clearForceReauth(res: VercelResponse) {
+  clearCookie(res, COOKIE_FORCE_REAUTH);
+}
+
+export function shouldForceLogin(req: VercelRequest): boolean {
+  const cookies = parseCookies(req);
+  if (cookies[COOKIE_FORCE_REAUTH] === '1') return true;
+  const force =
+    typeof req.query.force === 'string'
+      ? req.query.force
+      : typeof req.query.prompt === 'string'
+        ? req.query.prompt
+        : undefined;
+  if (!force) return false;
+  const normalized = force.toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'login' || normalized === 'reauth';
 }
 
 export async function getValidAccessToken(
