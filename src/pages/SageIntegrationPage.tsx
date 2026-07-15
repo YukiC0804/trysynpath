@@ -336,24 +336,20 @@ export function SageIntegrationPage() {
       {workflow === 'sync' && (
         <Panel title="Workflow 1 — Product Sync">
           <p className="mb-4 text-sm text-neutral-400">
-            Stock Items below are loaded from your connected Sage business. Create the Synpath-only white acrylic
-            SKU with duplicate protection and read-back verification.
+            Column headers are fixed. Row data is loaded from your connected Sage business — nothing is
+            pre-filled. Create the Synpath-only white acrylic SKU with duplicate protection and read-back
+            verification.
           </p>
-          {!status?.connected ? (
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-8 text-center text-sm text-neutral-400">
-              Connect Sage to load live Stock Items into this table.
-            </div>
-          ) : loading ? (
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-8 text-center text-sm text-neutral-400">
-              Loading Stock Items from Sage…
-            </div>
-          ) : productSyncRows.length === 0 ? (
-            <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-8 text-center text-sm text-neutral-400">
-              No Stock Items returned from Sage for this business.
-            </div>
-          ) : (
-            <StockTable rows={productSyncRows} />
-          )}
+          <StockTable
+            rows={productSyncRows}
+            emptyMessage={
+              loading
+                ? 'Loading Stock Items from Sage…'
+                : !status?.connected
+                  ? 'Please connect Sage'
+                  : 'No Stock Items returned from Sage for this business.'
+            }
+          />
 
           <div className="mt-6 rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -660,6 +656,7 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 
 function StockTable({
   rows,
+  emptyMessage,
 }: {
   rows: Array<{
     sku: string;
@@ -672,6 +669,7 @@ function StockTable({
     sync: string;
     syncOk: boolean;
   }>;
+  emptyMessage?: string;
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-neutral-800">
@@ -689,20 +687,28 @@ function StockTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.sku} className="border-b border-neutral-800/50">
-              <td className="px-3 py-2 font-medium text-white">{row.sku}</td>
-              <td className="px-3 py-2 text-neutral-300">{row.description}</td>
-              <td className="px-3 py-2">{row.costPrice.toFixed(2)}</td>
-              <td className="px-3 py-2">{row.salesPrice.toFixed(2)}</td>
-              <td className="px-3 py-2">{row.stock}</td>
-              <td className="px-3 py-2">{row.reorderLevel}</td>
-              <td className="px-3 py-2 text-neutral-400">{row.supplier}</td>
-              <td className="px-3 py-2">
-                <StatusBadge variant={row.syncOk ? 'healthy' : 'warning'}>{row.sync}</StatusBadge>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={8} className="px-3 py-8 text-center text-sm text-neutral-400">
+                {emptyMessage ?? 'No rows'}
               </td>
             </tr>
-          ))}
+          ) : (
+            rows.map((row) => (
+              <tr key={row.sku} className="border-b border-neutral-800/50">
+                <td className="px-3 py-2 font-medium text-white">{row.sku}</td>
+                <td className="px-3 py-2 text-neutral-300">{row.description}</td>
+                <td className="px-3 py-2">{row.costPrice.toFixed(2)}</td>
+                <td className="px-3 py-2">{row.salesPrice.toFixed(2)}</td>
+                <td className="px-3 py-2">{row.stock}</td>
+                <td className="px-3 py-2">{row.reorderLevel}</td>
+                <td className="px-3 py-2 text-neutral-400">{row.supplier}</td>
+                <td className="px-3 py-2">
+                  <StatusBadge variant={row.syncOk ? 'healthy' : 'warning'}>{row.sync}</StatusBadge>
+                </td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
