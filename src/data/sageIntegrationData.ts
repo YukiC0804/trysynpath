@@ -48,13 +48,13 @@ export const MOCK_GMAIL_EMAIL = {
 Please find today's acrylic sheet price update:
 
 1) ACR-CLR-3MM-48X96 — Clear Acrylic Sheet 3mm 48 × 96
-   New cost: £45.10 / sheet
+   New cost: £47.35 / sheet
    MOQ: 50
    Lead time: 10 days
    Freight: £420.00
 
 2) ACR-CLR-6MM-48X96 — Clear Acrylic Sheet 6mm 48 × 96
-   New cost: £74.80 / sheet
+   New cost: £72.25 / sheet
    MOQ: 50
    Lead time: 12 days
 
@@ -66,7 +66,7 @@ export const EXTRACTED_PRICE_UPDATES = [
   {
     sku: 'ACR-CLR-3MM-48X96',
     previousCost: 42.5,
-    newCost: 45.1,
+    newCost: 47.35,
     moq: 50,
     leadTime: '10 days',
     freight: 420.0,
@@ -74,7 +74,7 @@ export const EXTRACTED_PRICE_UPDATES = [
   {
     sku: 'ACR-CLR-6MM-48X96',
     previousCost: 76.0,
-    newCost: 74.8,
+    newCost: 72.25,
     moq: 50,
     leadTime: '12 days',
     freight: null as number | null,

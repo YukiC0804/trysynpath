@@ -1,15 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import { extractPricingFromEmail, MOCK_GMAIL_EMAIL } from '../src/data/sageIntegrationData';
 import { discoverCapabilities } from '../api/_lib/sage/client';
+import { SAGE_DEMO_BASELINE } from '../api/_lib/sage/demoBaseline';
 
 describe('Gmail mock extraction', () => {
   it('extracts acrylic SKUs and new costs from the demo email body', () => {
     const rows = extractPricingFromEmail(MOCK_GMAIL_EMAIL.body);
     expect(rows).toHaveLength(2);
     expect(rows[0]?.sku).toBe('ACR-CLR-3MM-48X96');
-    expect(rows[0]?.newCost).toBe(45.1);
+    expect(rows[0]?.newCost).toBe(47.35);
     expect(rows[1]?.sku).toBe('ACR-CLR-6MM-48X96');
-    expect(rows[1]?.newCost).toBe(74.8);
+    expect(rows[1]?.newCost).toBe(72.25);
+
+    const baselineBySku = new Map(SAGE_DEMO_BASELINE.map((row) => [row.sku, row]));
+    expect(rows.every((row) => row?.newCost !== baselineBySku.get(row!.sku)?.costPrice)).toBe(true);
+  });
+});
+
+describe('Sage demo reset baseline', () => {
+  it('covers every SKU changed or created by the demo workflows', () => {
+    expect(SAGE_DEMO_BASELINE.map((item) => item.sku)).toEqual(
+      expect.arrayContaining([
+        'ACR-MIR-SLV-3MM',
+        'ACR-CLR-3MM-48X96',
+        'ACR-CLR-6MM-48X96',
+        'ACR-WHT-3MM-48X96',
+      ]),
+    );
+    expect(SAGE_DEMO_BASELINE.find((item) => item.sku === 'ACR-MIR-SLV-3MM')).toMatchObject({
+      description: 'Silver Mirror Acrylic Sheet 3mm',
+      reorderLevel: 10,
+    });
   });
 });
 

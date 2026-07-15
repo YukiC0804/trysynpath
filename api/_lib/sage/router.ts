@@ -23,6 +23,7 @@ import {
   SageApiError,
   updateStockItem,
 } from './client';
+import { SAGE_DEMO_BASELINE } from './demoBaseline';
 import { envPresence, errorMessage, getEnv } from './config';
 import { clearCookie, json, missingConfigResponse, sageConfigStatus } from './http';
 import { COOKIE_OAUTH_STATE, SAGE_REQUIRED_ENV } from './types';
@@ -388,6 +389,69 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
 
       if (method === 'POST' && path.length === 1) {
         const body = parseBody(req);
+        if (String(body.action ?? '').toLowerCase() === 'reset-demo') {
+          const items = await listStockItems(auth.accessToken, businessId);
+          const bySku = new Map(items.map((item) => [item.sku.toUpperCase(), item]));
+          const restored: string[] = [];
+          const missing: string[] = [];
+
+          for (const baseline of SAGE_DEMO_BASELINE) {
+            const item = bySku.get(baseline.sku.toUpperCase());
+            if (!item) {
+              missing.push(baseline.sku);
+              continue;
+            }
+            await updateStockItem(auth.accessToken, businessId, item.id, {
+              description: baseline.description,
+              cost_price: baseline.costPrice,
+              sales_price: baseline.salesPrice,
+              reorder_level: baseline.reorderLevel,
+              ...(baseline.reorderQuantity != null
+                ? { reorder_quantity: baseline.reorderQuantity }
+                : {}),
+              ...(baseline.supplierPartNumber != null
+                ? { supplier_part_number: baseline.supplierPartNumber }
+                : {}),
+            });
+            restored.push(baseline.sku);
+          }
+
+          const verifiedItems = await listStockItems(auth.accessToken, businessId);
+          const verifiedBySku = new Map(
+            verifiedItems.map((item) => [item.sku.toUpperCase(), item]),
+          );
+          const verified = restored.length > 0 && restored.every((sku) => {
+            const baseline = SAGE_DEMO_BASELINE.find((row) => row.sku === sku)!;
+            const item = verifiedBySku.get(sku.toUpperCase());
+            return (
+              item?.description === baseline.description &&
+              Number(item.costPrice) === baseline.costPrice &&
+              Number(item.salesPrice) === baseline.salesPrice &&
+              Number(item.reorderLevel) === baseline.reorderLevel &&
+              (baseline.reorderQuantity == null ||
+                Number(item.reorderQuantity) === baseline.reorderQuantity) &&
+              (baseline.supplierPartNumber == null ||
+                item.supplierPartNumber === baseline.supplierPartNumber)
+            );
+          });
+
+          appendAudit(req, res, {
+            action: 'sage.demo.reset',
+            detail: `Restored ${restored.length} demo stock item(s)${
+              missing.length ? `; ${missing.length} missing` : ''
+            }`,
+            status: verified ? 'success' : 'warning',
+          });
+          return json(res, 200, {
+            restored,
+            missing,
+            verified,
+            message: verified
+              ? `Restored ${restored.length} Sage demo item(s) to the original values`
+              : 'Demo reset completed, but read-back verification found a mismatch',
+          });
+        }
+
         // Single-segment update avoids Vercel NOT_FOUND on nested /stock-items/:id paths.
         if (String(body.action ?? '').toLowerCase() === 'update') {
           const id = String(body.id ?? '').trim();

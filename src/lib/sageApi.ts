@@ -111,6 +111,21 @@ export async function updateStockItem(id: string, payload: Record<string, unknow
   }>;
 }
 
+export async function resetSageDemoData() {
+  const res = await fetch('/api/integrations/sage/stock-items', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reset-demo' }),
+  });
+  return parseJson(res) as Promise<{
+    restored: string[];
+    missing: string[];
+    verified: boolean;
+    message: string;
+  }>;
+}
+
 export async function fetchCapabilities() {
   const res = await fetch('/api/integrations/sage/capabilities', { credentials: 'include' });
   return parseJson(res);
