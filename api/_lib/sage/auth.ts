@@ -17,6 +17,10 @@ import {
 
 const AUTH_URL = 'https://www.sageone.com/oauth2/auth/central';
 const TOKEN_URL = 'https://oauth.accounting.sage.com/token';
+/** Top-level Sage Accounting logout (federates through id.sage.com). Iframes cannot use this. */
+export const SAGE_BROWSER_LOGOUT_URL = 'https://app.sageone.com/logout';
+/** Clears Sage One browser country/session cookies before authorize. */
+export const SAGE_BROWSER_CLEAR_URL = 'https://www.sageone.com/?clear';
 
 export type AuthorizeOptions = {
   /** Force Sage to show the login / account selection UI instead of SSO auto-approve. */
@@ -42,6 +46,9 @@ export function buildAuthorizeUrl(state: string, options: AuthorizeOptions = {})
     params.set('prompt', 'login');
     params.set('max_age', '0');
   }
+  // Country/locale forces the central auth router through a country-specific login host.
+  params.set('country', 'gb');
+  params.set('locale', 'en_GB');
   return `${AUTH_URL}?${params.toString()}`;
 }
 

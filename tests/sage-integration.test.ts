@@ -63,12 +63,16 @@ describe('Sage OAuth reconnect helpers', () => {
   it('builds authorize URLs with prompt=login when forcing reauth', async () => {
     process.env.SAGE_CLIENT_ID = 'test-client';
     process.env.SAGE_REDIRECT_URI = 'https://example.com/api/integrations/sage/callback';
-    const { buildAuthorizeUrl, revokeEndpointForCountry } = await import('../api/_lib/sage/auth');
+    const { buildAuthorizeUrl, revokeEndpointForCountry, SAGE_BROWSER_LOGOUT_URL } = await import(
+      '../api/_lib/sage/auth'
+    );
     const url = buildAuthorizeUrl('state123', { forceLogin: true });
     expect(url).toContain('prompt=login');
     expect(url).toContain('max_age=0');
+    expect(url).toContain('country=gb');
     expect(url).toContain('state=state123');
     expect(revokeEndpointForCountry('GB')).toContain('app.sageone.com');
     expect(revokeEndpointForCountry('US')).toContain('oauth.na.sageone.com');
+    expect(SAGE_BROWSER_LOGOUT_URL).toContain('app.sageone.com/logout');
   });
 });

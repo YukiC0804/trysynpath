@@ -13,7 +13,6 @@ import {
 } from '../data/sageIntegrationData';
 import {
   createStockItem,
-  disconnectSage,
   fetchAuditLog,
   fetchCapabilities,
   fetchSageStatus,
@@ -266,23 +265,12 @@ export function SageIntegrationPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {status?.connected ? (
-            <button
-              type="button"
-              onClick={() =>
-                void disconnectSage()
-                  .then(() => {
-                    setItems([]);
-                    setNotice(null);
-                    setCreateResult(null);
-                    setUpdateResult(null);
-                    setVerification(null);
-                  })
-                  .then(refresh)
-              }
+            <a
+              href="/api/integrations/sage/disconnect?redirect=logout"
               className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:text-white"
             >
               Disconnect Sage
-            </button>
+            </a>
           ) : (
             <a
               href="/api/integrations/sage/connect?force=1"
@@ -649,7 +637,7 @@ function ConnectionBanner({ status, loading }: { status: SageStatus | null; load
   return (
     <div className="mb-6 rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-3 text-sm text-neutral-400">
       {status?.configured
-        ? 'Sage OAuth is configured. Connect to load live Stock Items. Preview deployments should use the registered production callback URL.'
+        ? 'Sage is disconnected. Click Connect Sage — a Sage sign-out window may open first so you can pick an account on the login/authorize page (allow popups if prompted).'
         : 'Sage credentials are not configured in this environment. UI and Gmail Demo Mode still work for Preview review.'}
     </div>
   );
