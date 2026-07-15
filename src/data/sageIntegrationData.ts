@@ -5,49 +5,6 @@ export const GHOST_BOARDS = {
   gmailAccount: 'alex@getsynpath-ai.com',
 };
 
-export const EXPECTED_SAGE_SKUS = [
-  {
-    sku: 'ACR-MIR-SLV-3MM',
-    description: 'Silver Mirror Acrylic Sheet 3mm',
-    costPrice: 68.0,
-    salesPrice: 0.0,
-    quantityInStock: 16,
-    reorderLevel: 10,
-    supplier: 'Nationwide Acrylics',
-    supplierRef: 'NWA-003',
-  },
-  {
-    sku: 'ACR-BLK-3MM-48X96',
-    description: 'Black Acrylic Sheet 3mm 48 × 96',
-    costPrice: 49.0,
-    salesPrice: 0.0,
-    quantityInStock: 54,
-    reorderLevel: 25,
-    supplier: 'Pacific Acrylic Supply',
-    supplierRef: 'PAC-ACRYLIC-001',
-  },
-  {
-    sku: 'ACR-CLR-6MM-48X96',
-    description: 'Clear Acrylic Sheet 6mm 48 × 96',
-    costPrice: 76.0,
-    salesPrice: 0.0,
-    quantityInStock: 38,
-    reorderLevel: 20,
-    supplier: 'West Coast Plastics',
-    supplierRef: 'WCP-002',
-  },
-  {
-    sku: 'ACR-CLR-3MM-48X96',
-    description: 'Clear Acrylic Sheet 3mm 48 × 96',
-    costPrice: 42.5,
-    salesPrice: 0.0,
-    quantityInStock: 82,
-    reorderLevel: 40,
-    supplier: 'Pacific Acrylic Supply',
-    supplierRef: 'PAC-ACRYLIC-001',
-  },
-] as const;
-
 export const SYNPATH_ONLY_PRODUCT = {
   sku: 'ACR-WHT-3MM-48X96',
   description: 'White Acrylic Sheet 3mm 48 × 96',
