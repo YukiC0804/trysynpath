@@ -363,10 +363,14 @@ export async function listLedgerAccounts(accessToken: string, businessId: string
   return data.$items ?? [];
 }
 
+export const SAGE_PURCHASE_LEDGER_VISIBLE_IN = 'expenses';
+
 export async function listPurchaseLedgerAccounts(accessToken: string, businessId: string) {
   const data = (await sageFetch('/ledger_accounts', accessToken, {
     businessId,
-    query: { items_per_page: '200', visible_in: 'purchases' },
+    // Sage exposes invoice expense accounts under "expenses"; "purchases" is
+    // not a valid visible_in value and returns 422.
+    query: { items_per_page: '200', visible_in: SAGE_PURCHASE_LEDGER_VISIBLE_IN },
   })) as { $items?: LedgerLike[] };
   return data.$items ?? [];
 }

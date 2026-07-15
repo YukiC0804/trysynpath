@@ -55,6 +55,11 @@ describe('Sage capability discovery', () => {
 });
 
 describe('ledger account picker', () => {
+  it('uses Sage expenses visibility for Purchase Invoice ledgers', async () => {
+    const { SAGE_PURCHASE_LEDGER_VISIBLE_IN } = await import('../api/_lib/sage/client');
+    expect(SAGE_PURCHASE_LEDGER_VISIBLE_IN).toBe('expenses');
+  });
+
   it('prefers sales products and stock accounts when resolving defaults', async () => {
     const { pickLedgerAccount, pickTaxRate } = await import('../api/_lib/sage/client');
     const sales = pickLedgerAccount(
