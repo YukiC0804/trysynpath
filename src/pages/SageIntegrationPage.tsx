@@ -12,6 +12,7 @@ import {
   extractPricingFromEmail,
 } from '../data/sageIntegrationData';
 import {
+  createSagePurchaseInvoice,
   createStockItem,
   disconnectSage,
   fetchAuditLog,
@@ -63,8 +64,17 @@ export function SageIntegrationPage() {
   const [extracted, setExtracted] = useState(EXTRACTED_PRICE_UPDATES);
   const [liveCosts, setLiveCosts] = useState<Record<string, number>>({});
   const [poStatus, setPoStatus] = useState<'draft' | 'approved' | null>(null);
+  const [purchaseInvoiceResult, setPurchaseInvoiceResult] = useState<{
+    id: string;
+    message: string;
+    totalAmount: number;
+    status: string;
+  } | null>(null);
   const [audit, setAudit] = useState<Array<{ id: string; at: string; action: string; detail: string; status: string }>>([]);
-  const [capabilities, setCapabilities] = useState<{ purchaseOrders?: { available: boolean; reason: string } } | null>(null);
+  const [capabilities, setCapabilities] = useState<{
+    purchaseOrders?: { available: boolean; reason: string };
+    purchaseInvoices?: { create: boolean; delete: boolean };
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -254,6 +264,7 @@ export function SageIntegrationPage() {
       setExtracted(EXTRACTED_PRICE_UPDATES);
       setLiveCosts({});
       setPoStatus(null);
+      setPurchaseInvoiceResult(null);
       setNotice(
         `${result.message}${
           result.missing.length
@@ -264,6 +275,32 @@ export function SageIntegrationPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reset Sage demo data');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCreatePurchaseInvoice = async () => {
+    if (!status?.connected) {
+      setError('Connect Sage before creating a Purchase Invoice.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setPurchaseInvoiceResult(null);
+    try {
+      const result = await createSagePurchaseInvoice();
+      setPoStatus('approved');
+      setPurchaseInvoiceResult({
+        id: result.invoice.id,
+        message: result.message,
+        totalAmount: result.invoice.totalAmount,
+        status: result.invoice.status,
+      });
+      setNotice(result.message);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create Sage Purchase Invoice');
     } finally {
       setBusy(false);
     }
@@ -594,7 +631,7 @@ export function SageIntegrationPage() {
       )}
 
       {workflow === 'po' && (
-        <Panel title="Workflow 4 — Purchase Order">
+        <Panel title="Workflow 4 — Purchase Order → Sage Purchase Invoice">
           <div className="rounded-xl border border-neutral-800 bg-[#0a0a0a] p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold text-white">{PURCHASE_ORDER.number}</h3>
@@ -622,10 +659,11 @@ export function SageIntegrationPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setPoStatus('approved')}
+                disabled={busy || !status?.connected}
+                onClick={() => void handleCreatePurchaseInvoice()}
                 className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
               >
-                Approve PO
+                {busy ? 'Creating in Sage…' : 'Create Purchase Invoice in Sage'}
               </button>
               <button
                 type="button"
@@ -635,13 +673,26 @@ export function SageIntegrationPage() {
                 PDF preview / export
               </button>
             </div>
-            <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-200">
-              {PURCHASE_ORDER.writeBackMessage}
+            <div className="mt-4 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-3 text-sm text-violet-200">
+              Creates a real supplier invoice under Sage Purchase Invoices. Reset demo data deletes this invoice
+              so the workflow can be repeated.
             </div>
-            {capabilities?.purchaseOrders && (
+            {purchaseInvoiceResult && (
+              <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200">
+                {purchaseInvoiceResult.message}
+                <span className="mt-1 block text-xs text-emerald-300/80">
+                  Sage ID: {purchaseInvoiceResult.id}
+                  {purchaseInvoiceResult.status ? ` · ${purchaseInvoiceResult.status}` : ''}
+                  {purchaseInvoiceResult.totalAmount
+                    ? ` · Total ${purchaseInvoiceResult.totalAmount.toFixed(2)} GBP`
+                    : ''}
+                </span>
+              </div>
+            )}
+            {capabilities?.purchaseInvoices && (
               <p className="mt-2 text-xs text-neutral-500">
-                Capability check: purchaseOrders.available ={' '}
-                {String(capabilities.purchaseOrders.available)}
+                Sage Purchase Invoices: create = {String(capabilities.purchaseInvoices.create)} · reset/delete ={' '}
+                {String(capabilities.purchaseInvoices.delete)}
               </p>
             )}
           </div>

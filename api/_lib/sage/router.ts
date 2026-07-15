@@ -10,21 +10,31 @@ import {
   writeSession,
 } from './auth';
 import {
+  createPurchaseInvoice,
   createStockItem,
+  deletePurchaseInvoice,
   deleteStockItem,
   discoverCapabilities,
   findStockItemBySku,
   getStockItem,
   listBusinesses,
   listLedgerAccounts,
+  listPurchaseInvoices,
+  listPurchaseLedgerAccounts,
   listStockItems,
   listSuppliers,
   listTaxRates,
   pickAccountingBusiness,
+  pickLedgerAccount,
+  pickTaxRate,
   SageApiError,
   updateStockItem,
 } from './client';
-import { SAGE_DEMO_BASELINE, SAGE_DEMO_CREATED_SKUS } from './demoBaseline';
+import {
+  SAGE_DEMO_BASELINE,
+  SAGE_DEMO_CREATED_SKUS,
+  SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
+} from './demoBaseline';
 import { envPresence, errorMessage, getEnv } from './config';
 import { clearCookie, json, missingConfigResponse, sageConfigStatus } from './http';
 import { COOKIE_OAUTH_STATE, SAGE_REQUIRED_ENV } from './types';
@@ -391,10 +401,14 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
       if (method === 'POST' && path.length === 1) {
         const body = parseBody(req);
         if (String(body.action ?? '').toLowerCase() === 'reset-demo') {
-          const items = await listStockItems(auth.accessToken, businessId);
+          const [items, purchaseInvoices] = await Promise.all([
+            listStockItems(auth.accessToken, businessId),
+            listPurchaseInvoices(auth.accessToken, businessId),
+          ]);
           const bySku = new Map(items.map((item) => [item.sku.toUpperCase(), item]));
           const restored: string[] = [];
           const deleted: string[] = [];
+          const deletedInvoices: string[] = [];
           const missing: string[] = [];
 
           for (const baseline of SAGE_DEMO_BASELINE) {
@@ -425,7 +439,21 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
             deleted.push(sku);
           }
 
-          const verifiedItems = await listStockItems(auth.accessToken, businessId);
+          for (const invoice of purchaseInvoices) {
+            if (
+              invoice.reference !== SAGE_DEMO_PURCHASE_INVOICE_REFERENCE &&
+              invoice.vendorReference !== SAGE_DEMO_PURCHASE_INVOICE_REFERENCE
+            ) {
+              continue;
+            }
+            await deletePurchaseInvoice(auth.accessToken, businessId, invoice.id);
+            deletedInvoices.push(invoice.id);
+          }
+
+          const [verifiedItems, verifiedInvoices] = await Promise.all([
+            listStockItems(auth.accessToken, businessId),
+            listPurchaseInvoices(auth.accessToken, businessId),
+          ]);
           const verifiedBySku = new Map(
             verifiedItems.map((item) => [item.sku.toUpperCase(), item]),
           );
@@ -447,11 +475,16 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
             }) &&
             SAGE_DEMO_CREATED_SKUS.every(
               (sku) => !verifiedBySku.has(sku.toUpperCase()),
+            ) &&
+            verifiedInvoices.every(
+              (invoice) =>
+                invoice.reference !== SAGE_DEMO_PURCHASE_INVOICE_REFERENCE &&
+                invoice.vendorReference !== SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
             );
 
           appendAudit(req, res, {
             action: 'sage.demo.reset',
-            detail: `Restored ${restored.length} and deleted ${deleted.length} demo stock item(s)${
+            detail: `Restored ${restored.length}, deleted ${deleted.length} demo stock item(s), and deleted ${deletedInvoices.length} demo purchase invoice(s)${
               missing.length ? `; ${missing.length} missing` : ''
             }`,
             status: verified ? 'success' : 'warning',
@@ -459,10 +492,11 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
           return json(res, 200, {
             restored,
             deleted,
+            deletedInvoices,
             missing,
             verified,
             message: verified
-              ? `Restored ${restored.length} original item(s) and removed ${deleted.length} Workflow 1 item(s)`
+              ? `Restored ${restored.length} original item(s), removed ${deleted.length} Workflow 1 item(s), and removed ${deletedInvoices.length} Workflow 4 invoice(s)`
               : 'Demo reset completed, but read-back verification found a mismatch',
           });
         }
@@ -559,6 +593,158 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
           const body = parseBody(req);
           return applyStockItemUpdate(req, res, auth.accessToken, businessId, id, body);
         }
+      }
+    }
+
+    if (path[0] === 'purchase-invoices') {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const businessId = auth.session.businessId!;
+
+      if (method === 'GET') {
+        const invoices = await listPurchaseInvoices(auth.accessToken, businessId);
+        const reference =
+          typeof req.query.reference === 'string' ? req.query.reference : undefined;
+        return json(res, 200, {
+          invoices: reference
+            ? invoices.filter(
+                (invoice) =>
+                  invoice.reference === reference ||
+                  invoice.vendorReference === reference,
+              )
+            : invoices,
+        });
+      }
+
+      if (method === 'POST') {
+        const existingInvoices = await listPurchaseInvoices(
+          auth.accessToken,
+          businessId,
+        );
+        const existing = existingInvoices.find(
+          (invoice) =>
+            invoice.reference === SAGE_DEMO_PURCHASE_INVOICE_REFERENCE ||
+            invoice.vendorReference === SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
+        );
+        if (existing) {
+          return json(res, 200, {
+            invoice: existing,
+            created: false,
+            verified: true,
+            message: 'Demo Purchase Invoice already exists in Sage',
+          });
+        }
+
+        const [items, suppliers, purchaseLedgers, taxRates] = await Promise.all([
+          listStockItems(auth.accessToken, businessId),
+          listSuppliers(auth.accessToken, businessId),
+          listPurchaseLedgerAccounts(auth.accessToken, businessId),
+          listTaxRates(auth.accessToken, businessId),
+        ]);
+        const stockItem = items.find(
+          (item) => item.sku.toUpperCase() === 'ACR-MIR-SLV-3MM',
+        );
+        if (!stockItem) {
+          return json(res, 422, {
+            error: 'Demo stock item ACR-MIR-SLV-3MM is missing in Sage',
+          });
+        }
+        const supplier =
+          suppliers.find((item) => item.id === stockItem.supplierId) ??
+          suppliers.find(
+            (item) =>
+              /NWA-003/i.test(item.reference) ||
+              /Nationwide Acrylics/i.test(item.name),
+          );
+        if (!supplier) {
+          return json(res, 422, {
+            error: 'Nationwide Acrylics supplier is missing in Sage',
+          });
+        }
+        const ledger =
+          purchaseLedgers.find(
+            (item) => item.id === stockItem.purchaseLedgerAccountId,
+          ) ?? pickLedgerAccount(purchaseLedgers, 'purchase');
+        if (!ledger) {
+          return json(res, 422, {
+            error: 'No Sage ledger account visible in purchases was found',
+          });
+        }
+        const tax =
+          taxRates.find((item) => item.id === stockItem.purchaseTaxRateId) ??
+          taxRates.find((item) => /no tax|zero|exempt/i.test(item.displayed_as ?? '')) ??
+          pickTaxRate(taxRates);
+        if (!tax) {
+          return json(res, 422, { error: 'No Sage purchase tax rate was found' });
+        }
+
+        const taxPercentMatch = (tax.displayed_as ?? '').match(/([\d.]+)\s*%/);
+        const taxPercent = taxPercentMatch ? Number(taxPercentMatch[1]) : 0;
+        const line = (
+          description: string,
+          quantity: number,
+          unitPrice: number,
+          productId?: string,
+        ) => {
+          const net = quantity * unitPrice;
+          return {
+            ...(productId ? { product_id: productId } : {}),
+            description,
+            ledger_account_id: ledger.id,
+            quantity,
+            unit_price: unitPrice,
+            tax_rate_id: tax.id,
+            tax_amount: Number((net * (taxPercent / 100)).toFixed(2)),
+          };
+        };
+        const date = new Date();
+        const dueDate = new Date(date);
+        dueDate.setUTCDate(dueDate.getUTCDate() + 30);
+        const isoDate = (value: Date) => value.toISOString().slice(0, 10);
+        const mainAddress =
+          supplier.mainAddress && Object.keys(supplier.mainAddress).length
+            ? supplier.mainAddress
+            : { address_line_1: supplier.name };
+
+        const created = await createPurchaseInvoice(auth.accessToken, businessId, {
+          contact_id: supplier.id,
+          date: isoDate(date),
+          due_date: isoDate(dueDate),
+          reference: SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
+          vendor_reference: SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
+          notes: 'Created by Synpath Workflow 4 demo',
+          main_address: mainAddress,
+          invoice_lines: [
+            line(
+              'ACR-MIR-SLV-3MM — Silver Mirror Acrylic Sheet 3mm',
+              50,
+              68,
+              stockItem.id,
+            ),
+            line('Freight', 1, 185),
+          ],
+        });
+        const verifiedInvoice = (
+          await listPurchaseInvoices(auth.accessToken, businessId)
+        ).find(
+          (invoice) =>
+            invoice.id === created.id ||
+            invoice.reference === SAGE_DEMO_PURCHASE_INVOICE_REFERENCE ||
+            invoice.vendorReference === SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
+        );
+        appendAudit(req, res, {
+          action: 'sage.purchase_invoices.create',
+          detail: `Created Purchase Invoice ${SAGE_DEMO_PURCHASE_INVOICE_REFERENCE}`,
+          status: verifiedInvoice ? 'success' : 'warning',
+        });
+        return json(res, 201, {
+          invoice: verifiedInvoice ?? created,
+          created: true,
+          verified: Boolean(verifiedInvoice),
+          message: verifiedInvoice
+            ? 'Purchase Invoice created and verified in Sage'
+            : 'Purchase Invoice created, but read-back verification failed',
+        });
       }
     }
 
