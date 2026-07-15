@@ -320,6 +320,20 @@ export async function updateStockItem(
   return normalizeStockItem(updated);
 }
 
+export async function deleteStockItem(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  if (!id || id === 'undefined' || id === 'null') {
+    throw new SageApiError('Stock item id is required for delete', 400);
+  }
+  await sageFetch(`/stock_items/${id}`, accessToken, {
+    method: 'DELETE',
+    businessId,
+  });
+}
+
 export async function listSuppliers(accessToken: string, businessId: string) {
   const data = (await sageFetch('/contacts', accessToken, {
     businessId,
@@ -350,7 +364,7 @@ export async function listTaxRates(accessToken: string, businessId: string) {
 
 export function discoverCapabilities() {
   return {
-    stockItems: { list: true, get: true, create: true, update: true, delete: false },
+    stockItems: { list: true, get: true, create: true, update: true, delete: true },
     purchaseOrders: {
       available: false,
       reason:

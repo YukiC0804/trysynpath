@@ -120,6 +120,7 @@ export async function resetSageDemoData() {
   });
   return parseJson(res) as Promise<{
     restored: string[];
+    deleted: string[];
     missing: string[];
     verified: boolean;
     message: string;
