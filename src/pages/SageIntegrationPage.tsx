@@ -18,6 +18,7 @@ import {
   fetchCapabilities,
   fetchSageStatus,
   listStockItems,
+  resetSageDemoData,
   type NormalizedStockItem,
   type SageStatus,
   updateStockItem,
@@ -234,6 +235,40 @@ export function SageIntegrationPage() {
     }
   };
 
+  const handleResetDemoData = async () => {
+    if (!status?.connected) {
+      setError('Connect Sage before resetting demo data.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await resetSageDemoData();
+      setCreateResult(null);
+      setUpdateResult(null);
+      setVerification(null);
+      setReorderRequired(false);
+      setGmailStage('idle');
+      setGmailConnected(false);
+      setExtracted(EXTRACTED_PRICE_UPDATES);
+      setLiveCosts({});
+      setPoStatus(null);
+      setNotice(
+        `${result.message}${
+          result.missing.length
+            ? `. Missing demo SKU(s) were left unchanged: ${result.missing.join(', ')}`
+            : ''
+        }`,
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset Sage demo data');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportPoPdf = () => {
     const html = `<!doctype html><html><head><title>${PURCHASE_ORDER.number}</title>
       <style>body{font-family:Inter,system-ui,sans-serif;padding:40px;color:#111}
@@ -266,13 +301,24 @@ export function SageIntegrationPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {status?.connected ? (
-            <button
-              type="button"
-              onClick={() => void disconnectSage().then(refresh)}
-              className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:text-white"
-            >
-              Disconnect Sage
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleResetDemoData()}
+                className="rounded-lg border border-violet-500/50 bg-violet-500/10 px-3 py-2 text-xs font-medium text-violet-200 hover:bg-violet-500/20 disabled:opacity-40"
+              >
+                {busy ? 'Working…' : 'Reset demo data'}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void disconnectSage().then(refresh)}
+                className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:text-white disabled:opacity-40"
+              >
+                Disconnect Sage
+              </button>
+            </>
           ) : (
             <a
               href="/api/integrations/sage/connect"
@@ -517,7 +563,19 @@ export function SageIntegrationPage() {
                         <td className="px-3 py-2">
                           {(liveCosts[row.sku] ?? row.previousCost).toFixed(2)}
                         </td>
-                        <td className="px-3 py-2 text-violet-300">{row.newCost.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-violet-300">
+                          {row.newCost.toFixed(2)}
+                          <span className="ml-1 text-[10px] text-neutral-500">
+                            (
+                            {row.newCost - (liveCosts[row.sku] ?? row.previousCost) > 0
+                              ? '+'
+                              : ''}
+                            {(
+                              row.newCost - (liveCosts[row.sku] ?? row.previousCost)
+                            ).toFixed(2)}
+                            )
+                          </span>
+                        </td>
                         <td className="px-3 py-2">
                           {bySku.has(row.sku.toUpperCase()) || !status?.connected ? (
                             <StatusBadge variant="healthy">Exact SKU Match</StatusBadge>
