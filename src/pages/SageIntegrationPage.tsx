@@ -4,7 +4,6 @@ import { StatusBadge } from '../components/demo/StatusBadge';
 import { SageLayout } from '../components/sage/SageLayout';
 import {
   EXTRACTED_PRICE_UPDATES,
-  EXPECTED_SAGE_SKUS,
   GHOST_BOARDS,
   MOCK_GMAIL_EMAIL,
   PURCHASE_ORDER,
@@ -110,6 +109,24 @@ export function SageIntegrationPage() {
     const map = new Map(items.map((item) => [item.sku.toUpperCase(), item]));
     return map;
   }, [items]);
+
+  /** Product Sync table rows come from live Sage stock items — never hardcoded demo SKUs. */
+  const productSyncRows = useMemo(() => {
+    if (!status?.connected) return [];
+    return items.map((item) => ({
+      sku: item.sku,
+      description: item.description,
+      costPrice: item.costPrice,
+      salesPrice: item.salesPrice,
+      stock: item.quantityInStock,
+      reorderLevel: item.reorderLevel,
+      supplier: item.supplier || '—',
+      sync: 'Synced from Sage',
+      syncOk: true,
+    }));
+  }, [status?.connected, items]);
+
+  const whiteSkuInSage = bySku.has(SYNPATH_ONLY_PRODUCT.sku.toUpperCase());
 
   const handleCreateWhite = async () => {
     setBusy(true);
@@ -319,30 +336,31 @@ export function SageIntegrationPage() {
       {workflow === 'sync' && (
         <Panel title="Workflow 1 — Product Sync">
           <p className="mb-4 text-sm text-neutral-400">
-            Connect to Sage and retrieve the four real Stock Items. Create the Synpath-only white acrylic SKU
-            with duplicate protection and read-back verification.
+            Stock Items below are loaded from your connected Sage business. Create the Synpath-only white acrylic
+            SKU with duplicate protection and read-back verification.
           </p>
-          <StockTable
-            rows={EXPECTED_SAGE_SKUS.map((expected) => {
-              const live = bySku.get(expected.sku.toUpperCase());
-              return {
-                sku: expected.sku,
-                description: live?.description ?? expected.description,
-                costPrice: live?.costPrice ?? expected.costPrice,
-                salesPrice: live?.salesPrice ?? expected.salesPrice,
-                stock: live?.quantityInStock ?? expected.quantityInStock,
-                reorderLevel: live?.reorderLevel ?? expected.reorderLevel,
-                supplier: live?.supplier || expected.supplier,
-                sync: live ? 'Synced from Sage' : status?.connected ? 'Missing in Sage' : 'Awaiting Sage connection',
-                syncOk: Boolean(live),
-              };
-            })}
-          />
+          {!status?.connected ? (
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-8 text-center text-sm text-neutral-400">
+              Connect Sage to load live Stock Items into this table.
+            </div>
+          ) : loading ? (
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-8 text-center text-sm text-neutral-400">
+              Loading Stock Items from Sage…
+            </div>
+          ) : productSyncRows.length === 0 ? (
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-8 text-center text-sm text-neutral-400">
+              No Stock Items returned from Sage for this business.
+            </div>
+          ) : (
+            <StockTable rows={productSyncRows} />
+          )}
 
           <div className="mt-6 rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold text-white">Synpath-only product</h3>
-              <StatusBadge variant="ai">Not yet in Sage</StatusBadge>
+              <StatusBadge variant={whiteSkuInSage ? 'healthy' : 'ai'}>
+                {whiteSkuInSage ? 'Already in Sage' : 'Not yet in Sage'}
+              </StatusBadge>
             </div>
             <dl className="grid gap-2 text-xs text-neutral-300 sm:grid-cols-2">
               <div>SKU: {SYNPATH_ONLY_PRODUCT.sku}</div>
