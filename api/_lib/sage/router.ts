@@ -2,16 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { appendAudit, readAudit } from './audit';
 import {
   beginOAuth,
-  clearForceReauth,
   clearSession,
   exchangeCodeForTokens,
   getValidAccessToken,
-  markForceReauth,
   readSession,
-  revokeSageToken,
-  SAGE_BROWSER_CLEAR_URL,
-  SAGE_BROWSER_LOGOUT_URL,
-  shouldForceLogin,
   validateOAuthState,
   writeSession,
 } from './auth';
@@ -30,7 +24,7 @@ import {
   updateStockItem,
 } from './client';
 import { envPresence, errorMessage, getEnv } from './config';
-import { clearCookie, json, missingConfigResponse, parseCookies, sageConfigStatus } from './http';
+import { clearCookie, json, missingConfigResponse, sageConfigStatus } from './http';
 import { COOKIE_OAUTH_STATE, SAGE_REQUIRED_ENV } from './types';
 
 function segments(req: VercelRequest): string[] {
@@ -236,116 +230,7 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
         });
         return missingConfigResponse(res, config.missing);
       }
-
-      const stage = typeof req.query.stage === 'string' ? req.query.stage.toLowerCase() : '';
-      const cookies = parseCookies(req);
-      const ssoCleared = cookies.sage_sso_cleared === '1';
-
-      // Drop any leftover app session so Connect always starts a fresh OAuth round-trip.
-      clearSession(res);
-      const forceLogin = shouldForceLogin(req) || stage === 'reauth';
-      const { url } = beginOAuth(res, { forceLogin: true });
-
-      // After a real Sage browser logout, skip the bounce and go straight to authorize.
-      if (stage === 'authorize' || ssoCleared) {
-        clearForceReauth(res);
-        clearCookie(res, 'sage_sso_cleared');
-        appendAudit(req, res, {
-          action: 'sage.connect',
-          detail: 'Redirecting to Sage OAuth authorize after SSO clear',
-          status: 'info',
-        });
-        res.writeHead(302, { Location: url });
-        return res.end();
-      }
-
-      if (forceLogin) {
-        appendAudit(req, res, {
-          action: 'sage.connect',
-          detail: 'Starting Sage browser logout before OAuth (SSO cannot be cleared via iframe)',
-          status: 'info',
-        });
-        // Sage blocks iframe logout (frame-ancestors: none). Use a popup for federated
-        // logout, then continue to authorize on this tab. If the popup is blocked, fall
-        // back to a full-page Sage logout; the user returns and Connect uses stage=authorize.
-        res.statusCode = 200;
-        res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-store');
-        res.end(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Reconnect Sage</title>
-  <style>
-    body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#e5e5e5;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
-    .box{max-width:420px;padding:24px;text-align:center}
-    p{opacity:.85;font-size:14px;line-height:1.5}
-    button{margin-top:16px;background:#fff;color:#111;border:0;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer}
-    a{color:#a78bfa}
-  </style>
-</head>
-<body>
-  <div class="box">
-    <p id="msg">Opening Sage sign-out so you can choose an account…</p>
-    <button type="button" id="continue" hidden>Continue to Sage login</button>
-    <p id="hint" hidden style="margin-top:12px;font-size:12px;opacity:.65">
-      If nothing opens, allow popups for this site, then click Continue.
-      Or <a href="${SAGE_BROWSER_LOGOUT_URL}">sign out of Sage</a>, return here, and
-      <a href="/api/integrations/sage/connect?stage=authorize&amp;force=1">Connect again</a>.
-    </p>
-  </div>
-  <script>
-    (function () {
-      var authUrl = ${JSON.stringify(url)};
-      var clearUrl = ${JSON.stringify(SAGE_BROWSER_CLEAR_URL)};
-      var logoutUrl = ${JSON.stringify(SAGE_BROWSER_LOGOUT_URL)};
-      var proceeded = false;
-      function proceed() {
-        if (proceeded) return;
-        proceeded = true;
-        document.cookie = 'sage_sso_cleared=1; Path=/; Max-Age=600; SameSite=Lax';
-        window.location.replace(authUrl);
-      }
-      var popup = window.open(clearUrl, 'sage_reauth', 'width=520,height=720');
-      if (!popup) {
-        document.getElementById('msg').textContent =
-          'Popup blocked. Sign out of Sage in this tab, then come back and Connect again.';
-        document.getElementById('hint').hidden = false;
-        document.getElementById('continue').hidden = false;
-        document.getElementById('continue').onclick = function () {
-          document.cookie = 'sage_sso_cleared=1; Path=/; Max-Age=600; SameSite=Lax';
-          window.location.replace(logoutUrl);
-        };
-        return;
-      }
-      setTimeout(function () {
-        try { popup.location = logoutUrl; } catch (e) {}
-      }, 900);
-      var ticks = 0;
-      var timer = setInterval(function () {
-        ticks += 1;
-        var closed = false;
-        try { closed = popup.closed; } catch (e) { closed = true; }
-        if (closed || ticks >= 18) {
-          clearInterval(timer);
-          try { popup.close(); } catch (e) {}
-          proceed();
-        }
-      }, 400);
-      document.getElementById('continue').hidden = false;
-      document.getElementById('continue').onclick = function () {
-        try { popup.close(); } catch (e) {}
-        proceed();
-      };
-      document.getElementById('hint').hidden = false;
-    })();
-  </script>
-</body>
-</html>`);
-        return;
-      }
-
+      const { url } = beginOAuth(res);
       appendAudit(req, res, {
         action: 'sage.connect',
         detail: 'Redirecting to Sage OAuth authorization',
@@ -409,7 +294,6 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
           country: business?.country,
         });
         clearCookie(res, COOKIE_OAUTH_STATE);
-        clearForceReauth(res);
         appendAudit(req, res, {
           action: 'sage.callback',
           detail: `Sage connected${business ? ` · ${business.name ?? business.displayed_as}` : ''}`,
@@ -419,7 +303,6 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
         return res.end();
       } catch (error) {
         clearSession(res);
-        markForceReauth(res);
         appendAudit(req, res, {
           action: 'sage.callback',
           detail: errorMessage(error),
@@ -433,43 +316,13 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
     }
 
     if ((method === 'POST' || method === 'GET') && path[0] === 'disconnect') {
-      const session = readSession(req);
-      let revoked = false;
-      if (session?.tokens) {
-        const accessRevoked = await revokeSageToken(session.tokens.accessToken, session.country);
-        const refreshRevoked = await revokeSageToken(session.tokens.refreshToken, session.country);
-        revoked = accessRevoked || refreshRevoked;
-      }
       clearSession(res);
-      markForceReauth(res);
       appendAudit(req, res, {
         action: 'sage.disconnect',
-        detail: revoked
-          ? 'Sage tokens revoked and session cleared — redirecting to Sage browser logout'
-          : 'Sage session cleared — redirecting to Sage browser logout',
+        detail: 'Sage session cleared',
         status: 'info',
       });
-
-      const redirect =
-        typeof req.query.redirect === 'string' ? req.query.redirect.toLowerCase() : '';
-      // Full-page disconnect: leave Synpath and federated-logout of Sage so the next
-      // Connect cannot silently reuse the previous SSO session.
-      if (method === 'GET' && (redirect === 'logout' || redirect === '1' || redirect === 'true')) {
-        const appBase = getEnv('APP_BASE_URL') ?? 'https://www.getsynpath-ai.com';
-        res.writeHead(302, {
-          Location: SAGE_BROWSER_LOGOUT_URL,
-          // Soft hint for humans who inspect the response; browsers follow Location.
-          'X-Synpath-Return': `${appBase}/sage-integration`,
-        });
-        return res.end();
-      }
-
-      return json(res, 200, {
-        disconnected: true,
-        requireReauth: true,
-        revoked,
-        logoutUrl: SAGE_BROWSER_LOGOUT_URL,
-      });
+      return json(res, 200, { disconnected: true });
     }
 
     if (method === 'GET' && path[0] === 'businesses') {
