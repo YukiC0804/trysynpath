@@ -53,8 +53,6 @@ export interface AuditEntry {
 export const COOKIE_SESSION = 'sage_session';
 export const COOKIE_OAUTH_STATE = 'sage_oauth_state';
 export const COOKIE_AUDIT = 'sage_audit';
-/** Set on disconnect so the next Connect forces Sage login UI. */
-export const COOKIE_FORCE_REAUTH = 'sage_force_reauth';
 
 export const SAGE_REQUIRED_ENV = [
   'APP_BASE_URL',
