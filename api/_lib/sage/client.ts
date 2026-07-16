@@ -761,10 +761,14 @@ export async function getSalesInvoice(
   });
 }
 
+/** Released (non-Draft) Sales Invoices require void_reason on DELETE. */
+export const DEMO_SALES_INVOICE_VOID_REASON = 'Synpath Ghostboards demo reset';
+
 export async function deleteSalesInvoice(
   accessToken: string,
   businessId: string,
   id: string,
+  voidReason = DEMO_SALES_INVOICE_VOID_REASON,
 ) {
   if (!id || id === 'undefined' || id === 'null') {
     throw new SageApiError('Sales invoice id is required for delete/void', 400);
@@ -772,6 +776,7 @@ export async function deleteSalesInvoice(
   await sageFetch(`/sales_invoices/${id}`, accessToken, {
     method: 'DELETE',
     businessId,
+    query: { void_reason: voidReason },
   });
 }
 
