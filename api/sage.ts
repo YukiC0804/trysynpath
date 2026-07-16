@@ -8,6 +8,11 @@ import { errorMessage } from './_lib/sage/config';
  * vercel.json, with the remainder path passed as __sagePath so multi-segment
  * routes never rely on catch-all filesystem matching (which 404s on this project).
  */
+export const config = {
+  // Workflow 2 issues many sequential Sage API calls (PI + stock movements).
+  maxDuration: 60,
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const integration =
