@@ -9,6 +9,7 @@ import type {
 import { validateNormalizedBundle } from '../../../shared/workflow';
 import type { DocumentExtractionAdapter, ExtractionOverrides } from './extraction';
 import { calculateLandedCosts } from './landedCostEngine';
+import { matchShipmentLines } from './matcher';
 import {
   buildPurchaseInvoicePayload,
   buildSalesInvoicePayload,
@@ -98,25 +99,12 @@ export class WorkflowOrchestrator {
 
     const referenceData = input.gateway ? await input.gateway.loadReferenceData() : null;
     if (referenceData) {
-      for (const line of extraction.bundle.shipment.lines) {
-        const matches = referenceData.stockItems.filter(
-          (item) => item.sku.toUpperCase() === line.sku.toUpperCase(),
-        );
-        if (matches.length === 1) {
-          line.matchedSageStockItemId = matches[0].id;
-          line.matchedSageItemCode = matches[0].sku;
-          line.matchingStatus = 'exact';
-          line.matchingConfidence = 1;
-        } else if (matches.length > 1) {
-          line.matchingStatus = 'ambiguous';
-          line.matchingConfidence = 0.5;
-          validationErrors.push(`${line.sku}: ambiguous Sage Stock Item match`);
-        } else {
-          line.matchingStatus = 'unmatched';
-          line.matchingConfidence = 0;
-          validationErrors.push(`${line.sku}: no Sage Stock Item match`);
-        }
-      }
+      validationErrors.push(
+        ...matchShipmentLines(
+          extraction.bundle.shipment.lines,
+          referenceData.stockItems,
+        ),
+      );
       for (const salesLine of extraction.bundle.customerInvoice.lines) {
         const shipmentLine = extraction.bundle.shipment.lines.find(
           (line) => line.sku.toUpperCase() === salesLine.sku.toUpperCase(),
@@ -350,7 +338,9 @@ export class WorkflowOrchestrator {
     const successful = run.postingRecords.filter(
       (record) => record.transactionType === target.replace(/s$/, '') && record.status === 'succeeded',
     );
-    if (successful.length) return { run, idempotentReplay: true, records: successful };
+    if (target !== 'stock_movements' && successful.length) {
+      return { run, idempotentReplay: true, records: successful };
+    }
 
     run.status = 'posting';
     try {
@@ -382,6 +372,13 @@ export class WorkflowOrchestrator {
         for (const raw of preview.payloads.stockMovements) {
           const payload = raw as Record<string, unknown>;
           const stockItemId = String(payload.stock_item_id ?? '');
+          const alreadyPosted = run.postingRecords.find(
+            (record) =>
+              record.transactionType === 'stock_movement' &&
+              record.externalReference === `${run.externalReference}:${stockItemId}` &&
+              record.status === 'succeeded',
+          );
+          if (alreadyPosted) continue;
           const existing = await gateway.findStockMovement(
             run.externalReference,
             stockItemId,

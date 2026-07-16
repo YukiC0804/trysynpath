@@ -21,6 +21,7 @@ import {
   DEFAULT_GMAIL_SEARCH,
   GOOGLE_REQUIRED_ENV,
 } from './types';
+import { deduplicateSourceCollection } from '../workflow/sourceAdapters';
 
 function pathSegments(req: VercelRequest): string[] {
   const raw = req.query.__gmailPath ?? req.query.__integrationPath ?? req.query.__sagePath;
@@ -150,10 +151,12 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
     const messageIds = Array.isArray(body.messageIds)
       ? body.messageIds.map(String)
       : undefined;
-    const collection = await new GmailSourceAdapter(auth.accessToken).collect({
-      searchQuery: query,
-      messageIds,
-    });
+    const collection = deduplicateSourceCollection(
+      await new GmailSourceAdapter(auth.accessToken).collect({
+        searchQuery: query,
+        messageIds,
+      }),
+    );
     const lastSyncAt = new Date().toISOString();
     writeGmailSession(res, { ...auth.session, lastSyncAt });
     return json(res, 200, {

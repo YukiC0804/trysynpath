@@ -18,7 +18,7 @@ async function parseJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-async function post<T>(path: string, body: Record<string, unknown>) {
+async function post<T>(path: string, body: object) {
   return parseJson<T>(
     await fetch(path, {
       method: 'POST',

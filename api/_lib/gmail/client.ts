@@ -150,7 +150,7 @@ export class GmailSourceAdapter implements SourceAdapter {
         snippet: message.snippet ?? parsed.text.slice(0, 180),
         labelIds: message.labelIds ?? [],
         attachmentIds,
-        processingStatus: documents.length ? 'Downloaded' : 'Needs Review',
+        processingStatus: attachmentIds.length ? 'Downloaded' : 'Needs Review',
       });
     }
     return { sourceType: this.sourceType, emails, documents, collectedAt: new Date().toISOString() };
