@@ -176,7 +176,16 @@ export class WorkflowOrchestrator {
       if (
         key !== 'accountingMappingConfirmed' &&
         !value &&
-        ['supplierContactId', 'customerContactId', 'purchaseLedgerAccountId', 'salesLedgerAccountId', 'purchaseTaxRateId', 'salesTaxRateId'].includes(key)
+        [
+          'supplierContactId',
+          'customerContactId',
+          'purchaseLedgerAccountId',
+          'salesLedgerAccountId',
+          'purchaseTaxRateId',
+          'salesTaxRateId',
+          'purchaseStatusId',
+          'salesStatusId',
+        ].includes(key)
       ) {
         validationErrors.push(`${key} requires review`);
       }
@@ -191,10 +200,10 @@ export class WorkflowOrchestrator {
       validationErrors.push('Choose an inventory posting strategy before inventory approval');
     }
 
-    const purchaseTax = referenceData?.taxRates.find(
+    const purchaseTax = referenceData?.purchaseTaxRates.find(
       (rate) => rate.id === selections.purchaseTaxRateId,
     );
-    const salesTax = referenceData?.taxRates.find(
+    const salesTax = referenceData?.salesTaxRates.find(
       (rate) => rate.id === selections.salesTaxRateId,
     );
     const purchaseInvoice = buildPurchaseInvoicePayload({
@@ -268,7 +277,27 @@ export class WorkflowOrchestrator {
           name: ledger.name ?? ledger.displayed_as ?? ledger.id,
           nominalCode: ledger.nominal_code,
         })),
+        purchaseLedgerAccounts: (referenceData?.ledgerAccounts ?? []).map((ledger) => ({
+          id: ledger.id,
+          name: ledger.name ?? ledger.displayed_as ?? ledger.id,
+          nominalCode: ledger.nominal_code,
+        })),
+        salesLedgerAccounts: (referenceData?.salesLedgerAccounts ?? []).map((ledger) => ({
+          id: ledger.id,
+          name: ledger.name ?? ledger.displayed_as ?? ledger.id,
+          nominalCode: ledger.nominal_code,
+        })),
         taxRates: (referenceData?.taxRates ?? []).map((rate) => ({
+          id: rate.id,
+          name: rate.name ?? rate.displayed_as ?? rate.id,
+          percentage: Number(rate.percentage ?? 0),
+        })),
+        purchaseTaxRates: (referenceData?.purchaseTaxRates ?? []).map((rate) => ({
+          id: rate.id,
+          name: rate.name ?? rate.displayed_as ?? rate.id,
+          percentage: Number(rate.percentage ?? 0),
+        })),
+        salesTaxRates: (referenceData?.salesTaxRates ?? []).map((rate) => ({
           id: rate.id,
           name: rate.name ?? rate.displayed_as ?? rate.id,
           percentage: Number(rate.percentage ?? 0),
@@ -360,6 +389,7 @@ export class WorkflowOrchestrator {
             requestPayload: payload,
             responseSummary: result.readBack,
             readBackVerified: result.verified,
+            differences: 'differences' in result ? result.differences : {},
             status: result.verified ? 'succeeded' : 'failed',
           }),
         );
@@ -402,6 +432,7 @@ export class WorkflowOrchestrator {
                 requestPayload: payload,
                 responseSummary: result.readBack,
                 readBackVerified: result.verified,
+                differences: 'differences' in result ? result.differences : {},
                 status: result.verified ? 'succeeded' : 'failed',
               }),
             );
@@ -446,6 +477,7 @@ export class WorkflowOrchestrator {
             requestPayload: payload,
             responseSummary: result.readBack,
             readBackVerified: result.verified,
+            differences: 'differences' in result ? result.differences : {},
             status: result.verified ? 'succeeded' : 'failed',
           }),
         );
@@ -459,7 +491,7 @@ export class WorkflowOrchestrator {
               record.transactionType === invoiceType && record.status === 'succeeded',
           );
         if (!invoice) throw new Error(`Create ${invoiceType} before release`);
-        const responseSummary =
+        const releaseResult =
           target === 'purchase_invoice_release'
             ? await gateway.releasePurchaseInvoice(invoice.sageTransactionId)
             : await gateway.releaseSalesInvoice(invoice.sageTransactionId);
@@ -471,9 +503,9 @@ export class WorkflowOrchestrator {
             sageTransactionId: invoice.sageTransactionId,
             externalReference: invoice.externalReference,
             requestPayload: {},
-            responseSummary,
-            readBackVerified: true,
-            status: 'succeeded',
+            responseSummary: releaseResult.readBack,
+            readBackVerified: releaseResult.verified,
+            status: releaseResult.verified ? 'succeeded' : 'failed',
           }),
         );
       }

@@ -13,7 +13,7 @@ import {
   listArtefactStatuses,
   listContacts,
   listCurrencies,
-  listLedgerAccounts,
+  listPurchaseLedgerAccounts,
   listPurchaseInvoices,
   listSalesInvoices,
   listSalesLedgerAccounts,
@@ -37,6 +37,16 @@ export interface SagePayloadSelections {
 }
 
 const round = (value: number) => Number(value.toFixed(2));
+
+function differences(
+  pairs: Record<string, { expected: unknown; actual: unknown }>,
+) {
+  return Object.fromEntries(
+    Object.entries(pairs).filter(
+      ([, value]) => String(value.expected ?? '') !== String(value.actual ?? ''),
+    ),
+  );
+}
 
 function taxAmount(net: number, rate?: { percentage?: number | string }) {
   return round(net * (Number(rate?.percentage ?? 0) / 100));
@@ -161,15 +171,17 @@ export class SageGateway {
       contacts,
       ledgerAccounts,
       salesLedgerAccounts,
-      taxRates,
+      purchaseTaxRates,
+      salesTaxRates,
       currencies,
       artefactStatuses,
     ] = await Promise.all([
       listStockItems(this.accessToken, this.businessId),
       listContacts(this.accessToken, this.businessId),
-      listLedgerAccounts(this.accessToken, this.businessId),
+      listPurchaseLedgerAccounts(this.accessToken, this.businessId),
       listSalesLedgerAccounts(this.accessToken, this.businessId),
-      listTaxRates(this.accessToken, this.businessId),
+      listTaxRates(this.accessToken, this.businessId, 'purchase'),
+      listTaxRates(this.accessToken, this.businessId, 'sales'),
       listCurrencies(this.accessToken, this.businessId),
       listArtefactStatuses(this.accessToken, this.businessId),
     ]);
@@ -178,7 +190,13 @@ export class SageGateway {
       contacts,
       ledgerAccounts,
       salesLedgerAccounts,
-      taxRates,
+      taxRates: [
+        ...new Map(
+          [...purchaseTaxRates, ...salesTaxRates].map((rate) => [rate.id, rate]),
+        ).values(),
+      ],
+      purchaseTaxRates,
+      salesTaxRates,
       currencies,
       artefactStatuses,
     };
@@ -210,14 +228,19 @@ export class SageGateway {
     );
     if (!created.id) throw new Error('Sage returned no Purchase Invoice ID');
     const readBack = await getPurchaseInvoice(this.accessToken, this.businessId, created.id);
+    const diff = differences({
+      reference: { expected: payload.reference, actual: readBack.reference },
+      contactId: {
+        expected: payload.contact_id,
+        actual: (readBack.contact as { id?: string } | undefined)?.id,
+      },
+    });
     return {
       id: created.id,
       created,
       readBack,
-      verified:
-        String(readBack.reference ?? '') === String(payload.reference ?? '') &&
-        String((readBack.contact as { id?: string } | undefined)?.id ?? '') ===
-          String(payload.contact_id ?? ''),
+      differences: diff,
+      verified: Object.keys(diff).length === 0,
     };
   }
 
@@ -248,13 +271,17 @@ export class SageGateway {
     const id = String(created.id ?? '');
     if (!id) throw new Error('Sage returned no Stock Movement ID');
     const readBack = await getStockMovement(this.accessToken, this.businessId, id);
+    const diff = differences({
+      reference: { expected: payload.reference, actual: readBack.reference },
+      quantity: { expected: payload.quantity, actual: readBack.quantity },
+      costPrice: { expected: payload.cost_price, actual: readBack.cost_price },
+    });
     return {
       id,
       created,
       readBack,
-      verified:
-        String(readBack.reference ?? '') === String(payload.reference ?? '') &&
-        Number(readBack.quantity ?? 0) === Number(payload.quantity ?? 0),
+      differences: diff,
+      verified: Object.keys(diff).length === 0,
     };
   }
 
@@ -263,22 +290,39 @@ export class SageGateway {
     const id = String(created.id ?? '');
     if (!id) throw new Error('Sage returned no Sales Invoice ID');
     const readBack = await getSalesInvoice(this.accessToken, this.businessId, id);
+    const diff = differences({
+      reference: { expected: payload.reference, actual: readBack.reference },
+      contactId: {
+        expected: payload.contact_id,
+        actual: (readBack.contact as { id?: string } | undefined)?.id,
+      },
+    });
     return {
       id,
       created,
       readBack,
-      verified:
-        String(readBack.reference ?? '') === String(payload.reference ?? '') &&
-        String((readBack.contact as { id?: string } | undefined)?.id ?? '') ===
-          String(payload.contact_id ?? ''),
+      differences: diff,
+      verified: Object.keys(diff).length === 0,
     };
   }
 
-  releasePurchaseInvoice(id: string) {
-    return releasePurchaseInvoice(this.accessToken, this.businessId, id);
+  async releasePurchaseInvoice(id: string) {
+    const released = await releasePurchaseInvoice(this.accessToken, this.businessId, id);
+    const readBack = await getPurchaseInvoice(this.accessToken, this.businessId, id);
+    return {
+      released,
+      readBack,
+      verified: String(readBack.id ?? '') === id,
+    };
   }
 
-  releaseSalesInvoice(id: string) {
-    return releaseSalesInvoice(this.accessToken, this.businessId, id);
+  async releaseSalesInvoice(id: string) {
+    const released = await releaseSalesInvoice(this.accessToken, this.businessId, id);
+    const readBack = await getSalesInvoice(this.accessToken, this.businessId, id);
+    return {
+      released,
+      readBack,
+      verified: String(readBack.id ?? '') === id,
+    };
   }
 }

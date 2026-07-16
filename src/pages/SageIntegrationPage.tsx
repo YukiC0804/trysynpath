@@ -435,6 +435,18 @@ export function SageIntegrationPage() {
               },
             }))
           }
+          onManualAllocationChange={(id, sku, value) =>
+            setOverrides((current) => ({
+              ...current,
+              manualAllocations: {
+                ...current.manualAllocations,
+                [id]: {
+                  ...(current.manualAllocations?.[id] ?? {}),
+                  [sku]: value,
+                },
+              },
+            }))
+          }
           onRefreshPreview={() => void loadPreview()}
         />
       )}

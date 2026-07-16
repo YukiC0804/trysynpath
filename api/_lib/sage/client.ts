@@ -286,7 +286,17 @@ export async function createStockItem(
       item_code: payload.item_code,
       description: payload.description,
       cost_price: payload.cost_price,
-      sales_price: payload.sales_price ?? 0,
+      ...(payload.sales_price != null
+        ? {
+            sales_prices: [
+              {
+                price_name: 'Sales Price',
+                price: payload.sales_price,
+                price_includes_tax: false,
+              },
+            ],
+          }
+        : {}),
       reorder_level: payload.reorder_level ?? 0,
       reorder_quantity: payload.reorder_quantity ?? 0,
       supplier_part_number: payload.supplier_part_number ?? '',
@@ -297,7 +307,7 @@ export async function createStockItem(
         ? { purchase_tax_rate_id: defaults.purchase_tax_rate_id }
         : {}),
       ...(payload.usual_supplier_id
-        ? { usual_supplier: { id: payload.usual_supplier_id } }
+        ? { usual_supplier_id: payload.usual_supplier_id }
         : {}),
     },
   };
@@ -326,7 +336,23 @@ export async function updateStockItem(
     throw new SageApiError('Stock item id is required for update', 400);
   }
 
-  const body = { stock_item: updates };
+  const { sales_price: salesPrice, ...openApiUpdates } = updates;
+  const body = {
+    stock_item: {
+      ...openApiUpdates,
+      ...(salesPrice != null
+        ? {
+            sales_prices: [
+              {
+                price_name: 'Sales Price',
+                price: salesPrice,
+                price_includes_tax: false,
+              },
+            ],
+          }
+        : {}),
+    },
+  };
   const updated = (await sageFetch(`/stock_items/${id}`, accessToken, {
     method: 'PUT',
     businessId,
@@ -439,10 +465,14 @@ export async function listPurchaseLedgerAccounts(accessToken: string, businessId
   return listItems(data);
 }
 
-export async function listTaxRates(accessToken: string, businessId: string) {
+export async function listTaxRates(
+  accessToken: string,
+  businessId: string,
+  usage?: 'purchase' | 'sales',
+) {
   const data = (await sageFetch('/tax_rates', accessToken, {
     businessId,
-    query: { items_per_page: '50' },
+    query: { items_per_page: '50', ...(usage ? { usage } : {}) },
   })) as { $items?: TaxRateLike[] } | TaxRateLike[];
   return listItems(data);
 }

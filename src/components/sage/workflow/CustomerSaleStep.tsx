@@ -98,7 +98,7 @@ export function CustomerSaleStep({
           <Select
             label="Sales ledger"
             value={preview.selections.salesLedgerAccountId}
-            options={preview.liveSage.ledgerAccounts.map((ledger) => ({
+            options={preview.liveSage.salesLedgerAccounts.map((ledger) => ({
               id: ledger.id,
               name: `${ledger.nominalCode ?? ''} ${ledger.name}`.trim(),
             }))}
@@ -107,11 +107,20 @@ export function CustomerSaleStep({
           <Select
             label="Sales tax rate"
             value={preview.selections.salesTaxRateId}
-            options={preview.liveSage.taxRates.map((rate) => ({
+            options={preview.liveSage.salesTaxRates.map((rate) => ({
               id: rate.id,
               name: `${rate.name} (${rate.percentage}%)`,
             }))}
             onChange={(value) => onSelectionChange('salesTaxRateId', value)}
+          />
+          <Select
+            label="Initial Sales Invoice status (use Draft)"
+            value={preview.selections.salesStatusId}
+            options={preview.liveSage.artefactStatuses.map((status) => ({
+              id: status.id,
+              name: status.name,
+            }))}
+            onChange={(value) => onSelectionChange('salesStatusId', value)}
           />
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-4">
@@ -182,6 +191,11 @@ export function CustomerSaleStep({
             <p className="mt-1 text-neutral-400">
               Sage ID: {salesRecord.sageTransactionId} · {salesRecord.externalReference}
             </p>
+            {salesRecord.differences && Object.keys(salesRecord.differences).length > 0 && (
+              <p className="mt-1 text-red-300">
+                Differences: {JSON.stringify(salesRecord.differences)}
+              </p>
+            )}
             <JsonDetails title="Raw Sage response" value={salesRecord.responseSummary} />
           </div>
         )}

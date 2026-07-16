@@ -23,6 +23,7 @@ export function DocumentsLandedCostStep({
   onChargeChange,
   onChargeMethodChange,
   onChargeClassificationChange,
+  onManualAllocationChange,
   onRefreshPreview,
 }: {
   preview: WorkflowPreview | null;
@@ -42,6 +43,7 @@ export function DocumentsLandedCostStep({
   onChargeChange: (id: string, value: number) => void;
   onChargeMethodChange: (id: string, value: AllocationMethod) => void;
   onChargeClassificationChange: (id: string, value: ChargeClassification) => void;
+  onManualAllocationChange: (id: string, sku: string, value: number) => void;
   onRefreshPreview: () => void;
 }) {
   return (
@@ -288,6 +290,29 @@ export function DocumentsLandedCostStep({
                           <option value="recoverable_tax">Recoverable tax</option>
                           <option value="unresolved">Unresolved</option>
                         </select>
+                        {(component.allocationMethod === 'manual_percentage' ||
+                          component.allocationMethod === 'manual_amount') && (
+                          <div className="mt-2 space-y-1">
+                            {preview.bundle.shipment.lines.map((line) => (
+                              <label key={line.sku} className="flex items-center gap-1 text-[10px]">
+                                <span className="w-28 truncate">{line.sku}</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={component.manualAllocations?.[line.sku] ?? 0}
+                                  onChange={(event) =>
+                                    onManualAllocationChange(
+                                      component.id,
+                                      line.sku,
+                                      Number(event.target.value),
+                                    )
+                                  }
+                                  className="w-20 rounded border border-neutral-700 bg-black px-1 py-0.5"
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="px-2">
                         <select

@@ -182,6 +182,7 @@ export interface SagePostingRecord {
   responseSummary: unknown;
   createdAt: string;
   readBackVerified: boolean;
+  differences?: Record<string, { expected: unknown; actual: unknown }>;
   status: 'pending' | 'succeeded' | 'failed' | 'partial';
   error?: string;
 }
@@ -252,7 +253,11 @@ export interface WorkflowPreview {
     }>;
     contacts: Array<{ id: string; name: string; reference: string; typeIds: string[] }>;
     ledgerAccounts: Array<{ id: string; name: string; nominalCode?: string }>;
+    purchaseLedgerAccounts: Array<{ id: string; name: string; nominalCode?: string }>;
+    salesLedgerAccounts: Array<{ id: string; name: string; nominalCode?: string }>;
     taxRates: Array<{ id: string; name: string; percentage: number }>;
+    purchaseTaxRates: Array<{ id: string; name: string; percentage: number }>;
+    salesTaxRates: Array<{ id: string; name: string; percentage: number }>;
     currencies: Array<{ id: string; name: string }>;
     artefactStatuses: Array<{ id: string; name: string }>;
   };

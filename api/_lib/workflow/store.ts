@@ -5,6 +5,9 @@ import { clearCookie, parseCookies, setCookie } from '../sage/http';
 import { decryptJson, encryptJson } from '../sage/tokenStore';
 
 const COOKIE_WORKFLOW_RUN = 'synpath_workflow_run';
+const COOKIE_WORKFLOW_RUN_CHUNKS = 'synpath_workflow_run_chunks';
+const COOKIE_CHUNK_SIZE = 3200;
+const MAX_COOKIE_CHUNKS = 6;
 
 export interface WorkflowStore {
   get(req: VercelRequest): WorkflowRun | null;
@@ -14,7 +17,12 @@ export interface WorkflowStore {
 
 export class EncryptedCookieWorkflowStore implements WorkflowStore {
   get(req: VercelRequest): WorkflowRun | null {
-    const raw = parseCookies(req)[COOKIE_WORKFLOW_RUN];
+    const cookies = parseCookies(req);
+    const count = Number(cookies[COOKIE_WORKFLOW_RUN_CHUNKS] ?? 0);
+    const raw =
+      count > 0
+        ? Array.from({ length: count }, (_, index) => cookies[`${COOKIE_WORKFLOW_RUN}_${index}`] ?? '').join('')
+        : cookies[COOKIE_WORKFLOW_RUN];
     if (!raw) return null;
     try {
       const wrapped = decryptJson<{ compressed: string }>(raw);
@@ -31,13 +39,30 @@ export class EncryptedCookieWorkflowStore implements WorkflowStore {
       'base64url',
     );
     const encrypted = encryptJson({ compressed });
-    // Keep one compact server-managed run in an encrypted, HttpOnly cookie. Source
-    // binaries remain in Gmail (re-fetched by ID) or immutable fixture modules.
-    setCookie(res, COOKIE_WORKFLOW_RUN, encrypted, { maxAge: 60 * 60 * 24 * 14 });
+    const chunks = encrypted.match(new RegExp(`.{1,${COOKIE_CHUNK_SIZE}}`, 'g')) ?? [];
+    if (chunks.length > MAX_COOKIE_CHUNKS) {
+      throw new Error('Workflow state exceeded the encrypted demo-store limit');
+    }
+    clearCookie(res, COOKIE_WORKFLOW_RUN);
+    setCookie(res, COOKIE_WORKFLOW_RUN_CHUNKS, String(chunks.length), {
+      maxAge: 60 * 60 * 24 * 14,
+    });
+    chunks.forEach((chunk, index) =>
+      setCookie(res, `${COOKIE_WORKFLOW_RUN}_${index}`, chunk, {
+        maxAge: 60 * 60 * 24 * 14,
+      }),
+    );
+    for (let index = chunks.length; index < MAX_COOKIE_CHUNKS; index += 1) {
+      clearCookie(res, `${COOKIE_WORKFLOW_RUN}_${index}`);
+    }
   }
 
   clear(res: VercelResponse) {
     clearCookie(res, COOKIE_WORKFLOW_RUN);
+    clearCookie(res, COOKIE_WORKFLOW_RUN_CHUNKS);
+    for (let index = 0; index < MAX_COOKIE_CHUNKS; index += 1) {
+      clearCookie(res, `${COOKIE_WORKFLOW_RUN}_${index}`);
+    }
   }
 }
 

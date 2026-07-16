@@ -46,7 +46,7 @@ export function PurchaseInventoryStep({
   const movementRecords = run.postingRecords.filter(
     (record) => record.transactionType === 'stock_movement',
   );
-  const purchaseLedgers = preview.liveSage.ledgerAccounts;
+  const purchaseLedgers = preview.liveSage.purchaseLedgerAccounts;
   const vendors = preview.liveSage.contacts.filter((contact) =>
     contact.typeIds.includes('VENDOR'),
   );
@@ -85,11 +85,20 @@ export function PurchaseInventoryStep({
           <SelectField
             label="Purchase tax rate"
             value={preview.selections.purchaseTaxRateId}
-            options={preview.liveSage.taxRates.map((rate) => ({
+            options={preview.liveSage.purchaseTaxRates.map((rate) => ({
               id: rate.id,
               name: `${rate.name} (${rate.percentage}%)`,
             }))}
             onChange={(value) => onSelectionChange('purchaseTaxRateId', value)}
+          />
+          <SelectField
+            label="Initial Purchase Invoice status (use Draft)"
+            value={preview.selections.purchaseStatusId}
+            options={preview.liveSage.artefactStatuses.map((status) => ({
+              id: status.id,
+              name: status.name,
+            }))}
+            onChange={(value) => onSelectionChange('purchaseStatusId', value)}
           />
           <label className="text-xs text-neutral-400">
             Inventory posting strategy
@@ -199,6 +208,11 @@ export function PurchaseInventoryStep({
                 <p className="mt-1 text-neutral-400">
                   Sage ID: {record.sageTransactionId || 'none'} · {record.externalReference}
                 </p>
+                {record.differences && Object.keys(record.differences).length > 0 && (
+                  <p className="mt-1 text-red-300">
+                    Differences: {JSON.stringify(record.differences)}
+                  </p>
+                )}
                 <JsonDetails title="Raw Sage response" value={record.responseSummary} />
               </div>
             ))}

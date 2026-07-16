@@ -163,6 +163,20 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
     }
     try {
       const result = await orchestrator.execute(res, run, preview, gateway, target);
+      const refreshed = await gateway.loadReferenceData();
+      preview.liveSage.stockItems = refreshed.stockItems.map((item) => ({
+        id: item.id,
+        itemCode: item.sku,
+        description: item.description,
+        quantityInStock: item.quantityInStock,
+        costPrice: item.costPrice,
+        lastCostPrice: item.lastCostPrice,
+        averageCostPrice: item.averageCostPrice,
+        purchaseLedgerAccountId: item.purchaseLedgerAccountId,
+        purchaseTaxRateId: item.purchaseTaxRateId,
+        salesLedgerAccountId: item.salesLedgerAccountId,
+        salesTaxRateId: item.salesTaxRateId,
+      }));
       return json(res, 200, { ...result, preview });
     } catch (error) {
       return json(res, 422, {
