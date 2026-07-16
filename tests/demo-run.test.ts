@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE,
+  GHOSTBOARDS_BASELINE_SKUS,
+  GHOSTBOARDS_DEMO_WORKFLOW_SKUS,
+} from '../api/_lib/sage/demoBaseline';
+import {
   appendDemoTransaction,
   buildDemoRunReference,
   captureBaseline,
@@ -21,6 +26,28 @@ const stock = {
   salesPrice: 102,
   raw: {},
 };
+
+describe('ghostboards baseline configuration', () => {
+  it('defines canonical baseline SKUs with quantity and cost', () => {
+    expect(GHOSTBOARDS_BASELINE_SKUS.map((item) => item.sku)).toEqual([
+      'ACR-MIR-SLV-3MM',
+      'ACR-BLK-3MM-48X96',
+      'ACR-CLR-6MM-48X96',
+      'ACR-CLR-3MM-48X96',
+    ]);
+    expect(GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === 'ACR-MIR-SLV-3MM')).toMatchObject({
+      costPrice: 68,
+      quantityInStock: 16,
+      reorderLevel: 10,
+    });
+    expect(GHOSTBOARDS_DEMO_WORKFLOW_SKUS).toEqual([
+      'ACR-MIR-SLV-3MM',
+      'ACR-CLR-3MM-48X96',
+      'ACR-CLR-6MM-48X96',
+    ]);
+    expect(GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE).toBe('GHOSTBOARDS-DEMO-BASELINE');
+  });
+});
 
 describe('demo run baseline and reset bookkeeping', () => {
   beforeEach(() => {

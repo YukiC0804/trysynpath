@@ -19,7 +19,7 @@ import {
   captureBaseline,
   ensureLandedCostPrice,
   getCurrentDemoRun,
-  resetDemoRun,
+  restoreDemoBaseline,
 } from './service';
 import { bindDemoRunCookieContext, getDemoRun } from './store';
 import { parseCookies } from '../sage/http';
@@ -68,6 +68,16 @@ export async function handleDemoRunRequest(
   bindDemoRunCookieContext(req, res);
 
   const sage = await getValidAccessToken(req, res);
+
+  // Reset remains clickable when Sage is disconnected — queue reconnect.
+  if (method === 'POST' && path[0] === 'reset' && !sage?.session.businessId) {
+    return json(res, 401, {
+      error: 'Connect Sage to restore the demo baseline.',
+      needsSage: true,
+      resetRequested: true,
+    });
+  }
+
   if (!sage?.session.businessId) {
     return json(res, 401, { error: 'Connect Sage before using demo run controls' });
   }
@@ -400,25 +410,23 @@ export async function handleDemoRunRequest(
   }
 
   if (method === 'POST' && path[0] === 'reset') {
-    const confirmation = String(body.confirmation ?? '');
+    const confirmation = String(body.confirmation ?? 'RESET');
     const cookieId = readDemoRunCookie(req);
-    const demoRun =
-      (typeof body.demoRunId === 'string' ? await getDemoRun(body.demoRunId) : null) ??
-      (cookieId ? await getDemoRun(cookieId) : null) ??
-      (await getCurrentDemoRun(businessId));
-    if (!demoRun) return json(res, 404, { error: 'No Demo Run exists to reset' });
-    const updated = await resetDemoRun({
+    const activeDemoRunId =
+      (typeof body.demoRunId === 'string' ? body.demoRunId : undefined) ??
+      cookieId ??
+      undefined;
+    const result = await restoreDemoBaseline({
       accessToken: sage.accessToken,
       businessId,
-      demoRunId: demoRun.id,
       confirmation,
+      activeDemoRunId,
     });
-    return json(res, updated.status === 'reset_complete' ? 200 : 422, {
-      demoRun: updated,
-      message:
-        updated.status === 'reset_complete'
-          ? 'Demo Reset Complete'
-          : 'Reset Requires Review',
+    return json(res, result.status === 'ready' ? 200 : 422, {
+      demoRun: result.demoRun,
+      message: result.message,
+      unresolved: result.unresolved,
+      summary: result.summary,
     });
   }
 

@@ -1,5 +1,5 @@
 import type { DemoPrepareResult, DemoRunRecord } from '../../shared/demoRun';
-import type { WorkflowPreview, WorkflowRun } from '../../shared/workflow';
+import type { WorkflowRun } from '../../shared/workflow';
 import type { PreviewRequest } from './workflowApi';
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -10,12 +10,20 @@ async function parseJson<T>(response: Response): Promise<T> {
       (typeof data.error === 'string' && data.error) ||
         (typeof data.message === 'string' && data.message) ||
         `Request failed (${response.status})`,
-    ) as Error & { missingSkus?: string[]; demoRun?: DemoRunRecord; partial?: boolean };
+    ) as Error & {
+      missingSkus?: string[];
+      demoRun?: DemoRunRecord;
+      partial?: boolean;
+      unresolved?: string[];
+      needsSage?: boolean;
+    };
     if (Array.isArray(data.missingSkus)) error.missingSkus = data.missingSkus.map(String);
     if (data.demoRun && typeof data.demoRun === 'object') {
       error.demoRun = data.demoRun as DemoRunRecord;
     }
+    if (Array.isArray(data.unresolved)) error.unresolved = data.unresolved.map(String);
     if (data.partial === true) error.partial = true;
+    if (response.status === 401) error.needsSage = true;
     throw error;
   }
   return data as T;
@@ -54,7 +62,6 @@ export function postDemoPurchase(request: PreviewRequest) {
       newLandedCost: number;
     }>;
     partial?: boolean;
-    preview?: WorkflowPreview;
   }>('/api/workflow/demo/purchase', request);
 }
 
@@ -62,8 +69,18 @@ export function postDemoSales(request: PreviewRequest) {
   return post<{ demoRun: DemoRunRecord; run: WorkflowRun }>('/api/workflow/demo/sales', request);
 }
 
-export function resetDemoRun(confirmation: string, demoRunId?: string) {
-  return post<{ demoRun: DemoRunRecord; message: string }>('/api/workflow/demo/reset', {
+export function resetDemoRun(confirmation = 'RESET', demoRunId?: string) {
+  return post<{
+    demoRun: DemoRunRecord | null;
+    message: string;
+    unresolved: string[];
+    summary: {
+      productsReady: boolean;
+      inventoryRestored: boolean;
+      costsRestored: boolean;
+      transactionsReconciled: boolean;
+    };
+  }>('/api/workflow/demo/reset', {
     confirmation,
     demoRunId,
   });
