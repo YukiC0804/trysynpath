@@ -126,11 +126,16 @@ function preview(current: WorkflowRun): WorkflowPreview {
 
 describe('SKU matching', () => {
   it('matches item_code case-insensitively and flags ambiguous/missing values', () => {
-    const lines = structuredClone(FIXTURE_SHIPMENT.lines);
+    const [fixtureLine] = structuredClone(FIXTURE_SHIPMENT.lines);
+    const lines = [
+      fixtureLine,
+      { ...structuredClone(fixtureLine), sku: 'AMBIGUOUS-SKU' },
+      { ...structuredClone(fixtureLine), sku: 'MISSING-SKU' },
+    ];
     const errors = matchShipmentLines(lines, [
-      { id: '1', sku: 'acr-mir-slv-3mm' },
-      { id: '2', sku: 'ACR-CLR-3MM-48X96' },
-      { id: '3', sku: 'acr-clr-3mm-48x96' },
+      { id: '1', sku: 'acr-clr-3mm-48x96' },
+      { id: '2', sku: 'AMBIGUOUS-SKU' },
+      { id: '3', sku: 'ambiguous-sku' },
     ]);
     expect(lines[0]).toMatchObject({
       matchedSageStockItemId: '1',
@@ -509,6 +514,17 @@ describe('WorkflowOrchestrator accounting defaults', () => {
             contact.typeIds.some((id) => id.includes(type)) &&
             contact.name.toLowerCase().includes(lower),
         );
+      },
+      async ensureContact(
+        type: 'VENDOR' | 'CUSTOMER',
+        name: string,
+      ) {
+        return {
+          id: type === 'VENDOR' ? 'supplier-1' : 'customer-1',
+          name,
+          reference: '',
+          typeIds: [type],
+        };
       },
     } as unknown as SageGateway;
 

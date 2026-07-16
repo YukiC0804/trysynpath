@@ -8,6 +8,7 @@ import {
   SageGateway,
 } from '../api/_lib/workflow/sageGateway';
 import { calculateLandedCosts } from '../api/_lib/workflow/landedCostEngine';
+import { sanitizeContactPayload } from '../api/_lib/sage/payloadAllowlist';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -27,6 +28,27 @@ async function fixture() {
 }
 
 describe('OpenAPI-aligned Sage payload builders', () => {
+  it('allows only documented fields when creating a demo contact', () => {
+    expect(
+      sanitizeContactPayload({
+        name: 'Acrylic Display Studio',
+        contact_type_ids: ['CUSTOMER'],
+        reference: 'SYN-DEMO-CUSTOMER',
+        notes: 'Created by the Synpath Ghostboards demo',
+        currency_id: 'GBP',
+        main_address: { address_line_1: 'Acrylic Display Studio' },
+        unsupported: 'do not send',
+      }),
+    ).toEqual({
+      name: 'Acrylic Display Studio',
+      contact_type_ids: ['CUSTOMER'],
+      reference: 'SYN-DEMO-CUSTOMER',
+      notes: 'Created by the Synpath Ghostboards demo',
+      currency_id: 'GBP',
+      main_address: { address_line_1: 'Acrylic Display Studio' },
+    });
+  });
+
   it('builds Purchase Invoice at vendor prices, not landed prices', async () => {
     const bundle = await fixture();
     const payload = buildPurchaseInvoicePayload({
@@ -46,9 +68,9 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       vendor_reference: 'NWA-INV-8841',
     });
     expect(payload).not.toHaveProperty('main_address');
-    expect(payload.invoice_lines).toHaveLength(3);
+    expect(payload.invoice_lines).toHaveLength(1);
     expect(payload.invoice_lines.reduce((sum, line) => sum + line.quantity * line.unit_price, 0)).toBe(
-      6620,
+      5250,
     );
     expect(payload.invoice_lines.every((line) => !('product_id' in line))).toBe(true);
   });
@@ -85,7 +107,7 @@ describe('OpenAPI-aligned Sage payload builders', () => {
         reference: 'DEMO-REF',
         strategy: 'stock_movement',
       }),
-    ).toHaveLength(3);
+    ).toHaveLength(1);
   });
 
   it('builds required Stock Movement fields with landed cost', async () => {
@@ -102,13 +124,14 @@ describe('OpenAPI-aligned Sage payload builders', () => {
     });
     expect(movement).toMatchObject({
       stock_item_id: 'stock-1',
-      quantity: 50,
+      quantity: 100,
+      cost_price: 62.01,
     });
     expect(movement).not.toHaveProperty('reference');
-    expect(movement.cost_price).toBeGreaterThan(68);
+    expect(movement.cost_price).toBeGreaterThan(52.5);
     expect(String(movement.details).length).toBeLessThanOrEqual(50);
     expect(movement.details).toContain('DEMO-REF');
-    expect(movement.details).toContain('ACR-MIR-SLV-3MM');
+    expect(movement.details).toContain('ACR-CLR-3MM-48X96');
   });
 
   it('builds Sales Invoice with product, tax, shipping and source invoice reference', async () => {
@@ -126,7 +149,7 @@ describe('OpenAPI-aligned Sage payload builders', () => {
     expect(payload).toMatchObject({
       contact_id: 'customer-1',
       reference: 'GB-CUST-1042',
-      shipping_net_amount: 85,
+      shipping_net_amount: 0,
       shipping_tax_rate_id: 'GB_STANDARD',
     });
     expect(payload.invoice_lines[0]).toMatchObject({

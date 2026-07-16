@@ -538,7 +538,7 @@ export function SageIntegrationPage() {
   const purchaseDone = preview ? purchaseWorkflowComplete(preview.run) : false;
   const salesDone = preview ? salesWorkflowComplete(preview.run) : false;
   const allDone = purchaseDone && salesDone && scanDone;
-  const customerFound = Boolean(preview?.bundle.customerInvoice.sourceInvoiceNumber);
+  const customerFound = customerInvoiceReady(preview);
   const totalUnits =
     preview?.bundle.shipment.lines.reduce((sum, line) => sum + line.receivedQuantity, 0) ?? 0;
   const purchaseRecord = preview ? purchaseInvoiceRecord(preview.run) : undefined;
@@ -832,6 +832,18 @@ export function SageIntegrationPage() {
                   value={
                     purchaseTx?.sageTransactionId ?? purchaseRecord?.sageTransactionId ?? '—'
                   }
+                />
+                <SummaryLine
+                  label="Sage section"
+                  value="Purchases → Purchase Invoices → Draft"
+                />
+                <SummaryLine
+                  label="Reference"
+                  value={demoRun?.demoRunReference ?? preview.run.externalReference}
+                />
+                <SummaryLine
+                  label="Vendor reference"
+                  value={preview.bundle.shipment.vendorInvoiceNumber}
                 />
                 <SummaryLine label="Number of Stock Movements" value={String(movementCount)} />
                 <SummaryLine label="Verified in Sage" value="Yes" />

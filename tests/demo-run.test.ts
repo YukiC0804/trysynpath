@@ -36,15 +36,17 @@ describe('ghostboards baseline configuration', () => {
       'ACR-CLR-3MM-48X96',
     ]);
     expect(GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === 'ACR-MIR-SLV-3MM')).toMatchObject({
-      costPrice: 68,
-      quantityInStock: 16,
+      costPrice: 77.62,
+      quantityInStock: 66,
       reorderLevel: 10,
     });
-    expect(GHOSTBOARDS_DEMO_WORKFLOW_SKUS).toEqual([
-      'ACR-MIR-SLV-3MM',
-      'ACR-CLR-3MM-48X96',
-      'ACR-CLR-6MM-48X96',
-    ]);
+    expect(
+      GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === 'ACR-CLR-3MM-48X96'),
+    ).toMatchObject({
+      costPrice: 48.94,
+      quantityInStock: 122,
+    });
+    expect(GHOSTBOARDS_DEMO_WORKFLOW_SKUS).toEqual(['ACR-CLR-3MM-48X96']);
     expect(GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE).toBe('GHOSTBOARDS-DEMO-BASELINE');
   });
 });
