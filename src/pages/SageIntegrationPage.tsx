@@ -830,6 +830,11 @@ export function SageIntegrationPage() {
           ) : purchasePartial ? (
             <div className="space-y-3">
               <p className="text-base font-medium text-amber-200">Partial Completion</p>
+              <p className="max-w-xl text-sm text-neutral-400">
+                Purchase Invoice was created in Sage, but one or more Stock Movements failed so
+                inventory may be incomplete. Retry inventory, or use Reset Demo before starting
+                again.
+              </p>
               <button
                 type="button"
                 disabled={busy || !sageConnected}
