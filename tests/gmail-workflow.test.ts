@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateNormalizedBundle } from '../shared/workflow';
+import { validateNormalizedBundle } from '../api/_lib/workflow/validation';
 import { decodeBase64Url, parseGmailMime } from '../api/_lib/gmail/mime';
 import { FixtureDocumentExtractionAdapter } from '../api/_lib/workflow/extraction';
 import {
