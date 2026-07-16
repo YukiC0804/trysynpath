@@ -1,0 +1,70 @@
+import type { DemoPrepareResult, DemoRunRecord } from '../../shared/demoRun';
+import type { WorkflowPreview, WorkflowRun } from '../../shared/workflow';
+import type { PreviewRequest } from './workflowApi';
+
+async function parseJson<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  if (!response.ok) {
+    const error = new Error(
+      (typeof data.error === 'string' && data.error) ||
+        (typeof data.message === 'string' && data.message) ||
+        `Request failed (${response.status})`,
+    ) as Error & { missingSkus?: string[]; demoRun?: DemoRunRecord; partial?: boolean };
+    if (Array.isArray(data.missingSkus)) error.missingSkus = data.missingSkus.map(String);
+    if (data.demoRun && typeof data.demoRun === 'object') {
+      error.demoRun = data.demoRun as DemoRunRecord;
+    }
+    if (data.partial === true) error.partial = true;
+    throw error;
+  }
+  return data as T;
+}
+
+async function post<T>(path: string, body: object) {
+  return parseJson<T>(
+    await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function fetchDemoRun() {
+  return parseJson<{ run: DemoRunRecord | null }>(
+    await fetch('/api/workflow/demo/run', { credentials: 'include' }),
+  );
+}
+
+export function prepareDemoRun(request: PreviewRequest) {
+  return post<DemoPrepareResult>('/api/workflow/demo/prepare', request);
+}
+
+export function postDemoPurchase(request: PreviewRequest) {
+  return post<{
+    demoRun: DemoRunRecord;
+    run: WorkflowRun;
+    beforeAfter: Array<{
+      sku: string;
+      previousQuantity: number;
+      newQuantity: number;
+      previousCost: number;
+      newLandedCost: number;
+    }>;
+    partial?: boolean;
+    preview?: WorkflowPreview;
+  }>('/api/workflow/demo/purchase', request);
+}
+
+export function postDemoSales(request: PreviewRequest) {
+  return post<{ demoRun: DemoRunRecord; run: WorkflowRun }>('/api/workflow/demo/sales', request);
+}
+
+export function resetDemoRun(confirmation: string, demoRunId?: string) {
+  return post<{ demoRun: DemoRunRecord; message: string }>('/api/workflow/demo/reset', {
+    confirmation,
+    demoRunId,
+  });
+}

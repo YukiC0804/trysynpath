@@ -1,0 +1,78 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  appendDemoTransaction,
+  buildDemoRunReference,
+  captureBaseline,
+  resetDemoRun,
+} from '../api/_lib/demoRun/service';
+import { __resetMemoryDemoRunStore } from '../api/_lib/demoRun/store';
+
+process.env.DEMO_RUN_MEMORY_STORE = '1';
+process.env.VITEST = 'true';
+
+const stock = {
+  id: 'stock-1',
+  sku: 'ACR-MIR-SLV-3MM',
+  description: 'Silver Mirror Acrylic Sheet 3mm',
+  quantityInStock: 12,
+  costPrice: 55,
+  lastCostPrice: 50,
+  averageCostPrice: 52,
+  salesPrice: 102,
+  raw: {},
+};
+
+describe('demo run baseline and reset bookkeeping', () => {
+  beforeEach(() => {
+    __resetMemoryDemoRunStore();
+  });
+
+  it('builds a unique demo run reference', () => {
+    const reference = buildDemoRunReference('abcdef12-3456');
+    expect(reference).toBe('DEMO-GHOACRUGOL051926-ABCDEF12');
+  });
+
+  it('captures baseline stock values for affected SKUs', async () => {
+    const record = await captureBaseline({
+      sageBusinessId: 'biz-1',
+      workflowRunId: 'wf-1',
+      externalPoReference: 'GHOACRUGOL051926',
+      vendorInvoiceReference: 'NWA-INV-8841',
+      customerInvoiceReference: 'GB-CUST-1042',
+      stockItems: [stock],
+    });
+    expect(record.baseline).toHaveLength(1);
+    expect(record.baseline[0].costPrice).toBe(55);
+    expect(record.baseline[0].quantityInStock).toBe(12);
+    expect(record.demoRunReference.startsWith('DEMO-GHOACRUGOL051926-')).toBe(true);
+  });
+
+  it('requires typed RESET confirmation', async () => {
+    const record = await captureBaseline({
+      sageBusinessId: 'biz-1',
+      workflowRunId: 'wf-1',
+      externalPoReference: 'GHOACRUGOL051926',
+      vendorInvoiceReference: 'NWA-INV-8841',
+      customerInvoiceReference: 'GB-CUST-1042',
+      stockItems: [stock],
+    });
+    await appendDemoTransaction(record.id, {
+      type: 'purchase_invoice',
+      sageTransactionId: 'pi-1',
+      externalReference: record.demoRunReference,
+      status: 'succeeded',
+      requestSummary: {},
+      readBackSummary: {},
+      readBackVerified: true,
+      createdAt: new Date().toISOString(),
+    });
+    await expect(
+      resetDemoRun({
+        accessToken: 'token',
+        businessId: 'biz-1',
+        demoRunId: record.id,
+        confirmation: 'reset',
+      }),
+    ).rejects.toThrow(/Type RESET/);
+  });
+});
