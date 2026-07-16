@@ -582,6 +582,10 @@ export class WorkflowOrchestrator {
         'Approved payload changed after review. Refresh the preview and approve again.',
       );
     }
+    const salesPayload = preview.payloads.salesInvoice as Record<string, unknown>;
+    const salesReference = String(
+      salesPayload.reference ?? preview.bundle.customerInvoice.sourceInvoiceNumber,
+    );
     const successful = run.postingRecords.filter((record) => {
       if (record.status !== 'succeeded') return false;
       if (target === 'stock_movements') return false;
@@ -594,7 +598,9 @@ export class WorkflowOrchestrator {
       if (target === 'sales_invoice') {
         return (
           record.transactionType === 'sales_invoice' &&
-          record.externalReference === preview.bundle.customerInvoice.sourceInvoiceNumber
+          (record.externalReference === salesReference ||
+            record.externalReference ===
+              preview.bundle.customerInvoice.sourceInvoiceNumber)
         );
       }
       return record.transactionType === target;
@@ -606,20 +612,45 @@ export class WorkflowOrchestrator {
           latest.sageTransactionId,
           preview.payloads.purchaseInvoice as Record<string, unknown>,
         );
-        if (live.readBack && String((live.readBack as { id?: string }).id ?? latest.sageTransactionId)) {
+        const liveId = String((live.readBack as { id?: string } | undefined)?.id ?? '');
+        if (live.verified && liveId && liveId === latest.sageTransactionId) {
           return { run, idempotentReplay: true, records: successful };
         }
       } catch {
         // Stale cookie ID after Reset / delete — drop and create a fresh PI.
-        run.postingRecords = run.postingRecords.filter(
-          (record) =>
-            !(
-              record.transactionType === 'purchase_invoice' &&
-              record.externalReference === run.externalReference &&
-              record.status === 'succeeded'
-            ),
-        );
       }
+      run.postingRecords = run.postingRecords.filter(
+        (record) =>
+          !(
+            record.transactionType === 'purchase_invoice' &&
+            record.externalReference === run.externalReference &&
+            record.status === 'succeeded'
+          ),
+      );
+    } else if (successful.length && target === 'sales_invoice') {
+      const latest = successful[successful.length - 1];
+      try {
+        const live = await gateway.readAndVerifySalesInvoice(
+          latest.sageTransactionId,
+          salesPayload,
+        );
+        const liveId = String((live.readBack as { id?: string } | undefined)?.id ?? '');
+        if (live.verified && liveId && liveId === latest.sageTransactionId) {
+          return { run, idempotentReplay: true, records: successful };
+        }
+      } catch {
+        // Stale cookie / voided SI — drop and create a fresh invoice.
+      }
+      run.postingRecords = run.postingRecords.filter(
+        (record) =>
+          !(
+            record.transactionType === 'sales_invoice' &&
+            (record.externalReference === salesReference ||
+              record.externalReference ===
+                preview.bundle.customerInvoice.sourceInvoiceNumber) &&
+            record.status === 'succeeded'
+          ),
+      );
     } else if (successful.length) {
       return { run, idempotentReplay: true, records: successful };
     }
@@ -647,7 +678,7 @@ export class WorkflowOrchestrator {
             responseSummary: result.readBack,
             readBackVerified: result.verified,
             differences: 'differences' in result ? result.differences : {},
-            status: result.verified ? 'succeeded' : 'failed',
+            status: result.id && result.verified ? 'succeeded' : 'failed',
           }),
         );
       } else if (target === 'stock_movements') {
@@ -665,7 +696,19 @@ export class WorkflowOrchestrator {
               record.externalReference === `${run.externalReference}:${stockItemId}` &&
               record.status === 'succeeded',
           );
-          if (alreadyPosted) continue;
+          if (alreadyPosted?.sageTransactionId) {
+            try {
+              const live = await gateway.readAndVerifyStockMovement(
+                alreadyPosted.sageTransactionId,
+                payload,
+              );
+              if (live.verified) continue;
+            } catch {
+              run.postingRecords = run.postingRecords.filter(
+                (record) => record !== alreadyPosted,
+              );
+            }
+          }
           const existing = await gateway.findStockMovement(
             String(payload.details ?? ''),
             stockItemId,
@@ -725,9 +768,8 @@ export class WorkflowOrchestrator {
           }
         }
       } else if (target === 'sales_invoice') {
-        const payload = preview.payloads.salesInvoice as Record<string, unknown>;
-        const sourceReference = preview.bundle.customerInvoice.sourceInvoiceNumber;
-        const existing = await gateway.findSalesInvoiceByReference(sourceReference);
+        const payload = salesPayload;
+        const existing = await gateway.findSalesInvoiceByReference(salesReference);
         const result = existing
           ? {
               id: String(existing.id ?? ''),
@@ -744,12 +786,13 @@ export class WorkflowOrchestrator {
             transactionType: 'sales_invoice',
             sageBusinessId: gateway.businessId,
             sageTransactionId: result.id,
-            externalReference: sourceReference,
+            externalReference: salesReference,
             requestPayload: payload,
             responseSummary: result.readBack,
             readBackVerified: result.verified,
             differences: 'differences' in result ? result.differences : {},
-            status: result.verified ? 'succeeded' : 'failed',
+            // Soft read-back diffs stay diagnostic; identity verify gates success.
+            status: result.id && result.verified ? 'succeeded' : 'failed',
           }),
         );
       } else {

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { DemoPrepareResult } from '../../../shared/demoRun';
 import { getValidAccessToken } from '../sage/auth';
 import { json } from '../sage/http';
-import { getPurchaseInvoice, getStockItem } from '../sage/client';
+import { getPurchaseInvoice, getSalesInvoice, getStockItem } from '../sage/client';
 import { FixtureDocumentExtractionAdapter } from '../workflow/extraction';
 import {
   type ExecuteTarget,
@@ -556,8 +556,38 @@ export async function handleDemoRunRequest(
       .reverse()
       .find((record) => record.transactionType === 'sales_invoice');
     if (!salesRecord || salesRecord.status !== 'succeeded' || !salesRecord.readBackVerified) {
+      const diffDetail = formatReadBackDifferences(
+        (salesRecord?.differences as Record<string, unknown> | undefined) ?? {},
+      );
       return respond(422, {
-        error: 'Sales Invoice could not be verified in Sage',
+        error: diffDetail
+          ? `Sales Invoice could not be verified in Sage (${diffDetail})`
+          : salesRecord?.error || 'Sales Invoice could not be created or verified in Sage',
+        demoRun,
+        run: salesResult.run,
+        differences: salesRecord?.differences,
+      });
+    }
+    if (!salesRecord.sageTransactionId || salesRecord.sageTransactionId.startsWith('DRY-')) {
+      return respond(422, {
+        error: 'Sales Invoice was not written to live Sage. Reconnect Sage and retry Workflow 3.',
+        demoRun,
+        run: salesResult.run,
+      });
+    }
+    try {
+      const liveSi = await getSalesInvoice(
+        sage.accessToken,
+        businessId,
+        salesRecord.sageTransactionId,
+      );
+      if (!String(liveSi?.id ?? '')) {
+        throw new Error('Sales Invoice read-back returned no id');
+      }
+    } catch {
+      return respond(422, {
+        error:
+          'Sales Invoice could not be found in Sage after posting. Check Draft sales invoices, or use Reset Demo and retry Workflow 3.',
         demoRun,
         run: salesResult.run,
       });
@@ -565,14 +595,19 @@ export async function handleDemoRunRequest(
     const updated = await appendDemoTransaction(demoRun.id, {
       type: 'sales_invoice',
       sageTransactionId: salesRecord.sageTransactionId,
-      externalReference: preview.bundle.customerInvoice.sourceInvoiceNumber,
+      externalReference: salesRecord.externalReference,
       status: 'succeeded',
       requestSummary: salesRecord.requestPayload as Record<string, unknown>,
       readBackSummary: salesRecord.responseSummary as Record<string, unknown>,
       readBackVerified: salesRecord.readBackVerified,
       createdAt: salesRecord.createdAt,
     });
-    return respond(200, { demoRun: updated, run: salesResult.run });
+    return respond(200, {
+      demoRun: updated,
+      run: salesResult.run,
+      salesInvoiceId: salesRecord.sageTransactionId,
+      salesInvoiceReference: salesRecord.externalReference,
+    });
   }
 
   if (method === 'POST' && path[0] === 'reset') {

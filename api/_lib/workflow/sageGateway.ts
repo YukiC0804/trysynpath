@@ -60,61 +60,89 @@ function differences(
   );
 }
 
-function invoiceDifferences(
+function lineLedgerId(line: Record<string, unknown>): string {
+  return String(
+    (line.ledger_account as { id?: string } | undefined)?.id ??
+      line.ledger_account_id ??
+      '',
+  );
+}
+
+function lineProductId(line: Record<string, unknown>): string {
+  return String(
+    (line.product as { id?: string } | undefined)?.id ?? line.product_id ?? '',
+  );
+}
+
+function invoiceVerification(
   payload: Record<string, unknown>,
   readBack: Record<string, unknown>,
   kind: 'purchase' | 'sales',
 ) {
-  // Compare durable identity/amount fields only. Sage often recalculates tax,
-  // normalizes status ids, and rewrites addresses — those must not block demos.
-  const pairs: Record<string, { expected: unknown; actual: unknown }> = {
+  // Hard identity only. Sage remaps currency/ledger/status/tax/date formats;
+  // those must not mark a live-created draft invoice as failed.
+  const expectedLines = (payload.invoice_lines ?? []) as Array<Record<string, unknown>>;
+  const actualLines = (readBack.invoice_lines ?? []) as Array<Record<string, unknown>>;
+  const criticalPairs: Record<string, { expected: unknown; actual: unknown }> = {
     reference: { expected: payload.reference, actual: readBack.reference },
     contactId: {
       expected: payload.contact_id,
       actual: (readBack.contact as { id?: string } | undefined)?.id,
     },
-    date: { expected: payload.date, actual: readBack.date },
-    currencyId: {
-      expected: payload.currency_id ?? 'GBP',
-      actual: (readBack.currency as { id?: string } | undefined)?.id ?? 'GBP',
-    },
+    lineCount: { expected: expectedLines.length, actual: actualLines.length },
   };
-  const expectedLines = (payload.invoice_lines ?? []) as Array<Record<string, unknown>>;
-  const actualLines = (readBack.invoice_lines ?? []) as Array<Record<string, unknown>>;
-  pairs.lineCount = { expected: expectedLines.length, actual: actualLines.length };
   expectedLines.forEach((line, index) => {
     const actual = actualLines[index] ?? {};
-    pairs[`line.${index}.ledgerAccountId`] = {
-      expected: line.ledger_account_id,
-      actual: (actual.ledger_account as { id?: string } | undefined)?.id,
-    };
-    pairs[`line.${index}.quantity`] = {
+    criticalPairs[`line.${index}.quantity`] = {
       expected: line.quantity ?? 1,
       actual: actual.quantity ?? 1,
     };
-    pairs[`line.${index}.unitPrice`] = {
-      expected: line.unit_price,
-      actual: actual.unit_price,
+    criticalPairs[`line.${index}.unitPrice`] = {
+      expected: Number(line.unit_price ?? 0),
+      actual: Number(actual.unit_price ?? 0),
     };
+  });
+
+  const softPairs: Record<string, { expected: unknown; actual: unknown }> = {
+    date: {
+      expected: String(payload.date ?? '').slice(0, 10),
+      actual: String(readBack.date ?? '').slice(0, 10),
+    },
+  };
+  expectedLines.forEach((line, index) => {
+    const actual = actualLines[index] ?? {};
+    if (line.ledger_account_id) {
+      softPairs[`line.${index}.ledgerAccountId`] = {
+        expected: line.ledger_account_id,
+        actual: lineLedgerId(actual),
+      };
+    }
     if (line.product_id) {
-      pairs[`line.${index}.productId`] = {
+      softPairs[`line.${index}.productId`] = {
         expected: line.product_id,
-        actual: (actual.product as { id?: string } | undefined)?.id,
+        actual: lineProductId(actual),
       };
     }
   });
   if (kind === 'purchase') {
-    pairs.vendorReference = {
+    softPairs.vendorReference = {
       expected: payload.vendor_reference,
       actual: readBack.vendor_reference,
     };
   } else {
-    pairs.shippingNetAmount = {
-      expected: payload.shipping_net_amount ?? 0,
-      actual: readBack.shipping_net_amount ?? 0,
+    softPairs.shippingNetAmount = {
+      expected: Number(payload.shipping_net_amount ?? 0),
+      actual: Number(readBack.shipping_net_amount ?? 0),
     };
   }
-  return differences(pairs);
+
+  const critical = differences(criticalPairs);
+  const soft = differences(softPairs);
+  const id = String(readBack.id ?? '');
+  return {
+    differences: { ...critical, ...soft },
+    verified: Object.keys(critical).length === 0 && Boolean(id),
+  };
 }
 
 export function formatReadBackDifferences(diff: Record<string, unknown>): string {
@@ -256,14 +284,16 @@ export function buildSalesInvoicePayload(input: {
             ).slice(0, 20),
           }
         : {}),
-      ...((mainAddress as { country_id?: string }).country_id
-        ? { country_id: String((mainAddress as { country_id?: string }).country_id) }
-        : {}),
+      // UK Sales Invoice create is more reliable with an explicit country.
+      country_id: String(
+        (mainAddress as { country_id?: string }).country_id ?? 'GB',
+      ),
     },
     ...(invoice.currency !== 'GBP' ? { currency_id: invoice.currency } : {}),
     ...(input.selections.salesStatusId ? { status_id: input.selections.salesStatusId } : {}),
-    reference: invoice.sourceInvoiceNumber,
-    notes: `Synpath source reference ${input.reference}`.slice(0, 200),
+    // Unique per demo run so Reset/retry cannot reuse a voided GB-CUST-1042 invoice.
+    reference: input.reference,
+    notes: `Customer invoice ${invoice.sourceInvoiceNumber}`.slice(0, 200),
     invoice_lines: invoice.lines.map((line) => {
       const net = round(line.quantity * line.salesUnitPrice - line.discount);
       return {
@@ -354,14 +384,22 @@ export class SageGateway {
       typeId.toUpperCase().includes(type),
     );
     if (existing && hasRequestedType) return existing;
-    return createContact(this.accessToken, this.businessId, {
+    const base = {
       name,
-      contact_type_ids: [type],
+      contact_type_ids: [type] as Array<'VENDOR' | 'CUSTOMER'>,
       reference: type === 'CUSTOMER' ? 'SYN-DEMO-CUSTOMER' : 'SYN-DEMO-SUPPLIER',
       notes: 'Created by the Synpath Ghostboards demo',
-      currency_id: 'GBP',
-      main_address: { address_line_1: name },
-    });
+      main_address: { address_line_1: name, country_id: 'GB' },
+    };
+    try {
+      return await createContact(this.accessToken, this.businessId, {
+        ...base,
+        currency_id: 'GBP',
+      });
+    } catch {
+      // Some UK businesses reject currency_id=GBP and require the currency GUID.
+      return createContact(this.accessToken, this.businessId, base);
+    }
   }
 
   async createAndReadPurchaseInvoice(payload: Record<string, unknown>) {
@@ -377,15 +415,19 @@ export class SageGateway {
 
   async readAndVerifyPurchaseInvoice(id: string, payload: Record<string, unknown>) {
     const readBack = await getPurchaseInvoice(this.accessToken, this.businessId, id);
-    const diff = invoiceDifferences(payload, readBack, 'purchase');
-    return { readBack, differences: diff, verified: Object.keys(diff).length === 0 };
+    return {
+      readBack,
+      ...invoiceVerification(payload, readBack, 'purchase'),
+    };
   }
 
   async findPurchaseInvoiceByReference(reference: string) {
     // Match the Synpath demo reference only — vendor_reference (e.g. NWA-INV-8841)
     // must not cause reuse of an unrelated Purchase Invoice.
     return (await listPurchaseInvoices(this.accessToken, this.businessId, reference)).find(
-      (invoice) => invoice.reference === reference,
+      (invoice) =>
+        invoice.reference === reference &&
+        !/void|deleted|cancelled|canceled/i.test(invoice.status),
     );
   }
 
@@ -412,7 +454,18 @@ export class SageGateway {
 
   async findSalesInvoiceByReference(reference: string) {
     return (await listSalesInvoices(this.accessToken, this.businessId, reference)).find(
-      (invoice) => String(invoice.reference ?? '') === reference,
+      (invoice) => {
+        const status = String(
+          (invoice.status as { id?: string; displayed_as?: string } | undefined)?.id ??
+            (invoice.status as { displayed_as?: string } | undefined)?.displayed_as ??
+            invoice.status_id ??
+            '',
+        );
+        return (
+          String(invoice.reference ?? '') === reference &&
+          !/void|deleted|cancelled|canceled/i.test(status)
+        );
+      },
     );
   }
 
@@ -465,8 +518,10 @@ export class SageGateway {
 
   async readAndVerifySalesInvoice(id: string, payload: Record<string, unknown>) {
     const readBack = await getSalesInvoice(this.accessToken, this.businessId, id);
-    const diff = invoiceDifferences(payload, readBack, 'sales');
-    return { readBack, differences: diff, verified: Object.keys(diff).length === 0 };
+    return {
+      readBack,
+      ...invoiceVerification(payload, readBack, 'sales'),
+    };
   }
 
   async releasePurchaseInvoice(id: string) {

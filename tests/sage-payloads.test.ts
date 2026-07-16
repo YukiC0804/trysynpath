@@ -148,10 +148,12 @@ describe('OpenAPI-aligned Sage payload builders', () => {
     });
     expect(payload).toMatchObject({
       contact_id: 'customer-1',
-      reference: 'GB-CUST-1042',
+      reference: 'DEMO-REF',
       shipping_net_amount: 0,
       shipping_tax_rate_id: 'GB_STANDARD',
     });
+    expect(payload.notes).toContain('GB-CUST-1042');
+    expect(payload.main_address).toMatchObject({ country_id: 'GB' });
     expect(payload.invoice_lines[0]).toMatchObject({
       product_id: 'stock-1',
       ledger_account_id: 'sales-ledger',
@@ -191,6 +193,51 @@ describe('SageGateway read-back verification', () => {
     expect(result.id).toBe('pi-1');
     expect(result.verified).toBe(true);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats ledger remaps as soft diffs so live drafts still verify', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'pi-soft', reference: 'DEMO-REF' }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: 'pi-soft',
+            reference: 'DEMO-REF',
+            contact: { id: 'supplier-1' },
+            date: '2026-05-19T00:00:00Z',
+            currency: { id: 'currency-uuid' },
+            vendor_reference: 'NWA-INV-8841',
+            invoice_lines: [
+              {
+                quantity: 100,
+                unit_price: 52.5,
+                ledger_account_id: 'remapped-ledger',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    const result = await new SageGateway('token', 'business').createAndReadPurchaseInvoice({
+      contact_id: 'supplier-1',
+      reference: 'DEMO-REF',
+      vendor_reference: 'NWA-INV-8841',
+      date: '2026-05-19',
+      invoice_lines: [
+        {
+          quantity: 100,
+          unit_price: 52.5,
+          ledger_account_id: 'ledger-1',
+        },
+      ],
+    });
+    expect(result.verified).toBe(true);
+    expect(result.differences).toHaveProperty('line.0.ledgerAccountId');
   });
 
   it('ignores Sage-recalculated tax and status when verifying Purchase Invoice', async () => {

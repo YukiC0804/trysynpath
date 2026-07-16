@@ -936,6 +936,22 @@ export function SageIntegrationPage() {
                   value={salesTx?.sageTransactionId ?? salesRecord?.sageTransactionId ?? '—'}
                 />
                 <SummaryLine
+                  label="Sage section"
+                  value="Sales → Sales Invoices → Draft"
+                />
+                <SummaryLine
+                  label="Reference"
+                  value={
+                    salesRecord?.externalReference ??
+                    demoRun?.demoRunReference ??
+                    preview.run.externalReference
+                  }
+                />
+                <SummaryLine
+                  label="Customer invoice"
+                  value={preview.bundle.customerInvoice.sourceInvoiceNumber}
+                />
+                <SummaryLine
                   label="Customer"
                   value={preview.bundle.customerInvoice.customer}
                 />

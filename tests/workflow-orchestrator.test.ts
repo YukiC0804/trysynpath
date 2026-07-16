@@ -172,6 +172,11 @@ describe('WorkflowOrchestrator write safety', () => {
     const gateway = {
       businessId: 'business',
       findStockMovement: async () => undefined,
+      readAndVerifyStockMovement: async (id: string) => ({
+        readBack: { id },
+        differences: {},
+        verified: true,
+      }),
       createAndReadStockMovement: async (payload: Record<string, unknown>) => {
         attempts += 1;
         if (payload.stock_item_id === 'stock-2' && attempts === 2) {
