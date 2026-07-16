@@ -547,7 +547,28 @@ export class WorkflowOrchestrator {
       }
       return record.transactionType === target;
     });
-    if (successful.length) {
+    if (successful.length && target === 'purchase_invoice') {
+      const latest = successful[successful.length - 1];
+      try {
+        const live = await gateway.readAndVerifyPurchaseInvoice(
+          latest.sageTransactionId,
+          preview.payloads.purchaseInvoice as Record<string, unknown>,
+        );
+        if (live.readBack && String((live.readBack as { id?: string }).id ?? latest.sageTransactionId)) {
+          return { run, idempotentReplay: true, records: successful };
+        }
+      } catch {
+        // Stale cookie ID after Reset / delete — drop and create a fresh PI.
+        run.postingRecords = run.postingRecords.filter(
+          (record) =>
+            !(
+              record.transactionType === 'purchase_invoice' &&
+              record.externalReference === run.externalReference &&
+              record.status === 'succeeded'
+            ),
+        );
+      }
+    } else if (successful.length) {
       return { run, idempotentReplay: true, records: successful };
     }
 
@@ -594,7 +615,7 @@ export class WorkflowOrchestrator {
           );
           if (alreadyPosted) continue;
           const existing = await gateway.findStockMovement(
-            run.externalReference,
+            String(payload.details ?? ''),
             stockItemId,
           );
           try {

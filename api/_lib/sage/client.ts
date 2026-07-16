@@ -592,10 +592,13 @@ export async function createStockMovement(
   businessId: string,
   stockMovement: Record<string, unknown>,
 ) {
+  // UK Accounting: `reference` is a restricted parameter on stock_movements.
+  // Never send it — put the demo token in `details` instead (max 50).
+  const { reference: _omitReference, ...safeMovement } = stockMovement;
   const created = await sageFetch<Record<string, unknown>>('/stock_movements', accessToken, {
     method: 'POST',
     businessId,
-    body: { stock_movement: stockMovement },
+    body: { stock_movement: safeMovement },
   });
   return created.stock_movement && typeof created.stock_movement === 'object'
     ? (created.stock_movement as Record<string, unknown>)

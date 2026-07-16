@@ -197,16 +197,23 @@ export function buildStockMovementPayloads(input: {
     .map((line) => {
       const allocation = input.allocations.find((item) => item.sku === line.sku);
       const landed = Number(allocation?.landedUnitCost ?? line.vendorUnitCost);
-      // Sage UK Accounting: details max 50, reference max 31.
+      // UK Accounting rejects `reference` on stock_movements (restricted parameter).
+      // Spec required fields: stock_item_id, date, quantity, cost_price, details (max 50).
+      // Encode the demo token in details for idempotent lookup/reset instead.
+      const details = stockMovementDetailsMarker(input.reference, line.sku);
       return {
         stock_item_id: line.matchedSageStockItemId,
         date: input.bundle.shipment.arrivalDate,
         quantity: line.receivedQuantity,
         cost_price: Number(landed.toFixed(2)),
-        details: `Receipt ${line.sku}`.slice(0, 50),
-        reference: input.reference.slice(0, 31),
+        details,
       };
     });
+}
+
+/** Idempotency token stored in Stock Movement `details` (UK cannot send `reference`). */
+export function stockMovementDetailsMarker(demoReference: string, sku: string): string {
+  return `${demoReference}|${sku}`.slice(0, 50);
 }
 
 export function buildSalesInvoicePayload(input: {
@@ -342,20 +349,25 @@ export class SageGateway {
     );
   }
 
-  async findStockMovement(reference: string, stockItemId: string) {
+  async findStockMovement(detailsMarker: string, stockItemId: string) {
+    // UK stock movements have no usable `reference`; match on details + stock item.
+    const needle = detailsMarker.slice(0, 50);
     return (
       await listStockMovements(
         this.accessToken,
         this.businessId,
-        reference,
+        needle,
         stockItemId,
       )
-    ).find(
-      (movement) =>
-        String(movement.reference ?? '') === reference &&
-        String((movement.stock_item as { id?: string } | undefined)?.id ?? '') ===
-          stockItemId,
-    );
+    ).find((movement) => {
+      const details = String(movement.details ?? '');
+      const itemId = String(
+        (movement.stock_item as { id?: string } | undefined)?.id ??
+          movement.stock_item_id ??
+          '',
+      );
+      return details === needle && itemId === stockItemId;
+    });
   }
 
   async findSalesInvoiceByReference(reference: string) {
@@ -376,21 +388,21 @@ export class SageGateway {
     const readBack = await getStockMovement(this.accessToken, this.businessId, id);
     const actualDate = String(readBack.date ?? '').slice(0, 10);
     const expectedDate = String(payload.date ?? '').slice(0, 10);
-    // Demo-grade verify: require identity + quantity. Date/cost often drift in Sage
-    // (timezone formatting, 2dp rounding) and must not mark a created movement failed.
+    // Demo-grade verify: identity + quantity. Do not require `reference` (UK-restricted).
     const critical = differences({
       stockItemId: {
         expected: payload.stock_item_id,
-        actual: (readBack.stock_item as { id?: string } | undefined)?.id,
+        actual:
+          (readBack.stock_item as { id?: string } | undefined)?.id ??
+          readBack.stock_item_id,
       },
       quantity: { expected: payload.quantity, actual: readBack.quantity },
     });
     const soft = differences({
-      reference: { expected: payload.reference, actual: readBack.reference },
+      details: { expected: payload.details, actual: readBack.details },
       date: { expected: expectedDate, actual: actualDate },
       costPrice: { expected: payload.cost_price, actual: readBack.cost_price },
     });
-    // Wider cost tolerance for soft diagnostics only.
     if (soft.costPrice) {
       const expected = Number(payload.cost_price ?? 0);
       const actual = Number(readBack.cost_price ?? 0);

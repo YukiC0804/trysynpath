@@ -103,10 +103,11 @@ describe('OpenAPI-aligned Sage payload builders', () => {
     expect(movement).toMatchObject({
       stock_item_id: 'stock-1',
       quantity: 50,
-      reference: 'DEMO-REF',
     });
+    expect(movement).not.toHaveProperty('reference');
     expect(movement.cost_price).toBeGreaterThan(68);
     expect(String(movement.details).length).toBeLessThanOrEqual(50);
+    expect(movement.details).toContain('DEMO-REF');
     expect(movement.details).toContain('ACR-MIR-SLV-3MM');
   });
 
