@@ -106,7 +106,8 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       reference: 'DEMO-REF',
     });
     expect(movement.cost_price).toBeGreaterThan(68);
-    expect(movement.details).toContain('not natively linked');
+    expect(String(movement.details).length).toBeLessThanOrEqual(50);
+    expect(movement.details).toContain('ACR-MIR-SLV-3MM');
   });
 
   it('builds Sales Invoice with product, tax, shipping and source invoice reference', async () => {

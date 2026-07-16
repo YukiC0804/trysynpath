@@ -13,6 +13,7 @@ async function parseJson<T>(response: Response): Promise<T> {
     ) as Error & {
       missingSkus?: string[];
       demoRun?: DemoRunRecord;
+      run?: WorkflowRun;
       partial?: boolean;
       unresolved?: string[];
       needsSage?: boolean;
@@ -20,6 +21,9 @@ async function parseJson<T>(response: Response): Promise<T> {
     if (Array.isArray(data.missingSkus)) error.missingSkus = data.missingSkus.map(String);
     if (data.demoRun && typeof data.demoRun === 'object') {
       error.demoRun = data.demoRun as DemoRunRecord;
+    }
+    if (data.run && typeof data.run === 'object') {
+      error.run = data.run as WorkflowRun;
     }
     if (Array.isArray(data.unresolved)) error.unresolved = data.unresolved.map(String);
     if (data.partial === true) error.partial = true;
