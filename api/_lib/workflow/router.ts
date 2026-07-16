@@ -79,6 +79,11 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
   const store = new EncryptedCookieWorkflowStore();
   const orchestrator = new WorkflowOrchestrator(store);
 
+  if (path[0] === 'demo') {
+    const { handleDemoRunRequest } = await import('../demoRun/router');
+    return handleDemoRunRequest(req, res, path.slice(1));
+  }
+
   if (method === 'GET' && (path.length === 0 || path[0] === 'status')) {
     return json(res, 200, { run: store.get(req) });
   }

@@ -6,6 +6,7 @@ export function ConfirmModal({
   children,
   confirmLabel,
   busy,
+  confirmDisabled,
   onCancel,
   onConfirm,
 }: {
@@ -14,6 +15,7 @@ export function ConfirmModal({
   children: ReactNode;
   confirmLabel: string;
   busy?: boolean;
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -41,7 +43,7 @@ export function ConfirmModal({
           </button>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
             className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40"
           >

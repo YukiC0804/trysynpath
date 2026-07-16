@@ -624,6 +624,20 @@ export async function getStockMovement(
   });
 }
 
+export async function deleteStockMovement(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  if (!id || id === 'undefined' || id === 'null') {
+    throw new SageApiError('Stock movement id is required for delete', 400);
+  }
+  await sageFetch(`/stock_movements/${id}`, accessToken, {
+    method: 'DELETE',
+    businessId,
+  });
+}
+
 export async function createSalesInvoice(
   accessToken: string,
   businessId: string,
@@ -660,6 +674,20 @@ export async function getSalesInvoice(
   return sageFetch<Record<string, unknown>>(`/sales_invoices/${id}`, accessToken, {
     businessId,
     query: { attributes: 'all' },
+  });
+}
+
+export async function deleteSalesInvoice(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  if (!id || id === 'undefined' || id === 'null') {
+    throw new SageApiError('Sales invoice id is required for delete/void', 400);
+  }
+  await sageFetch(`/sales_invoices/${id}`, accessToken, {
+    method: 'DELETE',
+    businessId,
   });
 }
 
