@@ -21,8 +21,15 @@ export interface SageStockItem {
   description?: string;
   cost_price?: string | number;
   sales_price?: string | number;
-  sales_prices?: Array<{ price?: string | number; price_name?: string }>;
+  sales_prices?: Array<{
+    price?: string | number;
+    price_name?: string;
+    price_includes_tax?: boolean;
+    product_sales_price_type?: { id?: string };
+  }>;
   quantity_in_stock?: string | number;
+  last_cost_price?: string | number;
+  average_cost_price?: string | number;
   reorder_level?: string | number;
   reorder_quantity?: string | number;
   supplier_part_number?: string;

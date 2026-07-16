@@ -60,6 +60,20 @@ npm run build
 npm run preview
 ```
 
+## Document → Sage workflow
+
+Architecture, Gmail OAuth setup, fixtures, safe modes and the manual live test
+checklist are documented in
+[`docs/SAGE_DOCUMENT_WORKFLOW.md`](docs/SAGE_DOCUMENT_WORKFLOW.md).
+
+The production Gmail callback URI is:
+
+```text
+https://www.getsynpath-ai.com/api/gmail/oauth/callback
+```
+
+Never commit the Google OAuth client-secret JSON.
+
 ## Demo assets
 
 将图纸/spec 图片放入 `download/` 后运行：
