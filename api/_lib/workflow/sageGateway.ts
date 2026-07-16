@@ -428,13 +428,31 @@ export class SageGateway {
 
     const typed = contacts.filter(matchesType);
     const pool = typed.length ? typed : contacts;
+    const tokens = lower
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 4 && !['ltd', 'llc', 'inc', 'co', 'the'].includes(token));
+
     return (
       pool.find((contact) => contact.name.toLowerCase() === lower) ??
       pool.find((contact) => contact.name.toLowerCase().includes(lower)) ??
       pool.find((contact) => lower.includes(contact.name.toLowerCase())) ??
+      pool.find((contact) =>
+        tokens.some((token) => contact.name.toLowerCase().includes(token)),
+      ) ??
       contacts.find((contact) => contact.name.toLowerCase() === lower) ??
       contacts.find((contact) => contact.name.toLowerCase().includes(lower))
     );
+  }
+
+  /** Unique Sage contact reference — fixed SYN-DEMO-* values collide across demos. */
+  demoContactReference(type: 'VENDOR' | 'CUSTOMER', name: string): string {
+    const slug = name
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 18);
+    const prefix = type === 'CUSTOMER' ? 'SYN-C' : 'SYN-V';
+    return `${prefix}-${slug || 'DEMO'}`.slice(0, 25);
   }
 
   async ensureContact(type: 'VENDOR' | 'CUSTOMER', name: string) {
@@ -444,34 +462,65 @@ export class SageGateway {
       typeId.toUpperCase().includes(type),
     );
     if (existing && hasRequestedType) return existing;
-    const base = {
-      name,
-      contact_type_ids: [type] as Array<'VENDOR' | 'CUSTOMER'>,
-      reference: type === 'CUSTOMER' ? 'SYN-DEMO-CUSTOMER' : 'SYN-DEMO-SUPPLIER',
-      notes: 'Created by the Synpath Ghostboards demo',
-      main_address: { address_line_1: name, country_id: 'US' },
-    };
-    try {
-      return await createContact(this.accessToken, this.businessId, {
-        ...base,
+
+    const reference = this.demoContactReference(type, name);
+    const byReference = contacts.find(
+      (contact) => contact.reference.toUpperCase() === reference.toUpperCase(),
+    );
+    if (byReference) return byReference;
+
+    const attempts: Array<Parameters<typeof createContact>[2]> = [
+      {
+        name,
+        contact_type_ids: [type],
+        reference,
+        notes: 'Created by the Synpath Ghostboards demo',
         currency_id: 'USD',
-      });
-    } catch {
+        main_address: { address_line_1: name, country_id: 'US' },
+      },
+      {
+        name,
+        contact_type_ids: [type],
+        reference,
+        notes: 'Created by the Synpath Ghostboards demo',
+        currency_id: 'GBP',
+        main_address: { address_line_1: name, country_id: 'GB' },
+      },
+      // Last resort: omit reference so Sage uniqueness checks cannot block the demo.
+      {
+        name,
+        contact_type_ids: [type],
+        notes: 'Created by the Synpath Ghostboards demo',
+      },
+      {
+        name,
+        contact_type_ids: [type],
+        reference: `${reference}-${Date.now().toString(36).slice(-4)}`.slice(0, 25),
+        notes: 'Created by the Synpath Ghostboards demo',
+      },
+    ];
+
+    let lastError: unknown;
+    for (const payload of attempts) {
       try {
-        return await createContact(this.accessToken, this.businessId, {
-          ...base,
-          currency_id: 'GBP',
-          main_address: { address_line_1: name, country_id: 'GB' },
-        });
-      } catch {
-        return createContact(this.accessToken, this.businessId, {
-          name,
-          contact_type_ids: [type],
-          reference: type === 'CUSTOMER' ? 'SYN-DEMO-CUSTOMER' : 'SYN-DEMO-SUPPLIER',
-          notes: 'Created by the Synpath Ghostboards demo',
-        });
+        return await createContact(this.accessToken, this.businessId, payload);
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        // If reference already exists, prefer reusing that contact when present.
+        if (/reference|must be unique/i.test(message) && payload.reference) {
+          const refreshed = await listContacts(this.accessToken, this.businessId);
+          const collision = refreshed.find(
+            (contact) =>
+              contact.reference.toUpperCase() === String(payload.reference).toUpperCase(),
+          );
+          if (collision) return collision;
+        }
       }
     }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Could not create Sage ${type} contact "${name}"`);
   }
 
   /** Create missing Sage Stock Items for demo PO lines (qty starts at 0). */
