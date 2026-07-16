@@ -419,3 +419,17 @@ h1, h2, h3, h4, h5, h6 {
   background-color: #fafafa !important;
 }
 
+/* Confirm modal overlay — keep a dim scrim in both themes */
+.demo-workspace .cfo-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.55);
+}
+
+.demo-workspace[data-theme='light'] .cfo-modal-overlay {
+  background-color: rgba(24, 24, 27, 0.4);
+}
+
+.demo-workspace[data-theme='light'] .text-amber-100,
+.demo-workspace[data-theme='light'] .text-amber-200 {
+  color: #b45309 !important;
+}
+
