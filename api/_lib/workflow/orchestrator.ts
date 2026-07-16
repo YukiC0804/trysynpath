@@ -89,8 +89,41 @@ const dateToken = () => new Date().toISOString().slice(0, 10).replace(/-/g, '');
 const digest = (value: unknown) =>
   crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+function summarizePayload(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object') return {};
+  const record = value as Record<string, unknown>;
+  const keep = [
+    'id',
+    'reference',
+    'vendor_reference',
+    'contact_id',
+    'stock_item_id',
+    'date',
+    'due_date',
+    'quantity',
+    'cost_price',
+    'details',
+    'status_id',
+    'status',
+    'displayed_as',
+  ] as const;
+  const summary: Record<string, unknown> = {};
+  for (const key of keep) {
+    if (key in record) summary[key] = record[key];
+  }
+  if (Array.isArray(record.invoice_lines)) {
+    summary.lineCount = record.invoice_lines.length;
+  }
+  return summary;
+}
+
 function postingRecord(input: Omit<SagePostingRecord, 'createdAt'>): SagePostingRecord {
-  return { ...input, createdAt: new Date().toISOString() };
+  return {
+    ...input,
+    requestPayload: summarizePayload(input.requestPayload),
+    responseSummary: summarizePayload(input.responseSummary),
+    createdAt: new Date().toISOString(),
+  };
 }
 
 export class WorkflowOrchestrator {

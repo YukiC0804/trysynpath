@@ -7,7 +7,19 @@ import type {
 
 async function parseJson<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  let data: Record<string, unknown> = {};
+  if (text) {
+    try {
+      data = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 220);
+      throw new Error(
+        response.ok
+          ? `Unexpected server response (not JSON): ${snippet || '(empty)'}`
+          : `Request failed (${response.status}): ${snippet || 'empty response'}`,
+      );
+    }
+  }
   if (!response.ok) {
     throw new Error(
       (typeof data.error === 'string' && data.error) ||
