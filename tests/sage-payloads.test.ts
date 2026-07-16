@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { FixtureDocumentExtractionAdapter } from '../api/_lib/workflow/extraction';
 import { FixtureSourceAdapter } from '../api/_lib/workflow/sourceAdapters';
+import { demoInvoiceDates } from '../api/_lib/workflow/fixtures';
 import {
   buildPurchaseInvoicePayload,
   buildSalesInvoicePayload,
@@ -47,6 +48,40 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       currency_id: 'GBP',
       main_address: { address_line_1: 'Acrylic Display Studio' },
     });
+  });
+
+  it('uses invoice dates near today so Sage default month filters include them', async () => {
+    const fixedNow = new Date('2026-07-16T12:00:00.000Z');
+    expect(demoInvoiceDates(fixedNow)).toEqual({
+      shipmentDate: '2026-07-15',
+      arrivalDate: '2026-07-30',
+      invoiceDate: '2026-07-16',
+      dueDate: '2026-08-15',
+      poReceivedAt: '2026-07-15T09:15:00.000Z',
+      logisticsReceivedAt: '2026-07-16T14:30:00.000Z',
+      saleReceivedAt: '2026-07-16T11:05:00.000Z',
+    });
+
+    const bundle = await fixture();
+    const dates = demoInvoiceDates();
+    expect(bundle.shipment.shipmentDate).toBe(dates.shipmentDate);
+    expect(bundle.shipment.arrivalDate).toBe(dates.arrivalDate);
+    expect(bundle.customerInvoice.invoiceDate).toBe(dates.invoiceDate);
+    expect(bundle.customerInvoice.dueDate).toBe(dates.dueDate);
+
+    const purchase = buildPurchaseInvoicePayload({
+      bundle,
+      reference: 'DEMO-REF',
+      selections: {
+        supplierContactId: 'supplier-1',
+        purchaseLedgerAccountId: 'ledger-expense',
+        purchaseTaxRateId: 'GB_STANDARD',
+      },
+      taxPercentage: 0,
+      inventoryPostingStrategy: 'stock_movement',
+    });
+    expect(purchase.date).toBe(dates.shipmentDate);
+    expect(purchase.due_date).toBe(dates.arrivalDate);
   });
 
   it('builds Purchase Invoice at vendor prices, not landed prices', async () => {

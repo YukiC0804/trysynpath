@@ -879,8 +879,16 @@ export function SageIntegrationPage() {
                   label="Vendor reference"
                   value={preview.bundle.shipment.vendorInvoiceNumber}
                 />
+                <SummaryLine
+                  label="Invoice date"
+                  value={preview.bundle.shipment.shipmentDate}
+                />
                 <SummaryLine label="Number of Stock Movements" value={String(movementCount)} />
                 <SummaryLine label="Verified in Sage" value="Yes" />
+                <p className="mt-2 text-xs text-neutral-500">
+                  In Sage, clear or widen the From/To date filter if the list looks empty — demo
+                  invoices use today&apos;s dates so they fall in the default month view.
+                </p>
               </div>
             </div>
           ) : purchasePartial ? (
@@ -956,10 +964,18 @@ export function SageIntegrationPage() {
                   value={preview.bundle.customerInvoice.customer}
                 />
                 <SummaryLine
+                  label="Invoice date"
+                  value={preview.bundle.customerInvoice.invoiceDate}
+                />
+                <SummaryLine
                   label="Invoice total"
                   value={money(preview.bundle.customerInvoice.total, currency)}
                 />
                 <SummaryLine label="Verified in Sage" value="Yes" />
+                <p className="mt-2 text-xs text-neutral-500">
+                  In Sage, clear or widen the From/To date filter if the list looks empty — demo
+                  invoices use today&apos;s dates so they fall in the default month view.
+                </p>
               </div>
             </div>
           ) : (

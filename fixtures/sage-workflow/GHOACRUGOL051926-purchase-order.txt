@@ -3,7 +3,7 @@ External PO: GHOACRUGOL051926
 Container: TLLU4819203
 Supplier: Nationwide Acrylics
 Currency: GBP
-Shipment date: 2026-07-14
-Arrival date: 2026-07-15
+Shipment date: (set at runtime to yesterday)
+Arrival date: (set at runtime to today + 14 days)
 
 ACR-CLR-3MM-48X96,100 sheets,GBP 52.50 each,GBP 5250.00

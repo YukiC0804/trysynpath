@@ -4,6 +4,7 @@ import type {
   SourceDocument,
 } from '../../../shared/workflow';
 import {
+  demoInvoiceDates,
   FIXTURE_CUSTOMER_INVOICE,
   FIXTURE_LANDED_COST_COMPONENTS,
   FIXTURE_SHIPMENT,
@@ -96,6 +97,13 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
     const shipment = structuredClone(FIXTURE_SHIPMENT);
     const landedCostComponents = structuredClone(FIXTURE_LANDED_COST_COMPONENTS);
     const customerInvoice = structuredClone(FIXTURE_CUSTOMER_INVOICE);
+    // Refresh dates on every extract so Sage's default month filter always shows
+    // newly created Purchase/Sales Invoices (static May/old fixtures were hidden).
+    const dates = demoInvoiceDates();
+    shipment.shipmentDate = dates.shipmentDate;
+    shipment.arrivalDate = dates.arrivalDate;
+    customerInvoice.invoiceDate = dates.invoiceDate;
+    customerInvoice.dueDate = dates.dueDate;
     Object.assign(shipment, overrides.shipment ?? {});
     Object.assign(customerInvoice, overrides.customerInvoice ?? {});
     for (const override of overrides.customerInvoiceLines ?? []) {

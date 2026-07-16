@@ -9,6 +9,41 @@ import type {
 export const FIXTURE_REFERENCE = 'GHOACRUGOL051926';
 export const DEMO_REFERENCE_PREFIX = `DEMO-${FIXTURE_REFERENCE}`;
 
+/** Calendar dates for demo invoices — always near "today" so Sage's default
+ *  From/To filter (usually the last month) includes Purchase/Sales Invoices. */
+export function demoInvoiceDates(now = new Date()) {
+  const utcDay = (offsetDays: number) => {
+    const date = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    date.setUTCDate(date.getUTCDate() + offsetDays);
+    return date.toISOString().slice(0, 10);
+  };
+  const utcStamp = (offsetDays: number, hours: number, minutes: number) => {
+    const date = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    date.setUTCDate(date.getUTCDate() + offsetDays);
+    date.setUTCHours(hours, minutes, 0, 0);
+    return date.toISOString();
+  };
+  return {
+    /** Purchase Invoice date */
+    shipmentDate: utcDay(-1),
+    /** Purchase Invoice due date */
+    arrivalDate: utcDay(14),
+    /** Sales Invoice date */
+    invoiceDate: utcDay(0),
+    /** Sales Invoice due date */
+    dueDate: utcDay(30),
+    poReceivedAt: utcStamp(-1, 9, 15),
+    logisticsReceivedAt: utcStamp(0, 14, 30),
+    saleReceivedAt: utcStamp(0, 11, 5),
+  };
+}
+
+const DEMO_DATES = demoInvoiceDates();
+
 export interface FixtureDocumentDefinition {
   id: string;
   emailMessageId: string;
@@ -25,7 +60,7 @@ export const FIXTURE_EMAILS: EmailSource[] = [
     from: 'orders@nationwide-acrylics.example',
     to: 'operations@ghostboards.example',
     subject: `PO confirmation ${FIXTURE_REFERENCE}`,
-    receivedAt: '2026-07-14T09:15:00.000Z',
+    receivedAt: DEMO_DATES.poReceivedAt,
     snippet: 'Purchase order for 100 clear acrylic sheets and the matching vendor invoice.',
     labelIds: ['Synpath Sage Demo'],
     attachmentIds: ['fixture-po', 'fixture-vendor-invoice'],
@@ -37,7 +72,7 @@ export const FIXTURE_EMAILS: EmailSource[] = [
     from: 'docs@pacific-freight.example',
     to: 'operations@ghostboards.example',
     subject: `Container TLLU4819203 / ${FIXTURE_REFERENCE}`,
-    receivedAt: '2026-07-15T14:30:00.000Z',
+    receivedAt: DEMO_DATES.logisticsReceivedAt,
     snippet: 'BOL, freight invoice and customs entry attached.',
     labelIds: ['Synpath Sage Demo'],
     attachmentIds: ['fixture-bol', 'fixture-freight', 'fixture-duty'],
@@ -49,7 +84,7 @@ export const FIXTURE_EMAILS: EmailSource[] = [
     from: 'billing@ghostboards.example',
     to: 'operations@ghostboards.example',
     subject: `Customer invoice GB-CUST-1042 / ${FIXTURE_REFERENCE}`,
-    receivedAt: '2026-07-16T11:05:00.000Z',
+    receivedAt: DEMO_DATES.saleReceivedAt,
     snippet: 'Customer invoice for received acrylic inventory.',
     labelIds: ['Synpath Sage Demo'],
     attachmentIds: ['fixture-customer-invoice', 'fixture-pricing-csv'],
@@ -69,8 +104,8 @@ External PO: ${FIXTURE_REFERENCE}
 Container: TLLU4819203
 Supplier: Nationwide Acrylics
 Currency: GBP
-Shipment date: 2026-07-14
-Expected arrival: 2026-07-15
+Shipment date: ${DEMO_DATES.shipmentDate}
+Expected arrival: ${DEMO_DATES.arrivalDate}
 ACR-CLR-3MM-48X96,100,52.50,5250.00`,
   },
   {
@@ -153,8 +188,8 @@ export const FIXTURE_SHIPMENT: Shipment = {
   id: 'shipment-fixture-ghoacrugol051926',
   externalPoNumber: FIXTURE_REFERENCE,
   containerNumber: 'TLLU4819203',
-  shipmentDate: '2026-07-14',
-  arrivalDate: '2026-07-15',
+  shipmentDate: DEMO_DATES.shipmentDate,
+  arrivalDate: DEMO_DATES.arrivalDate,
   supplier: 'Nationwide Acrylics',
   vendorInvoiceNumber: 'NWA-INV-8841',
   vendorInvoiceSubtotal: 5250,
@@ -253,8 +288,8 @@ export const FIXTURE_LANDED_COST_COMPONENTS: LandedCostComponent[] = [
 export const FIXTURE_CUSTOMER_INVOICE: CustomerInvoice = {
   sourceInvoiceNumber: 'GB-CUST-1042',
   customer: 'Acrylic Display Studio',
-  invoiceDate: '2026-07-16',
-  dueDate: '2026-08-15',
+  invoiceDate: DEMO_DATES.invoiceDate,
+  dueDate: DEMO_DATES.dueDate,
   currency: 'GBP',
   reference: FIXTURE_REFERENCE,
   lines: [
