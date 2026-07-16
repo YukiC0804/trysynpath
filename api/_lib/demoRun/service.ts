@@ -11,6 +11,7 @@ import {
 import {
   createStockItem,
   createStockMovement,
+  DEMO_INVOICE_VOID_REASON,
   deletePurchaseInvoice,
   deleteSalesInvoice,
   deleteStockMovement,
@@ -307,50 +308,87 @@ async function voidDemoInvoiceById(
   businessId: string,
   id: string,
 ): Promise<{ ok: boolean; status: string; detail?: string }> {
-  const before = await readInvoiceStatus(kind, accessToken, businessId, id);
+  if (kind === 'purchase') {
+    return hardDeletePurchaseInvoiceById(accessToken, businessId, id);
+  }
+
+  const before = await readInvoiceStatus('sales', accessToken, businessId, id);
   if (before.gone || isVoidLikeStatus(before.status)) {
     return { ok: true, status: before.gone ? 'MISSING' : before.status };
   }
 
   try {
-    if (kind === 'purchase') {
-      await deletePurchaseInvoice(accessToken, businessId, id);
-    } else {
-      await deleteSalesInvoice(accessToken, businessId, id);
-    }
+    await deleteSalesInvoice(accessToken, businessId, id);
   } catch (error) {
-    const message = error instanceof Error ? error.message : `${kind} invoice void failed`;
+    const message = error instanceof Error ? error.message : 'sales invoice void failed';
     if (/not found|404|already/i.test(message)) {
       return { ok: true, status: 'MISSING', detail: message };
     }
-    // Some tenants reject void_reason on Draft purchase deletes — retry once without it.
-    if (
-      kind === 'purchase' &&
-      /void_reason|unpermitted|invalid/i.test(message)
-    ) {
-      try {
-        await deletePurchaseInvoice(accessToken, businessId, id, '');
-      } catch (retryError) {
-        const retryMessage =
-          retryError instanceof Error ? retryError.message : message;
-        if (/not found|404|already/i.test(retryMessage)) {
-          return { ok: true, status: 'MISSING', detail: retryMessage };
-        }
-        return { ok: false, status: before.status, detail: retryMessage };
-      }
-    } else {
-      return { ok: false, status: before.status, detail: message };
-    }
+    return { ok: false, status: before.status, detail: message };
   }
 
-  const after = await readInvoiceStatus(kind, accessToken, businessId, id);
+  const after = await readInvoiceStatus('sales', accessToken, businessId, id);
   if (after.gone || isVoidLikeStatus(after.status)) {
     return { ok: true, status: after.gone ? 'MISSING' : after.status };
   }
   return {
     ok: false,
     status: after.status || before.status,
-    detail: `${kind} invoice still ${after.status || 'active'} after void`,
+    detail: `sales invoice still ${after.status || 'active'} after void`,
+  };
+}
+
+/** Draft Purchase Invoices hard-delete (404). Released ones can only void — treat as failure. */
+async function hardDeletePurchaseInvoiceById(
+  accessToken: string,
+  businessId: string,
+  id: string,
+): Promise<{ ok: boolean; status: string; detail?: string }> {
+  const before = await readInvoiceStatus('purchase', accessToken, businessId, id);
+  if (before.gone) return { ok: true, status: 'MISSING' };
+
+  const tryDelete = async (voidReason?: string) => {
+    try {
+      await deletePurchaseInvoice(accessToken, businessId, id, voidReason);
+      return null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Purchase Invoice delete failed';
+      if (/not found|404|already/i.test(message)) return 'missing' as const;
+      return message;
+    }
+  };
+
+  // Prefer hard delete (no void_reason) so Draft invoices disappear from Sage.
+  let deleteError = await tryDelete();
+  if (deleteError === 'missing') return { ok: true, status: 'MISSING' };
+
+  let after = await readInvoiceStatus('purchase', accessToken, businessId, id);
+  if (after.gone) return { ok: true, status: 'MISSING' };
+
+  // Leftover released invoices: Sage can only void them.
+  if (deleteError || !isVoidLikeStatus(after.status)) {
+    const voidError = await tryDelete(DEMO_INVOICE_VOID_REASON);
+    if (voidError === 'missing') return { ok: true, status: 'MISSING' };
+    after = await readInvoiceStatus('purchase', accessToken, businessId, id);
+    if (after.gone) return { ok: true, status: 'MISSING' };
+    if (isVoidLikeStatus(after.status)) {
+      return {
+        ok: false,
+        status: after.status,
+        detail: `could not hard-delete (Sage voided it instead as ${after.status}). Released Purchase Invoices cannot be removed — keep demo PIs as Draft.`,
+      };
+    }
+    return {
+      ok: false,
+      status: after.status || before.status,
+      detail: voidError || deleteError || `still ${after.status || 'active'} after delete`,
+    };
+  }
+
+  return {
+    ok: false,
+    status: after.status || before.status,
+    detail: `could not hard-delete (status ${after.status || before.status})`,
   };
 }
 
@@ -435,25 +473,21 @@ async function deleteDemoPurchaseInvoices(
       ['succeeded', 'deleted', 'voided'].includes(tx.status),
   );
   for (const purchase of purchases) {
-    if (purchase.status === 'deleted' || purchase.status === 'voided') continue;
-    const result = await voidDemoInvoiceById(
-      'purchase',
+    if (purchase.status === 'deleted') continue;
+    const result = await hardDeletePurchaseInvoiceById(
       accessToken,
       businessId,
       purchase.sageTransactionId,
     );
-    if (result.ok) {
-      // Sage voids released PIs (still GET-able); Drafts may hard-delete.
-      purchase.status = result.status === 'MISSING' ? 'deleted' : 'voided';
+    if (result.ok && result.status === 'MISSING') {
+      purchase.status = 'deleted';
       purchase.cleanedAt = new Date().toISOString();
-      purchase.readBackSummary = { status: result.status, afterDelete: true };
-      record.resetLog.push(
-        `Purchase Invoice ${purchase.status} (${purchase.sageTransactionId})`,
-      );
+      purchase.readBackSummary = { status: 'MISSING', afterDelete: true };
+      record.resetLog.push(`Purchase Invoice deleted (${purchase.sageTransactionId})`);
     } else {
       unresolved.push(
-        `Purchase Invoice ${purchase.sageTransactionId} could not be removed: ${
-          result.detail || 'void failed'
+        `Purchase Invoice ${purchase.sageTransactionId} could not be deleted: ${
+          result.detail || `status ${result.status}`
         }`,
       );
     }
@@ -481,30 +515,31 @@ async function voidOrphanDemoInvoicesByReference(
           ['voided', 'deleted'].includes(tx.status),
       );
       if (tracked) continue;
-      const result = await voidDemoInvoiceById(
-        'purchase',
+      const result = await hardDeletePurchaseInvoiceById(
         accessToken,
         businessId,
         invoice.id,
       );
-      if (result.ok) {
+      if (result.ok && result.status === 'MISSING') {
         record.resetLog.push(
-          `Purchase Invoice voided by reference (${invoice.id} / ${reference})`,
+          `Purchase Invoice deleted by reference (${invoice.id} / ${reference})`,
         );
         record.transactions.push({
           type: 'purchase_invoice',
           sageTransactionId: invoice.id,
           externalReference: reference,
-          status: result.status === 'MISSING' ? 'deleted' : 'voided',
+          status: 'deleted',
           requestSummary: { foundByReference: true },
-          readBackSummary: { status: result.status },
+          readBackSummary: { status: 'MISSING' },
           readBackVerified: true,
           createdAt: new Date().toISOString(),
           cleanedAt: new Date().toISOString(),
         });
       } else {
         unresolved.push(
-          `Purchase Invoice ${invoice.id}: ${result.detail || 'void failed'}`,
+          `Purchase Invoice ${invoice.id}: ${
+            result.detail || 'could not hard-delete'
+          }`,
         );
       }
     }

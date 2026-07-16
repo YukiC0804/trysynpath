@@ -37,7 +37,7 @@ async function fixture() {
 }
 
 describe('OpenAPI-aligned Sage payload builders', () => {
-  it('voids released Sales and Purchase Invoices with void_reason on DELETE', async () => {
+  it('hard-deletes Purchase Invoices without void_reason and voids Sales with void_reason', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -54,7 +54,7 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       '/purchase_invoices/64d59f29cdba4cf2bf690efe8f3eb1bd',
     );
     expect(salesUrl.searchParams.get('void_reason')).toBe(DEMO_INVOICE_VOID_REASON);
-    expect(purchaseUrl.searchParams.get('void_reason')).toBe(DEMO_INVOICE_VOID_REASON);
+    expect(purchaseUrl.searchParams.has('void_reason')).toBe(false);
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
     expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe('DELETE');
   });

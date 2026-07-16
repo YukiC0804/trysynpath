@@ -629,7 +629,7 @@ export async function deletePurchaseInvoice(
   accessToken: string,
   businessId: string,
   id: string,
-  voidReason = DEMO_INVOICE_VOID_REASON,
+  voidReason?: string,
 ) {
   if (!id || id === 'undefined' || id === 'null') {
     throw new SageApiError('Purchase invoice id is required for delete', 400);
@@ -637,7 +637,8 @@ export async function deletePurchaseInvoice(
   await sageFetch(`/purchase_invoices/${id}`, accessToken, {
     method: 'DELETE',
     businessId,
-    // Sage UK voids released Purchase Invoices; omit only if caller passes ''.
+    // Draft Purchase Invoices hard-delete without void_reason. Only pass it when
+    // attempting to void a leftover released invoice.
     ...(voidReason ? { query: { void_reason: voidReason } } : {}),
   });
 }
