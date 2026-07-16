@@ -230,24 +230,10 @@ describe('demo reset invoice cleanup', () => {
     expect(result.unresolved.filter((item) => /Purchase Invoice/i.test(item))).toEqual([]);
   });
 
-  it('deletes orphan Stock Movements found by Sage search and restores prices to 0', async () => {
-    const orphanMovements = Array.from({ length: 6 }, (_, index) => ({
-      id: `sm-orphan-${index + 1}`,
-      details: `DEMO-GHOACRUGOL051926-3D85E449|SKU${index + 1}`,
-    }));
-    listStockMovements.mockImplementation(async (_token, _biz, term?: string) => {
-      if (!term) return [];
-      if (
-        term === 'DEMO-GHOACRUGOL051926' ||
-        term === 'DEMO-GHOACRUGOL051926-3D85E449' ||
-        String(term).startsWith('DEMO-GHOACRUGOL051926')
-      ) {
-        // After deletes are attempted, pretend Sage no longer returns them.
-        if (deleteStockMovement.mock.calls.length >= orphanMovements.length) return [];
-        return orphanMovements;
-      }
-      return [];
-    });
+  it('zeros the six workflow SKUs and ignores leftover Stock Movements', async () => {
+    listStockMovements.mockResolvedValue([
+      { id: 'sm-orphan-1', details: 'ACR-WHT-3MM-48X96|DEMO-GHOACRUGOL051926-3D85E449' },
+    ]);
 
     const record = await captureBaseline({
       sageBusinessId: 'biz-1',
@@ -266,9 +252,8 @@ describe('demo reset invoice cleanup', () => {
       activeDemoRunId: record.id,
     });
 
-    expect(deleteStockMovement.mock.calls.map((call) => call[2]).sort()).toEqual(
-      orphanMovements.map((item) => item.id).sort(),
-    );
+    expect(deleteStockMovement).not.toHaveBeenCalled();
+    expect(result.status).toBe('ready');
     expect(result.unresolved.filter((item) => /Stock Movement/i.test(item))).toEqual([]);
     expect(updateStockItem).toHaveBeenCalled();
     const pricePatches = updateStockItem.mock.calls.map((call) => call[3]);
@@ -276,5 +261,6 @@ describe('demo reset invoice cleanup', () => {
       true,
     );
     expect(result.summary.costsRestored).toBe(true);
+    expect(result.summary.inventoryRestored).toBe(true);
   });
 });
