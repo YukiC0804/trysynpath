@@ -35,25 +35,56 @@ export class EncryptedCookieWorkflowStore implements WorkflowStore {
   }
 
   put(res: VercelResponse, run: WorkflowRun) {
-    const compressed = deflateRawSync(Buffer.from(JSON.stringify(run), 'utf8')).toString(
-      'base64url',
-    );
-    const encrypted = encryptJson({ compressed });
-    const chunks = encrypted.match(new RegExp(`.{1,${COOKIE_CHUNK_SIZE}}`, 'g')) ?? [];
-    if (chunks.length > MAX_COOKIE_CHUNKS) {
-      throw new Error('Workflow state exceeded the encrypted demo-store limit');
-    }
-    clearCookie(res, COOKIE_WORKFLOW_RUN);
-    setCookie(res, COOKIE_WORKFLOW_RUN_CHUNKS, String(chunks.length), {
-      maxAge: 60 * 60 * 24 * 14,
-    });
-    chunks.forEach((chunk, index) =>
-      setCookie(res, `${COOKIE_WORKFLOW_RUN}_${index}`, chunk, {
+    try {
+      const compressed = deflateRawSync(Buffer.from(JSON.stringify(run), 'utf8')).toString(
+        'base64url',
+      );
+      const encrypted = encryptJson({ compressed });
+      const chunks = encrypted.match(new RegExp(`.{1,${COOKIE_CHUNK_SIZE}}`, 'g')) ?? [];
+      if (chunks.length > MAX_COOKIE_CHUNKS) {
+        const alreadySlim = run.postingRecords.every(
+          (record) => Object.keys(record.requestPayload ?? {}).length === 0,
+        );
+        if (alreadySlim) {
+          console.warn('[workflow-store] cookie still too large after slim; clearing');
+          this.clear(res);
+          return;
+        }
+        // Prefer keeping critical posting identity over failing the whole Sage write.
+        const slim: WorkflowRun = {
+          ...run,
+          postingRecords: run.postingRecords.map((record) => ({
+            ...record,
+            requestPayload: {},
+            responseSummary: {
+              id: record.sageTransactionId,
+              status: record.status,
+            },
+            differences: {},
+          })),
+          errors: run.errors.slice(-5),
+        };
+        this.put(res, slim);
+        return;
+      }
+      clearCookie(res, COOKIE_WORKFLOW_RUN);
+      setCookie(res, COOKIE_WORKFLOW_RUN_CHUNKS, String(chunks.length), {
         maxAge: 60 * 60 * 24 * 14,
-      }),
-    );
-    for (let index = chunks.length; index < MAX_COOKIE_CHUNKS; index += 1) {
-      clearCookie(res, `${COOKIE_WORKFLOW_RUN}_${index}`);
+      });
+      chunks.forEach((chunk, index) =>
+        setCookie(res, `${COOKIE_WORKFLOW_RUN}_${index}`, chunk, {
+          maxAge: 60 * 60 * 24 * 14,
+        }),
+      );
+      for (let index = chunks.length; index < MAX_COOKIE_CHUNKS; index += 1) {
+        clearCookie(res, `${COOKIE_WORKFLOW_RUN}_${index}`);
+      }
+    } catch (error) {
+      // Never crash the HTTP response after Sage writes succeeded.
+      console.warn(
+        '[workflow-store] failed to persist cookie state',
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 

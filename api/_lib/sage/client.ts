@@ -1,5 +1,10 @@
 import { getEnv } from './config';
 import type { SageBusiness, SageStockItem } from './types';
+import {
+  sanitizePurchaseInvoicePayload,
+  sanitizeSalesInvoicePayload,
+  sanitizeStockMovementPayload,
+} from './payloadAllowlist';
 
 export class SageApiError extends Error {
   status: number;
@@ -538,10 +543,11 @@ export async function createPurchaseInvoice(
   businessId: string,
   purchaseInvoice: Record<string, unknown>,
 ) {
+  const safe = sanitizePurchaseInvoicePayload(purchaseInvoice);
   const created = (await sageFetch('/purchase_invoices', accessToken, {
     method: 'POST',
     businessId,
-    body: { purchase_invoice: purchaseInvoice },
+    body: { purchase_invoice: safe },
   })) as Record<string, unknown>;
   const entity =
     created.purchase_invoice && typeof created.purchase_invoice === 'object'
@@ -592,13 +598,11 @@ export async function createStockMovement(
   businessId: string,
   stockMovement: Record<string, unknown>,
 ) {
-  // UK Accounting: `reference` is a restricted parameter on stock_movements.
-  // Never send it — put the demo token in `details` instead (max 50).
-  const { reference: _omitReference, ...safeMovement } = stockMovement;
+  const safe = sanitizeStockMovementPayload(stockMovement);
   const created = await sageFetch<Record<string, unknown>>('/stock_movements', accessToken, {
     method: 'POST',
     businessId,
-    body: { stock_movement: safeMovement },
+    body: { stock_movement: safe },
   });
   return created.stock_movement && typeof created.stock_movement === 'object'
     ? (created.stock_movement as Record<string, unknown>)
@@ -653,10 +657,11 @@ export async function createSalesInvoice(
   businessId: string,
   salesInvoice: Record<string, unknown>,
 ) {
+  const safe = sanitizeSalesInvoicePayload(salesInvoice);
   const created = await sageFetch<Record<string, unknown>>('/sales_invoices', accessToken, {
     method: 'POST',
     businessId,
-    body: { sales_invoice: salesInvoice },
+    body: { sales_invoice: safe },
   });
   return created.sales_invoice && typeof created.sales_invoice === 'object'
     ? (created.sales_invoice as Record<string, unknown>)

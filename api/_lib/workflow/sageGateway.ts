@@ -148,15 +148,11 @@ export function buildPurchaseInvoicePayload(input: {
 }) {
   const { bundle, reference, selections } = input;
   const taxPercentage = input.taxPercentage ?? 0;
-  const mainAddress =
-    input.mainAddress && Object.keys(input.mainAddress).length
-      ? input.mainAddress
-      : { address_line_1: bundle.shipment.supplier || 'Synpath demo supplier' };
+  // Do not send main_address — not in Sage postPurchaseInvoices schema (UK).
   return {
     contact_id: selections.supplierContactId,
     date: bundle.shipment.shipmentDate,
     due_date: bundle.shipment.arrivalDate,
-    main_address: mainAddress,
     ...(bundle.shipment.currency !== 'GBP'
       ? {
           currency_id: bundle.shipment.currency,
@@ -166,7 +162,7 @@ export function buildPurchaseInvoicePayload(input: {
     ...(selections.purchaseStatusId ? { status_id: selections.purchaseStatusId } : {}),
     reference,
     vendor_reference: bundle.shipment.vendorInvoiceNumber,
-    notes: `Synpath demo shipment ${bundle.shipment.containerNumber}; source documents retained in Synpath`,
+    notes: `Synpath demo shipment ${bundle.shipment.containerNumber}`,
     invoice_lines: bundle.shipment.lines.map((line) => {
       const net = round(line.receivedQuantity * line.vendorUnitCost);
       return {
@@ -236,11 +232,37 @@ export function buildSalesInvoicePayload(input: {
     contact_id: input.selections.customerContactId,
     date: invoice.invoiceDate,
     due_date: invoice.dueDate,
-    main_address: mainAddress,
+    main_address: {
+      address_line_1: String(
+        (mainAddress as { address_line_1?: string }).address_line_1 ??
+          invoice.customer ??
+          'Synpath demo customer',
+      ).slice(0, 200),
+      ...((mainAddress as { address_line_2?: string }).address_line_2
+        ? {
+            address_line_2: String(
+              (mainAddress as { address_line_2?: string }).address_line_2,
+            ).slice(0, 200),
+          }
+        : {}),
+      ...((mainAddress as { city?: string }).city
+        ? { city: String((mainAddress as { city?: string }).city).slice(0, 100) }
+        : {}),
+      ...((mainAddress as { postal_code?: string }).postal_code
+        ? {
+            postal_code: String(
+              (mainAddress as { postal_code?: string }).postal_code,
+            ).slice(0, 20),
+          }
+        : {}),
+      ...((mainAddress as { country_id?: string }).country_id
+        ? { country_id: String((mainAddress as { country_id?: string }).country_id) }
+        : {}),
+    },
     ...(invoice.currency !== 'GBP' ? { currency_id: invoice.currency } : {}),
     ...(input.selections.salesStatusId ? { status_id: input.selections.salesStatusId } : {}),
     reference: invoice.sourceInvoiceNumber,
-    notes: `Synpath source reference ${input.reference}`,
+    notes: `Synpath source reference ${input.reference}`.slice(0, 200),
     invoice_lines: invoice.lines.map((line) => {
       const net = round(line.quantity * line.salesUnitPrice - line.discount);
       return {
