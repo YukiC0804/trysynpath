@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { DemoRunRecord } from '../../shared/demoRun';
-import type { WorkflowPreview } from '../../shared/workflow';
+import type { WorkflowPreview, WorkflowRun } from '../../shared/workflow';
 import { ConfirmModal } from '../components/sage/cfo/ConfirmModal';
 import {
   PO_REFERENCE,
@@ -412,14 +412,24 @@ export function SageIntegrationPage() {
         setConfirmReset(true);
       }
     } catch (err) {
-      const missingSkus = (err as { missingSkus?: string[] }).missingSkus;
+      const failed = err as Error & {
+        missingSkus?: string[];
+        demoRun?: DemoRunRecord;
+        run?: WorkflowRun;
+        partial?: boolean;
+      };
+      if (failed.demoRun) setDemoRun(failed.demoRun);
+      if (failed.run) {
+        setPreview((current) => (current ? { ...current, run: failed.run! } : current));
+      }
+      const missingSkus = failed.missingSkus;
       if (missingSkus?.length) {
         setError(
           `The following SKU must be prepared in Sage before continuing. ${missingSkus.join(', ')}`,
         );
       } else {
         setError(
-          friendlyError(err instanceof Error ? err.message : 'Could not create purchase records'),
+          friendlyError(failed instanceof Error ? failed.message : 'Could not create purchase records'),
         );
       }
       if (resetRequested) setConfirmReset(true);

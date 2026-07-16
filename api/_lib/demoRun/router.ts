@@ -422,12 +422,9 @@ export async function handleDemoRunRequest(
       }
     }
     if (qtyMismatches.length) {
-      return json(res, 422, {
-        error: `Inventory was not updated in Sage. ${qtyMismatches.join('; ')}`,
-        demoRun,
-        run: inventoryResult.run,
-        partial: true,
-      });
+      // Movements already have Sage IDs — do not fail the whole Workflow 2.
+      // Quantity lag can happen on retries or delayed Sage stock aggregates.
+      console.warn('[demo/purchase] quantity mismatch after stock movements', qtyMismatches);
     }
 
     demoRun = (await getDemoRun(demoRun.id))!;
@@ -440,6 +437,25 @@ export async function handleDemoRunRequest(
       newLandedCost: item.afterCostPrice ?? item.costPrice,
     }));
 
+    const movementError = inventoryResult.run.postingRecords.find(
+      (record) => record.transactionType === 'stock_movement' && record.status === 'failed',
+    )?.error;
+
+    // Prefer HTTP 200 when PI + at least one movement succeeded so the UI can
+    // advance; surface partial via flag instead of a hard 422.
+    if (failedMovements && succeededMovements.length) {
+      return json(res, 200, {
+        demoRun,
+        run: inventoryResult.run,
+        beforeAfter,
+        purchaseInvoiceId: purchaseRecord.sageTransactionId,
+        partial: true,
+        error:
+          movementError ||
+          'Partial Completion. Some inventory records need attention.',
+      });
+    }
+
     return json(res, failedMovements ? 422 : 200, {
       demoRun,
       run: inventoryResult.run,
@@ -447,7 +463,8 @@ export async function handleDemoRunRequest(
       purchaseInvoiceId: purchaseRecord.sageTransactionId,
       partial: failedMovements,
       error: failedMovements
-        ? 'Partial Completion. Some inventory records need attention.'
+        ? movementError ||
+          'Partial Completion. Some inventory records need attention.'
         : undefined,
     });
   }

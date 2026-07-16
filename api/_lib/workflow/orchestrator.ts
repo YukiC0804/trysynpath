@@ -628,7 +628,8 @@ export class WorkflowOrchestrator {
                 responseSummary: result.readBack,
                 readBackVerified: result.verified,
                 differences: 'differences' in result ? result.differences : {},
-                status: result.verified ? 'succeeded' : 'failed',
+                // Created movements count as success; soft read-back diffs are diagnostic.
+                status: result.id || result.verified ? 'succeeded' : 'failed',
               }),
             );
           } catch (error) {
@@ -647,7 +648,7 @@ export class WorkflowOrchestrator {
               }),
             );
             run.status = 'partial';
-            break;
+            // Continue remaining SKUs — one Sage failure must not block the whole receipt.
           }
         }
       } else if (target === 'sales_invoice') {

@@ -406,8 +406,12 @@ export function friendlyError(message: string): string {
   if (lower.includes('customercontactid requires review')) {
     return 'Customer was not matched in Sage. Create or rename the customer contact, then retry Workflow 1.';
   }
-  if (lower.includes('accounting') || lower.includes('ledger') || lower.includes('tax')) {
-    return 'Accounting configuration is incomplete. Complete it in the internal admin page before the demo.';
+  if (
+    lower.includes('accounting ledger and tax mapping') ||
+    lower.includes('purchaseledgeraccountid') ||
+    lower.includes('salesledgeraccountid')
+  ) {
+    return 'Accounting configuration is incomplete. Retry Workflow 1 so Synpath can auto-fill Sage ledger and tax defaults.';
   }
   if (lower.includes('preview changed') || lower.includes('approved payload')) {
     return 'Details changed after review. Refresh and approve again.';
