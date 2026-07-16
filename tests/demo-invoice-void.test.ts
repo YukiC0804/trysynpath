@@ -80,7 +80,7 @@ const stock = {
   raw: {},
 };
 
-describe('demo reset invoice void cleanup', () => {
+describe('demo reset invoice cleanup', () => {
   beforeEach(() => {
     __resetMemoryDemoRunStore();
     vi.clearAllMocks();
@@ -88,8 +88,7 @@ describe('demo reset invoice void cleanup', () => {
       ...stock,
       id: `id-${sku}`,
       sku,
-      quantityInStock:
-        sku === 'ACR-CLR-3MM-48X96' ? 122 : 66,
+      quantityInStock: sku === 'ACR-CLR-3MM-48X96' ? 122 : 66,
       costPrice:
         sku === 'ACR-CLR-3MM-48X96'
           ? 48.94
@@ -110,6 +109,8 @@ describe('demo reset invoice void cleanup', () => {
       ...patch,
     }));
     createStockMovement.mockResolvedValue({ id: 'sm-adjust' });
+    listPurchaseInvoices.mockResolvedValue([]);
+    listSalesInvoices.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -147,7 +148,7 @@ describe('demo reset invoice void cleanup', () => {
     });
 
     getPurchaseInvoice
-      .mockResolvedValueOnce({ id: 'pi-live-1', status: { id: 'UNPAID' } })
+      .mockResolvedValueOnce({ id: 'pi-live-1', status: { id: 'DRAFT' } })
       .mockRejectedValueOnce(new Error('404 not found'));
     getSalesInvoice
       .mockResolvedValueOnce({ id: 'si-live-1', status: { id: 'UNPAID' } })
@@ -171,5 +172,36 @@ describe('demo reset invoice void cleanup', () => {
     expect(result.demoRun?.transactions.find((tx) => tx.type === 'sales_invoice')?.status).toBe(
       'voided',
     );
+  });
+
+  it('deletes Purchase Invoices found by Sage search even without a demo-run record', async () => {
+    listPurchaseInvoices.mockImplementation(async (_token, _biz, term?: string) => {
+      if (term === 'DEMO-GHOACRUGOL051926' || term === 'NWA-INV-8841') {
+        return [
+          {
+            id: 'pi-orphan-1',
+            reference: 'DEMO-GHOACRUGOL051926-ABCDEF12',
+            vendorReference: 'NWA-INV-8841',
+            displayedAs: 'Draft PI',
+            totalAmount: 5250,
+            status: 'DRAFT',
+          },
+        ];
+      }
+      return [];
+    });
+    getPurchaseInvoice
+      .mockResolvedValueOnce({ id: 'pi-orphan-1', status: { id: 'DRAFT' } })
+      .mockRejectedValueOnce(new Error('404 not found'));
+    deletePurchaseInvoice.mockResolvedValue(undefined);
+
+    const result = await restoreDemoBaseline({
+      accessToken: 'token',
+      businessId: 'biz-1',
+      confirmation: 'RESET',
+    });
+
+    expect(deletePurchaseInvoice).toHaveBeenCalledWith('token', 'biz-1', 'pi-orphan-1');
+    expect(result.unresolved.filter((item) => /Purchase Invoice/i.test(item))).toEqual([]);
   });
 });

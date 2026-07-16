@@ -191,14 +191,12 @@ function releaseRecord(
 
 export function purchaseWorkflowComplete(run: WorkflowRun): boolean {
   const purchase = purchaseInvoiceRecord(run);
-  const release = releaseRecord(run, 'purchase_invoice_release');
   const movements = stockMovementRecords(run);
   const succeeded = movements.filter((record) => record.status === 'succeeded');
+  // Purchase Invoices stay Draft so Reset can hard-delete them.
   return Boolean(
     purchase?.status === 'succeeded' &&
       purchase.readBackVerified &&
-      release?.status === 'succeeded' &&
-      release.readBackVerified &&
       succeeded.length > 0 &&
       !movements.some((record) => record.status === 'failed'),
   );
