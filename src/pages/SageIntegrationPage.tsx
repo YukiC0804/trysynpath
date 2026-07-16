@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { DemoRunRecord } from '../../shared/demoRun';
 import type { WorkflowPreview, WorkflowRun } from '../../shared/workflow';
 import { ConfirmModal } from '../components/sage/cfo/ConfirmModal';
+import { WorkflowOneWorkspace } from '../components/sage/cfo/WorkflowOneWorkspace';
 import {
   PO_REFERENCE,
   accountingReady,
@@ -43,6 +44,7 @@ import {
 const GMAIL_QUERY = `${PO_REFERENCE} OR GHOACRUGOL051926 has:attachment`;
 
 type WorkflowKey = 'scan' | 'purchase' | 'sales' | 'reset' | null;
+type WorkflowTab = 'extract' | 'purchase' | 'sales';
 
 type BeforeAfterRow = {
   sku: string;
@@ -183,6 +185,7 @@ export function SageIntegrationPage() {
   >([]);
   const [messageIds, setMessageIds] = useState<string[]>([]);
   const [scanDone, setScanDone] = useState(false);
+  const [workflowTab, setWorkflowTab] = useState<WorkflowTab>('extract');
   const [busy, setBusy] = useState(false);
   const [activeWorkflow, setActiveWorkflow] = useState<WorkflowKey>(null);
   const [error, setError] = useState<string | null>(null);
@@ -407,6 +410,8 @@ export function SageIntegrationPage() {
         setError(
           'Partial Completion. Some inventory records need attention. Successful Sage IDs were preserved.',
         );
+      } else {
+        setWorkflowTab('sales');
       }
       if (resetRequested) {
         setConfirmReset(true);
@@ -486,6 +491,7 @@ export function SageIntegrationPage() {
       setDemoRun(result.demoRun);
       setResetRequested(false);
       await clearUnpostedWorkflow();
+      setWorkflowTab('extract');
       if (result.message === 'Demo Baseline Ready') {
         setNotice('Demo Baseline Ready');
         setBeforeAfter([]);
@@ -565,8 +571,9 @@ export function SageIntegrationPage() {
     !busy &&
     !workflowActionsDisabled;
 
-  const purchaseBlockReason =
-    scanDone && !purchaseDone && !canPurchase && preview
+  const purchaseBlockReason = !scanDone
+    ? 'Complete Workflow 1 before creating purchase and inventory records.'
+    : !purchaseDone && !canPurchase && preview
       ? !sageConnected
         ? 'Connect Sage before creating the Purchase Invoice.'
         : !preview.selections.supplierContactId
@@ -730,61 +737,88 @@ export function SageIntegrationPage() {
         </section>
       )}
 
-      <div className="space-y-5">
-        <WorkflowCard
-          title="1. Extract & Calculate Landed Costs"
-          description={
-            useLiveGmail
-              ? 'Read purchase, shipment and customer documents from Gmail for PO#GHOACRUGOL051926 and prepare the data for Sage.'
-              : 'Load prepared purchase, shipment and customer data for PO#GHOACRUGOL051926 and calculate landed costs.'
-          }
-        >
-          {activeWorkflow === 'scan' ? (
-            <p className="text-sm text-neutral-300">
-              {useLiveGmail
-                ? 'Reading Gmail and calculating landed costs…'
-                : 'Preparing demo data and calculating landed costs…'}
-            </p>
-          ) : scanDone && preview ? (
-            <div className="space-y-4">
-              <p className="text-base font-medium text-emerald-300">Ready for Sage</p>
-              <div className="max-w-md rounded-xl border border-neutral-800 bg-black/30 px-4 py-2">
-                <SummaryLine
-                  label="Documents represented"
-                  value={String(Math.max(preview.bundle.documents.length, 7))}
-                />
-                <SummaryLine
-                  label="SKUs identified"
-                  value={String(preview.bundle.shipment.lines.length)}
-                />
-                <SummaryLine label="Total units" value={String(totalUnits)} />
-                <SummaryLine
-                  label="Total landed inventory value"
-                  value={money(preview.reconciliation.totalCapitalizableCost, currency)}
-                />
-                <SummaryLine
-                  label="Customer Invoice ready"
-                  value={customerFound ? 'Yes' : 'No'}
-                />
-              </div>
-            </div>
-          ) : (
+      <nav className="mb-5 grid overflow-hidden rounded-2xl border border-neutral-800 bg-[#080808] sm:grid-cols-3">
+        {[
+          {
+            id: 'extract' as const,
+            number: '01',
+            title: 'Extract & Calculate',
+            detail: scanDone ? 'Ready' : 'Source documents',
+            complete: scanDone,
+          },
+          {
+            id: 'purchase' as const,
+            number: '02',
+            title: 'Purchase & Inventory',
+            detail: purchaseDone ? 'Created in Sage' : scanDone ? 'Ready to create' : 'Waiting',
+            complete: purchaseDone,
+          },
+          {
+            id: 'sales' as const,
+            number: '03',
+            title: 'Sales Invoice',
+            detail: salesDone ? 'Created in Sage' : purchaseDone ? 'Ready to create' : 'Waiting',
+            complete: salesDone,
+          },
+        ].map((tab, index) => {
+          const active = workflowTab === tab.id;
+          return (
             <button
+              key={tab.id}
               type="button"
-              disabled={!canWorkflow1}
-              onClick={() => void handleWorkflow1()}
-              className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => setWorkflowTab(tab.id)}
+              className={`relative flex items-center gap-3 px-5 py-4 text-left transition ${
+                index > 0 ? 'border-t border-neutral-800 sm:border-l sm:border-t-0' : ''
+              } ${
+                active
+                  ? 'bg-violet-500/10'
+                  : 'bg-transparent hover:bg-neutral-900/70'
+              }`}
             >
-              {useLiveGmail
-                ? 'Scan Gmail & Calculate Landed Costs'
-                : 'Load Demo Data & Calculate Landed Costs'}
+              <span
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
+                  tab.complete
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : active
+                      ? 'border-violet-500/40 bg-violet-500/10 text-violet-200'
+                      : 'border-neutral-800 text-neutral-600'
+                }`}
+              >
+                {tab.complete ? '✓' : tab.number}
+              </span>
+              <span className="min-w-0">
+                <span className={`block text-sm font-medium ${active ? 'text-white' : 'text-neutral-300'}`}>
+                  {tab.title}
+                </span>
+                <span
+                  className={`mt-0.5 block text-xs ${
+                    tab.complete ? 'text-emerald-400/70' : 'text-neutral-600'
+                  }`}
+                >
+                  {tab.detail}
+                </span>
+              </span>
+              {active && <span className="absolute inset-x-5 bottom-0 h-px bg-violet-400" />}
             </button>
-          )}
-        </WorkflowCard>
+          );
+        })}
+      </nav>
 
+      {workflowTab === 'extract' && (
+        <WorkflowOneWorkspace
+          preview={preview}
+          loading={activeWorkflow === 'scan'}
+          ready={scanDone && customerFound}
+          useLiveGmail={useLiveGmail}
+          canStart={canWorkflow1}
+          onStart={() => void handleWorkflow1()}
+        />
+      )}
+
+      {workflowTab === 'purchase' && (
         <WorkflowCard
-          title="2. Create Purchase & Inventory Records in Sage"
-          description="Create the Purchase Invoice and update inventory using the approved quantities and landed costs."
+          title="Create Purchase & Inventory Records in Sage"
+          description="Create the Purchase Invoice and update inventory using the approved quantity and calculated landed cost."
         >
           {scanDone && baselinePreview.length > 0 && !purchaseDone && (
             <div className="mb-4 max-w-lg rounded-xl border border-neutral-800 bg-black/30 px-4 py-2">
@@ -882,9 +916,11 @@ export function SageIntegrationPage() {
             </div>
           )}
         </WorkflowCard>
+      )}
 
+      {workflowTab === 'sales' && (
         <WorkflowCard
-          title="3. Create Sales Invoice in Sage"
+          title="Create Sales Invoice in Sage"
           description="Create the Sales Invoice from the Customer Invoice prepared in Workflow 1."
         >
           {activeWorkflow === 'sales' ? (
@@ -926,7 +962,7 @@ export function SageIntegrationPage() {
             </div>
           )}
         </WorkflowCard>
-      </div>
+      )}
 
       <ConfirmModal
         open={confirmPurchase}
