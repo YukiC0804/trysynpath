@@ -94,7 +94,7 @@ delete, label or mark mail as processed.
 ## Local setup
 
 1. Copy `.env.example` to `.env.local` and add Sage/Google values.
-2. Use `vercel dev` for OAuth/serverless API testing. Plain `npm run dev` serves
+2. Use `npx vercel dev` for OAuth/serverless API testing. Plain `npm run dev` serves
    only the Vite SPA.
 3. Run:
 
