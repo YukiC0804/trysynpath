@@ -869,7 +869,7 @@ export function SageIntegrationPage() {
                 />
                 <SummaryLine
                   label="Sage section"
-                  value="Purchases → Purchase Invoices → Draft"
+                  value="Purchases → Purchase Invoices"
                 />
                 <SummaryLine
                   label="Reference"
@@ -888,8 +888,8 @@ export function SageIntegrationPage() {
               <p className="text-base font-medium text-amber-200">Partial Completion</p>
               <p className="max-w-xl text-sm text-neutral-400">
                 Inventory Stock Movements did not fully complete. If a Purchase Invoice ID is shown
-                below, look under <span className="text-neutral-200">Draft</span> purchase invoices
-                in Sage. Otherwise use Reset Demo and retry Workflow 2.
+                below, look under Purchases → Purchase Invoices in Sage using the Reference. Otherwise
+                use Reset Demo and retry Workflow 2.
               </p>
               <button
                 type="button"
@@ -937,7 +937,7 @@ export function SageIntegrationPage() {
                 />
                 <SummaryLine
                   label="Sage section"
-                  value="Sales → Sales Invoices → Draft"
+                  value="Sales → Sales Invoices"
                 />
                 <SummaryLine
                   label="Reference"

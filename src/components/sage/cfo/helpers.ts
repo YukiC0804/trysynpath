@@ -180,13 +180,25 @@ export function salesInvoiceRecord(run: WorkflowRun) {
     .find((record) => record.transactionType === 'sales_invoice');
 }
 
+function releaseRecord(
+  run: WorkflowRun,
+  type: 'purchase_invoice_release' | 'sales_invoice_release',
+) {
+  return [...run.postingRecords]
+    .reverse()
+    .find((record) => record.transactionType === type);
+}
+
 export function purchaseWorkflowComplete(run: WorkflowRun): boolean {
   const purchase = purchaseInvoiceRecord(run);
+  const release = releaseRecord(run, 'purchase_invoice_release');
   const movements = stockMovementRecords(run);
   const succeeded = movements.filter((record) => record.status === 'succeeded');
   return Boolean(
     purchase?.status === 'succeeded' &&
       purchase.readBackVerified &&
+      release?.status === 'succeeded' &&
+      release.readBackVerified &&
       succeeded.length > 0 &&
       !movements.some((record) => record.status === 'failed'),
   );
@@ -194,7 +206,13 @@ export function purchaseWorkflowComplete(run: WorkflowRun): boolean {
 
 export function salesWorkflowComplete(run: WorkflowRun): boolean {
   const sales = salesInvoiceRecord(run);
-  return Boolean(sales?.status === 'succeeded' && sales.readBackVerified);
+  const release = releaseRecord(run, 'sales_invoice_release');
+  return Boolean(
+    sales?.status === 'succeeded' &&
+      sales.readBackVerified &&
+      release?.status === 'succeeded' &&
+      release.readBackVerified,
+  );
 }
 
 export function workflowFullyComplete(preview: WorkflowPreview | null): boolean {

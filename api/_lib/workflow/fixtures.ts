@@ -25,7 +25,7 @@ export const FIXTURE_EMAILS: EmailSource[] = [
     from: 'orders@nationwide-acrylics.example',
     to: 'operations@ghostboards.example',
     subject: `PO confirmation ${FIXTURE_REFERENCE}`,
-    receivedAt: '2026-05-19T09:15:00.000Z',
+    receivedAt: '2026-07-14T09:15:00.000Z',
     snippet: 'Purchase order for 100 clear acrylic sheets and the matching vendor invoice.',
     labelIds: ['Synpath Sage Demo'],
     attachmentIds: ['fixture-po', 'fixture-vendor-invoice'],
@@ -37,7 +37,7 @@ export const FIXTURE_EMAILS: EmailSource[] = [
     from: 'docs@pacific-freight.example',
     to: 'operations@ghostboards.example',
     subject: `Container TLLU4819203 / ${FIXTURE_REFERENCE}`,
-    receivedAt: '2026-05-24T14:30:00.000Z',
+    receivedAt: '2026-07-15T14:30:00.000Z',
     snippet: 'BOL, freight invoice and customs entry attached.',
     labelIds: ['Synpath Sage Demo'],
     attachmentIds: ['fixture-bol', 'fixture-freight', 'fixture-duty'],
@@ -49,7 +49,7 @@ export const FIXTURE_EMAILS: EmailSource[] = [
     from: 'billing@ghostboards.example',
     to: 'operations@ghostboards.example',
     subject: `Customer invoice GB-CUST-1042 / ${FIXTURE_REFERENCE}`,
-    receivedAt: '2026-06-04T11:05:00.000Z',
+    receivedAt: '2026-07-16T11:05:00.000Z',
     snippet: 'Customer invoice for received acrylic inventory.',
     labelIds: ['Synpath Sage Demo'],
     attachmentIds: ['fixture-customer-invoice', 'fixture-pricing-csv'],
@@ -69,8 +69,8 @@ External PO: ${FIXTURE_REFERENCE}
 Container: TLLU4819203
 Supplier: Nationwide Acrylics
 Currency: GBP
-Shipment date: 2026-05-19
-Expected arrival: 2026-06-02
+Shipment date: 2026-07-14
+Expected arrival: 2026-07-15
 ACR-CLR-3MM-48X96,100,52.50,5250.00`,
   },
   {
@@ -153,8 +153,8 @@ export const FIXTURE_SHIPMENT: Shipment = {
   id: 'shipment-fixture-ghoacrugol051926',
   externalPoNumber: FIXTURE_REFERENCE,
   containerNumber: 'TLLU4819203',
-  shipmentDate: '2026-05-19',
-  arrivalDate: '2026-06-02',
+  shipmentDate: '2026-07-14',
+  arrivalDate: '2026-07-15',
   supplier: 'Nationwide Acrylics',
   vendorInvoiceNumber: 'NWA-INV-8841',
   vendorInvoiceSubtotal: 5250,
@@ -253,8 +253,8 @@ export const FIXTURE_LANDED_COST_COMPONENTS: LandedCostComponent[] = [
 export const FIXTURE_CUSTOMER_INVOICE: CustomerInvoice = {
   sourceInvoiceNumber: 'GB-CUST-1042',
   customer: 'Acrylic Display Studio',
-  invoiceDate: '2026-06-04',
-  dueDate: '2026-07-04',
+  invoiceDate: '2026-07-16',
+  dueDate: '2026-08-15',
   currency: 'GBP',
   reference: FIXTURE_REFERENCE,
   lines: [

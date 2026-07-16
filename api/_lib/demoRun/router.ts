@@ -9,6 +9,7 @@ import {
   WorkflowOrchestrator,
 } from '../workflow/orchestrator';
 import {
+  assertReleasedInvoice,
   formatReadBackDifferences,
   SageGateway,
 } from '../workflow/sageGateway';
@@ -362,14 +363,73 @@ export async function handleDemoRunRequest(
       if (!String(livePi?.id ?? '')) {
         throw new Error('Purchase Invoice read-back returned no id');
       }
-    } catch {
+    } catch (error) {
       return respond(422, {
         error:
-          'Purchase Invoice could not be found in Sage after posting. Check Draft purchase invoices, or use Reset Demo and retry Workflow 2.',
+          error instanceof Error
+            ? error.message
+            : 'Purchase Invoice could not be found in Sage after posting. Use Reset Demo and retry Workflow 2.',
         demoRun,
         run: purchaseResult.run,
       });
     }
+
+    // Sage UK creates Draft artefacts; release them so they appear in the normal
+    // Purchase Invoices list (Awaiting Payment), not only under Draft.
+    preview = await orchestrator.preview({ ...previewOptions, existingRun: run });
+    if (run.approvals.purchaseInvoiceRelease !== 'approved') {
+      run = orchestrator.approve(
+        res,
+        run,
+        'purchaseInvoiceRelease',
+        confirmation,
+        preview.approvalDigests.purchaseInvoiceRelease,
+        'stock_movement',
+      );
+    }
+    preview = await orchestrator.preview({ ...previewOptions, existingRun: run });
+    const purchaseReleaseResult = await orchestrator.execute(
+      res,
+      run,
+      preview,
+      gateway,
+      'purchase_invoice_release' as ExecuteTarget,
+    );
+    run = purchaseReleaseResult.run;
+    const purchaseReleaseRecord = [...purchaseReleaseResult.run.postingRecords]
+      .reverse()
+      .find((record) => record.transactionType === 'purchase_invoice_release');
+    if (
+      !purchaseReleaseRecord ||
+      purchaseReleaseRecord.status !== 'succeeded' ||
+      !purchaseReleaseRecord.readBackVerified
+    ) {
+      return respond(422, {
+        error:
+          purchaseReleaseRecord?.error ||
+          'Purchase Invoice was created as Draft but could not be released in Sage.',
+        demoRun,
+        run: purchaseReleaseResult.run,
+      });
+    }
+    try {
+      const releasedPi = await getPurchaseInvoice(
+        sage.accessToken,
+        businessId,
+        purchaseRecord.sageTransactionId,
+      );
+      assertReleasedInvoice(releasedPi, 'Purchase Invoice');
+    } catch (error) {
+      return respond(422, {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Purchase Invoice is still Draft in Sage after release.',
+        demoRun,
+        run: purchaseReleaseResult.run,
+      });
+    }
+
     demoRun = await appendDemoTransaction(demoRun.id, {
       type: 'purchase_invoice',
       sageTransactionId: purchaseRecord.sageTransactionId,
@@ -552,6 +612,7 @@ export async function handleDemoRunRequest(
       gateway,
       'sales_invoice' as ExecuteTarget,
     );
+    run = salesResult.run;
     const salesRecord = [...salesResult.run.postingRecords]
       .reverse()
       .find((record) => record.transactionType === 'sales_invoice');
@@ -584,14 +645,71 @@ export async function handleDemoRunRequest(
       if (!String(liveSi?.id ?? '')) {
         throw new Error('Sales Invoice read-back returned no id');
       }
-    } catch {
+    } catch (error) {
       return respond(422, {
         error:
-          'Sales Invoice could not be found in Sage after posting. Check Draft sales invoices, or use Reset Demo and retry Workflow 3.',
+          error instanceof Error
+            ? error.message
+            : 'Sales Invoice could not be found in Sage after posting. Use Reset Demo and retry Workflow 3.',
         demoRun,
         run: salesResult.run,
       });
     }
+
+    preview = await orchestrator.preview({ ...previewOptions, existingRun: run });
+    if (run.approvals.salesInvoiceRelease !== 'approved') {
+      run = orchestrator.approve(
+        res,
+        run,
+        'salesInvoiceRelease',
+        run.externalReference,
+        preview.approvalDigests.salesInvoiceRelease,
+        'stock_movement',
+      );
+    }
+    preview = await orchestrator.preview({ ...previewOptions, existingRun: run });
+    const salesReleaseResult = await orchestrator.execute(
+      res,
+      run,
+      preview,
+      gateway,
+      'sales_invoice_release' as ExecuteTarget,
+    );
+    run = salesReleaseResult.run;
+    const salesReleaseRecord = [...salesReleaseResult.run.postingRecords]
+      .reverse()
+      .find((record) => record.transactionType === 'sales_invoice_release');
+    if (
+      !salesReleaseRecord ||
+      salesReleaseRecord.status !== 'succeeded' ||
+      !salesReleaseRecord.readBackVerified
+    ) {
+      return respond(422, {
+        error:
+          salesReleaseRecord?.error ||
+          'Sales Invoice was created as Draft but could not be released in Sage.',
+        demoRun,
+        run: salesReleaseResult.run,
+      });
+    }
+    try {
+      const releasedSi = await getSalesInvoice(
+        sage.accessToken,
+        businessId,
+        salesRecord.sageTransactionId,
+      );
+      assertReleasedInvoice(releasedSi, 'Sales Invoice');
+    } catch (error) {
+      return respond(422, {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Sales Invoice is still Draft in Sage after release.',
+        demoRun,
+        run: salesReleaseResult.run,
+      });
+    }
+
     const updated = await appendDemoTransaction(demoRun.id, {
       type: 'sales_invoice',
       sageTransactionId: salesRecord.sageTransactionId,
@@ -604,7 +722,7 @@ export async function handleDemoRunRequest(
     });
     return respond(200, {
       demoRun: updated,
-      run: salesResult.run,
+      run: salesReleaseResult.run,
       salesInvoiceId: salesRecord.sageTransactionId,
       salesInvoiceReference: salesRecord.externalReference,
     });

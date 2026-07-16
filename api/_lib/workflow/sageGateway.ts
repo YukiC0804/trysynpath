@@ -157,6 +157,35 @@ export function formatReadBackDifferences(diff: Record<string, unknown>): string
     .join('; ');
 }
 
+export function artefactStatusId(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const status = value as { id?: unknown; displayed_as?: unknown };
+    return String(status.id ?? status.displayed_as ?? '');
+  }
+  return '';
+}
+
+export function isNonDraftInvoiceStatus(status: string): boolean {
+  const normalized = status.trim();
+  return Boolean(normalized) && !/draft/i.test(normalized);
+}
+
+export function assertReleasedInvoice(
+  invoice: Record<string, unknown>,
+  label: string,
+): void {
+  const id = String(invoice.id ?? '');
+  const status = artefactStatusId(invoice.status ?? invoice.status_id);
+  if (!id) throw new Error(`${label} is missing a Sage id`);
+  if (!isNonDraftInvoiceStatus(status)) {
+    throw new Error(
+      `${label} is still Draft in Sage (${status || 'no status'}). Release failed or was skipped.`,
+    );
+  }
+}
+
 function taxAmount(net: number, rate?: { percentage?: number | string }) {
   return round(net * (Number(rate?.percentage ?? 0) / 100));
 }
@@ -527,34 +556,32 @@ export class SageGateway {
   async releasePurchaseInvoice(id: string) {
     const released = await releasePurchaseInvoice(this.accessToken, this.businessId, id);
     const readBack = await getPurchaseInvoice(this.accessToken, this.businessId, id);
-    const releasedStatus = (released.status as { id?: string } | undefined)?.id;
-    const readBackStatus = (readBack.status as { id?: string } | undefined)?.id;
+    const releasedStatus = artefactStatusId(released.status ?? released.status_id);
+    const readBackStatus = artefactStatusId(readBack.status ?? readBack.status_id);
     return {
       released,
       readBack,
       verified:
-        String(released.id ?? '') === id &&
+        String(released.id ?? id) === id &&
         String(readBack.id ?? '') === id &&
-        Boolean(readBackStatus) &&
-        readBackStatus !== 'DRAFT' &&
-        (!releasedStatus || releasedStatus === readBackStatus),
+        isNonDraftInvoiceStatus(readBackStatus) &&
+        (!releasedStatus || isNonDraftInvoiceStatus(releasedStatus)),
     };
   }
 
   async releaseSalesInvoice(id: string) {
     const released = await releaseSalesInvoice(this.accessToken, this.businessId, id);
     const readBack = await getSalesInvoice(this.accessToken, this.businessId, id);
-    const releasedStatus = (released.status as { id?: string } | undefined)?.id;
-    const readBackStatus = (readBack.status as { id?: string } | undefined)?.id;
+    const releasedStatus = artefactStatusId(released.status ?? released.status_id);
+    const readBackStatus = artefactStatusId(readBack.status ?? readBack.status_id);
     return {
       released,
       readBack,
       verified:
-        String(released.id ?? '') === id &&
+        String(released.id ?? id) === id &&
         String(readBack.id ?? '') === id &&
-        Boolean(readBackStatus) &&
-        readBackStatus !== 'DRAFT' &&
-        (!releasedStatus || releasedStatus === readBackStatus),
+        isNonDraftInvoiceStatus(readBackStatus) &&
+        (!releasedStatus || isNonDraftInvoiceStatus(releasedStatus)),
     };
   }
 }
