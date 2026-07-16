@@ -29,6 +29,24 @@ import {
 import { validateNormalizedBundle } from './validation';
 import { pickLedgerAccount, pickTaxRate } from '../sage/client';
 
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      while (cursor < values.length) {
+        const index = cursor++;
+        results[index] = await mapper(values[index]);
+      }
+    }),
+  );
+  return results;
+}
+
 function pickArtefactStatusId(
   statuses: Array<{ id: string; displayed_as?: string }> | undefined,
   fallback = 'DRAFT',
@@ -699,13 +717,18 @@ export class WorkflowOrchestrator {
             'Separate Stock Movements are disabled for purchase_invoice_product_lines strategy',
           );
         }
-        for (const raw of preview.payloads.stockMovements) {
+        const recordsBefore = [...run.postingRecords];
+        const results = await mapWithConcurrency(
+          preview.payloads.stockMovements,
+          3,
+          async (raw) => {
           const payload = raw as Record<string, unknown>;
           const stockItemId = String(payload.stock_item_id ?? '');
-          const alreadyPosted = run.postingRecords.find(
+          const externalReference = `${run.externalReference}:${stockItemId}`;
+          const alreadyPosted = recordsBefore.find(
             (record) =>
               record.transactionType === 'stock_movement' &&
-              record.externalReference === `${run.externalReference}:${stockItemId}` &&
+              record.externalReference === externalReference &&
               record.status === 'succeeded',
           );
           if (alreadyPosted?.sageTransactionId) {
@@ -714,12 +737,8 @@ export class WorkflowOrchestrator {
                 alreadyPosted.sageTransactionId,
                 payload,
               );
-              if (live.verified) continue;
-            } catch {
-              run.postingRecords = run.postingRecords.filter(
-                (record) => record !== alreadyPosted,
-              );
-            }
+              if (live.verified) return { record: null, keepExisting: true };
+            } catch {}
           }
           const existing = await gateway.findStockMovement(
             String(payload.details ?? ''),
@@ -736,22 +755,13 @@ export class WorkflowOrchestrator {
                   )),
                 }
               : await gateway.createAndReadStockMovement(payload);
-            run.postingRecords = run.postingRecords.filter(
-              (record) =>
-                !(
-                  record.transactionType === 'stock_movement' &&
-                  record.externalReference ===
-                    `${run.externalReference}:${stockItemId}` &&
-                  record.status === 'failed'
-                ),
-            );
-            run.postingRecords.push(
-              postingRecord({
+            return {
+              record: postingRecord({
                 workflowId: run.id,
                 transactionType: 'stock_movement',
                 sageBusinessId: gateway.businessId,
                 sageTransactionId: result.id,
-                externalReference: `${run.externalReference}:${stockItemId}`,
+                externalReference,
                 requestPayload: payload,
                 responseSummary: result.readBack,
                 readBackVerified: result.verified,
@@ -759,25 +769,44 @@ export class WorkflowOrchestrator {
                 // Created movements count as success; soft read-back diffs are diagnostic.
                 status: result.id || result.verified ? 'succeeded' : 'failed',
               }),
-            );
+              keepExisting: false,
+            };
           } catch (error) {
-            run.postingRecords.push(
-              postingRecord({
+            return {
+              record: postingRecord({
                 workflowId: run.id,
                 transactionType: 'stock_movement',
                 sageBusinessId: gateway.businessId,
                 sageTransactionId: '',
-                externalReference: `${run.externalReference}:${stockItemId}`,
+                externalReference,
                 requestPayload: payload,
                 responseSummary: {},
                 readBackVerified: false,
                 status: 'failed',
                 error: error instanceof Error ? error.message : 'Stock Movement failed',
               }),
-            );
-            run.status = 'partial';
-            // Continue remaining SKUs — one Sage failure must not block the whole receipt.
+              keepExisting: false,
+            };
           }
+          },
+        );
+        const replacedReferences = new Set(
+          results
+            .filter((result) => result.record && !result.keepExisting)
+            .map((result) => result.record!.externalReference),
+        );
+        run.postingRecords = run.postingRecords.filter(
+          (record) =>
+            !(
+              record.transactionType === 'stock_movement' &&
+              replacedReferences.has(record.externalReference)
+            ),
+        );
+        for (const result of results) {
+          if (result.record) run.postingRecords.push(result.record);
+        }
+        if (results.some((result) => result.record?.status === 'failed')) {
+          run.status = 'partial';
         }
       } else if (target === 'sales_invoice') {
         const payload = salesPayload;
