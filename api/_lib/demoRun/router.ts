@@ -241,11 +241,33 @@ export async function handleDemoRunRequest(
         error: `Supplier "${preview.bundle.shipment.supplier}" was not matched in Sage. Create or rename the vendor contact, then reload Workflow 1.`,
       });
     }
-    const blocking = preview.validationErrors.filter(
-      (error) =>
-        !error.startsWith('Choose an inventory posting strategy') &&
-        !error.includes('Purchase Invoice payload total'),
-    );
+    // Workflow 2 only needs purchase/inventory fields. Customer/sales selections are
+    // validated later in Workflow 3 and must not block Purchase Invoice posting.
+    const purchaseRequiredKeys = [
+      'supplierContactId',
+      'purchaseLedgerAccountId',
+      'purchaseTaxRateId',
+      'purchaseStatusId',
+    ];
+    const blocking = preview.validationErrors.filter((error) => {
+      if (error.startsWith('Choose an inventory posting strategy')) return false;
+      if (error.includes('Purchase Invoice payload total')) return false;
+      if (error.includes('customer sale quantity')) return false;
+      if (error.includes('Customer Invoice')) return false;
+      if (error.includes('requires review')) {
+        return purchaseRequiredKeys.some((key) => error.startsWith(`${key} `));
+      }
+      // Ignore sales-only mapping gaps during purchase posting.
+      if (
+        error.startsWith('customerContactId ') ||
+        error.startsWith('salesLedgerAccountId ') ||
+        error.startsWith('salesTaxRateId ') ||
+        error.startsWith('salesStatusId ')
+      ) {
+        return false;
+      }
+      return true;
+    });
     if (blocking.length) {
       return json(res, 422, {
         error: blocking[0],
