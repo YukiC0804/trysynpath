@@ -21,7 +21,7 @@ export function SageLayout({ children }: { children: ReactNode }) {
             </Link>
             <span className="hidden text-neutral-700 sm:inline">/</span>
             <span className="hidden truncate text-xs text-neutral-400 sm:inline">
-              {GHOST_BOARDS.brand} — Sage Integration
+              {GHOST_BOARDS.brand} Demo
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
