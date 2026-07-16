@@ -5,6 +5,11 @@ import type {
   LandedCostComponent,
   Shipment,
 } from '../../../shared/workflow';
+import {
+  buildGhoacrugolCustomerInvoice,
+  buildGhoacrugolLandedCosts,
+  buildGhoacrugolShipment,
+} from './ghoacrugolBundle';
 
 export const FIXTURE_REFERENCE = 'GHOACRUGOL051926';
 export const DEMO_REFERENCE_PREFIX = `DEMO-${FIXTURE_REFERENCE}`;
@@ -184,128 +189,15 @@ ACR-CLR-3MM-48X96,Clear Acrylic Sheet 3mm 48 x 96,79.00`,
   },
 ];
 
-export const FIXTURE_SHIPMENT: Shipment = {
-  id: 'shipment-fixture-ghoacrugol051926',
-  externalPoNumber: FIXTURE_REFERENCE,
-  containerNumber: 'TLLU4819203',
-  shipmentDate: DEMO_DATES.shipmentDate,
-  arrivalDate: DEMO_DATES.arrivalDate,
-  supplier: 'Nationwide Acrylics',
-  vendorInvoiceNumber: 'NWA-INV-8841',
-  vendorInvoiceSubtotal: 5250,
-  vendorInvoiceTax: 0,
-  vendorInvoiceTotal: 5250,
-  currency: 'GBP',
-  exchangeRate: 1,
-  status: 'Needs Review',
-  sourceDocumentIds: FIXTURE_DOCUMENTS.slice(0, 5).map((document) => document.id),
-  approvalStatus: 'pending',
-  lines: [
-    {
-      sku: 'ACR-CLR-3MM-48X96',
-      description: 'Clear Acrylic Sheet 3mm 48 × 96',
-      quantity: 100,
-      receivedQuantity: 100,
-      unitOfMeasure: 'sheet',
-      vendorUnitCost: 52.5,
-      vendorLineTotal: 5250,
-      weight: 1825,
-      volume: 12.9,
-      matchingStatus: 'unmatched',
-      matchingConfidence: 0,
-    },
-  ],
-};
+/** Live PO#GHOACRUGOL051926 shipment extracted from UGolden proforma + Spandex invoice. */
+export const FIXTURE_SHIPMENT: Shipment = (() => {
+  const shipment = buildGhoacrugolShipment(DEMO_DATES);
+  shipment.sourceDocumentIds = FIXTURE_DOCUMENTS.slice(0, 5).map((document) => document.id);
+  return shipment;
+})();
 
-export const FIXTURE_LANDED_COST_COMPONENTS: LandedCostComponent[] = [
-  {
-    id: 'charge-freight',
-    type: 'freight',
-    supplier: 'Pacific Freight',
-    sourceDocumentId: 'fixture-freight',
-    amount: 420,
-    currency: 'GBP',
-    baseCurrencyAmount: 420,
-    allocationMethod: 'product_value',
-    classification: 'capitalizable',
-    capitalizable: true,
-    recoverableTax: false,
-  },
-  {
-    id: 'charge-insurance',
-    type: 'insurance',
-    supplier: 'Pacific Freight',
-    sourceDocumentId: 'fixture-freight',
-    amount: 75,
-    currency: 'GBP',
-    baseCurrencyAmount: 75,
-    allocationMethod: 'product_value',
-    classification: 'capitalizable',
-    capitalizable: true,
-    recoverableTax: false,
-  },
-  {
-    id: 'charge-duty',
-    type: 'duty',
-    supplier: 'HMRC',
-    sourceDocumentId: 'fixture-duty',
-    amount: 331,
-    currency: 'GBP',
-    baseCurrencyAmount: 331,
-    allocationMethod: 'product_value',
-    classification: 'capitalizable',
-    capitalizable: true,
-    recoverableTax: false,
-  },
-  {
-    id: 'charge-brokerage',
-    type: 'brokerage',
-    supplier: 'Customs Broker',
-    sourceDocumentId: 'fixture-duty',
-    amount: 125,
-    currency: 'GBP',
-    baseCurrencyAmount: 125,
-    allocationMethod: 'quantity',
-    classification: 'capitalizable',
-    capitalizable: true,
-    recoverableTax: false,
-  },
-  {
-    id: 'charge-import-vat',
-    type: 'tax',
-    supplier: 'HMRC',
-    sourceDocumentId: 'fixture-duty',
-    amount: 1240.2,
-    currency: 'GBP',
-    baseCurrencyAmount: 1240.2,
-    allocationMethod: 'product_value',
-    classification: 'recoverable_tax',
-    capitalizable: false,
-    recoverableTax: true,
-  },
-];
+export const FIXTURE_LANDED_COST_COMPONENTS: LandedCostComponent[] =
+  buildGhoacrugolLandedCosts('fixture-freight');
 
-export const FIXTURE_CUSTOMER_INVOICE: CustomerInvoice = {
-  sourceInvoiceNumber: 'GB-CUST-1042',
-  customer: 'Acrylic Display Studio',
-  invoiceDate: DEMO_DATES.invoiceDate,
-  dueDate: DEMO_DATES.dueDate,
-  currency: 'GBP',
-  reference: FIXTURE_REFERENCE,
-  lines: [
-    {
-      sku: 'ACR-CLR-3MM-48X96',
-      description: 'Clear Acrylic Sheet 3mm 48 × 96',
-      quantity: 100,
-      salesUnitPrice: 79,
-      discount: 0,
-      tax: 1580,
-      total: 9480,
-    },
-  ],
-  subtotal: 7900,
-  tax: 1580,
-  shipping: 0,
-  total: 9480,
-  approvalStatus: 'pending',
-};
+export const FIXTURE_CUSTOMER_INVOICE: CustomerInvoice =
+  buildGhoacrugolCustomerInvoice(DEMO_DATES);

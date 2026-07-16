@@ -8,49 +8,68 @@ export type GhostboardsBaselineSku = {
   reorderQuantity?: number;
 };
 
-/** Canonical Ghostboards Demo Stock Items — protected server-side baseline. */
+/**
+ * Canonical Ghostboards Demo Stock Items from live PO#GHOACRUGOL051926.
+ * Baseline quantity is empty (0) so Reset restores a clean zero-inventory state.
+ */
 export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   {
-    sku: 'ACR-MIR-SLV-3MM',
-    description: 'Silver Mirror Acrylic Sheet 3mm',
-    costPrice: 77.62,
-    salesPrice: 0,
-    quantityInStock: 66,
+    sku: 'ACR-WHT-3MM-48X96',
+    description: 'White Acrylic Sheet 3mm 48 × 96',
+    costPrice: 24.16,
+    salesPrice: 39.45,
+    quantityInStock: 0,
     reorderLevel: 10,
   },
   {
-    sku: 'ACR-BLK-3MM-48X96',
-    description: 'Black Acrylic Sheet 3mm 48 × 96',
-    costPrice: 49,
-    salesPrice: 0,
-    quantityInStock: 54,
-    reorderLevel: 25,
+    sku: 'ACR-WHT-18MM-48X96',
+    description: 'White Acrylic Sheet 18mm 48 × 96',
+    costPrice: 144.9,
+    salesPrice: 227.26,
+    quantityInStock: 0,
+    reorderLevel: 5,
   },
   {
-    sku: 'ACR-CLR-6MM-48X96',
-    description: 'Clear Acrylic Sheet 6mm 48 × 96',
-    costPrice: 86.62,
+    sku: 'ACR-WHT-25MM-48X96',
+    description: 'White Acrylic Sheet 25mm 48 × 96',
+    costPrice: 214.1,
+    salesPrice: 331.97,
+    quantityInStock: 0,
+    reorderLevel: 5,
+  },
+  {
+    sku: 'ACR-WHT-4P8MM-60X120',
+    description: 'White Acrylic Sheet 4.8mm 60 × 120',
+    costPrice: 57.43,
+    salesPrice: 98.06,
+    quantityInStock: 0,
+    reorderLevel: 10,
+  },
+  {
+    sku: 'ACR-CLR-4MM-48X96',
+    description: 'Clear Acrylic Sheet 4mm 48 × 96',
+    costPrice: 34.3,
     salesPrice: 0,
-    quantityInStock: 58,
+    quantityInStock: 0,
     reorderLevel: 20,
   },
   {
-    sku: 'ACR-CLR-3MM-48X96',
-    description: 'Clear Acrylic Sheet 3mm 48 × 96',
-    costPrice: 48.94,
-    salesPrice: 0,
-    quantityInStock: 122,
-    reorderLevel: 40,
+    sku: 'ACR-PC-CLR-9P5MM-48X96',
+    description: 'Clear Polycarbonate Sheet 9.5mm 48 × 96',
+    costPrice: 89,
+    salesPrice: 144.84,
+    quantityInStock: 0,
+    reorderLevel: 10,
   },
 ] as const;
 
 /** Reference used for baseline quantity create/reconcile Stock Movements. */
 export const GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE = 'GHOSTBOARDS-DEMO-BASELINE';
 
-/** SKUs used by the synthetic PO workflow (subset of baseline). */
-export const GHOSTBOARDS_DEMO_WORKFLOW_SKUS = [
-  'ACR-CLR-3MM-48X96',
-] as const;
+/** SKUs used by the live PO#GHOACRUGOL051926 workflow. */
+export const GHOSTBOARDS_DEMO_WORKFLOW_SKUS = GHOSTBOARDS_BASELINE_SKUS.map(
+  (item) => item.sku,
+) as readonly string[];
 
 /** @deprecated Prefer GHOSTBOARDS_BASELINE_SKUS */
 export type DemoStockBaseline = {

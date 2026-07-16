@@ -133,7 +133,7 @@ describe('SKU matching', () => {
       { ...structuredClone(fixtureLine), sku: 'MISSING-SKU' },
     ];
     const errors = matchShipmentLines(lines, [
-      { id: '1', sku: 'acr-clr-3mm-48x96' },
+      { id: '1', sku: 'ACR-WHT-3MM-48X96' },
       { id: '2', sku: 'AMBIGUOUS-SKU' },
       { id: '3', sku: 'ambiguous-sku' },
     ]);
@@ -445,7 +445,7 @@ describe('WorkflowOrchestrator accounting defaults', () => {
             },
             {
               id: 'stock-2',
-              sku: 'ACR-CLR-3MM-48X96',
+              sku: 'ACR-WHT-3MM-48X96',
               description: 'Clear 3mm',
               quantityInStock: 82,
               costPrice: 42.5,
@@ -479,13 +479,13 @@ describe('WorkflowOrchestrator accounting defaults', () => {
           contacts: [
             {
               id: 'supplier-1',
-              name: 'Nationwide Acrylics',
+              name: 'Shanghai UGolden Industry Co., Ltd.',
               reference: 'NWA',
               typeIds: ['VENDOR'],
             },
             {
               id: 'customer-1',
-              name: 'Acrylic Display Studio',
+              name: 'Spandex',
               reference: 'ADS',
               typeIds: ['CUSTOMER'],
             },
@@ -530,6 +530,9 @@ describe('WorkflowOrchestrator accounting defaults', () => {
           reference: '',
           typeIds: [type],
         };
+      },
+      async ensureStockItemsForShipment() {
+        return { created: [], reused: [] };
       },
     } as unknown as SageGateway;
 

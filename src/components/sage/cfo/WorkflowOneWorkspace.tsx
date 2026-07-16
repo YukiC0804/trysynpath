@@ -110,8 +110,9 @@ export function WorkflowOneWorkspace({
                 {useLiveGmail ? 'Scan the connected inbox' : 'Load the prepared mailbox'}
               </h3>
               <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
-                Find the purchase order, vendor invoice, shipping documents and matching customer
-                invoice for PO#GHOACRUGOL051926.
+                {useLiveGmail
+                  ? 'Scan subject PO#GHOACRUGOL051926, extract the UGolden proforma and Spandex invoice PDFs, then match or create contacts and SKUs in Sage.'
+                  : 'Load the UGolden proforma + Spandex invoice pack for PO#GHOACRUGOL051926 and match contacts and SKUs in Sage.'}
               </p>
               <button
                 type="button"

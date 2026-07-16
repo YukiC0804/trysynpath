@@ -182,6 +182,18 @@ export class WorkflowOrchestrator {
         'CUSTOMER',
         extraction.bundle.customerInvoice.customer,
       );
+      // Auto-create missing SKUs from the live PO pack so Workflow 2/3 can post.
+      await input.gateway.ensureStockItemsForShipment(
+        extraction.bundle.shipment.lines.map((line) => ({
+          sku: line.sku,
+          description: line.description,
+          vendorUnitCost: line.vendorUnitCost,
+        })),
+        extraction.bundle.customerInvoice.lines.map((line) => ({
+          sku: line.sku,
+          salesUnitPrice: line.salesUnitPrice,
+        })),
+      );
     }
 
     const referenceData = input.gateway ? await input.gateway.loadReferenceData() : null;

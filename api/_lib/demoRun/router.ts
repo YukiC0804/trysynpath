@@ -3,7 +3,7 @@ import type { DemoPrepareResult } from '../../../shared/demoRun';
 import { getValidAccessToken } from '../sage/auth';
 import { json } from '../sage/http';
 import { getPurchaseInvoice, getSalesInvoice, getStockItem } from '../sage/client';
-import { FixtureDocumentExtractionAdapter } from '../workflow/extraction';
+import { resolveDocumentExtractor } from '../workflow/resolveExtractor';
 import {
   type ExecuteTarget,
   WorkflowOrchestrator,
@@ -122,7 +122,7 @@ export async function handleDemoRunRequest(
       mode,
       source,
       gateway,
-      extractor: new FixtureDocumentExtractionAdapter(),
+      extractor: resolveDocumentExtractor(sourceType),
       existingRun: workflow,
       messageIds: Array.isArray(body.messageIds) ? body.messageIds.map(String) : undefined,
       searchQuery: typeof body.searchQuery === 'string' ? body.searchQuery : undefined,
@@ -187,7 +187,7 @@ export async function handleDemoRunRequest(
       mode: workflow.mode,
       source,
       gateway,
-      extractor: new FixtureDocumentExtractionAdapter(),
+      extractor: resolveDocumentExtractor(sourceType),
       existingRun: workflow,
       messageIds: Array.isArray(body.messageIds) ? body.messageIds.map(String) : undefined,
       searchQuery: typeof body.searchQuery === 'string' ? body.searchQuery : undefined,
@@ -527,7 +527,7 @@ export async function handleDemoRunRequest(
       mode: workflow.mode,
       source,
       gateway,
-      extractor: new FixtureDocumentExtractionAdapter(),
+      extractor: resolveDocumentExtractor(sourceType),
       existingRun: workflow,
       messageIds: Array.isArray(body.messageIds) ? body.messageIds.map(String) : undefined,
       searchQuery: typeof body.searchQuery === 'string' ? body.searchQuery : undefined,

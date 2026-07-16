@@ -62,21 +62,21 @@ describe('OpenAPI-aligned Sage payload builders', () => {
   it('allows only documented fields when creating a demo contact', () => {
     expect(
       sanitizeContactPayload({
-        name: 'Acrylic Display Studio',
+        name: 'Spandex',
         contact_type_ids: ['CUSTOMER'],
         reference: 'SYN-DEMO-CUSTOMER',
         notes: 'Created by the Synpath Ghostboards demo',
         currency_id: 'GBP',
-        main_address: { address_line_1: 'Acrylic Display Studio' },
+        main_address: { address_line_1: 'Spandex' },
         unsupported: 'do not send',
       }),
     ).toEqual({
-      name: 'Acrylic Display Studio',
+      name: 'Spandex',
       contact_type_ids: ['CUSTOMER'],
       reference: 'SYN-DEMO-CUSTOMER',
       notes: 'Created by the Synpath Ghostboards demo',
       currency_id: 'GBP',
-      main_address: { address_line_1: 'Acrylic Display Studio' },
+      main_address: { address_line_1: 'Spandex' },
     });
   });
 
@@ -130,13 +130,17 @@ describe('OpenAPI-aligned Sage payload builders', () => {
     expect(payload).toMatchObject({
       contact_id: 'supplier-1',
       reference: 'DEMO-GHOACRUGOL051926-20260716',
-      vendor_reference: 'NWA-INV-8841',
+      vendor_reference: 'UG26A0519',
     });
     expect(payload).not.toHaveProperty('main_address');
-    expect(payload.invoice_lines).toHaveLength(1);
-    expect(payload.invoice_lines.reduce((sum, line) => sum + line.quantity * line.unit_price, 0)).toBe(
-      5250,
-    );
+    expect(payload.invoice_lines).toHaveLength(6);
+    expect(
+      Number(
+        payload.invoice_lines
+          .reduce((sum, line) => sum + line.quantity * line.unit_price, 0)
+          .toFixed(2),
+      ),
+    ).toBe(34925.34);
     expect(payload.invoice_lines.every((line) => !('product_id' in line))).toBe(true);
   });
 
@@ -172,7 +176,7 @@ describe('OpenAPI-aligned Sage payload builders', () => {
         reference: 'DEMO-REF',
         strategy: 'stock_movement',
       }),
-    ).toHaveLength(1);
+    ).toHaveLength(6);
   });
 
   it('builds required Stock Movement fields with landed cost', async () => {
@@ -181,22 +185,23 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       bundle.shipment.lines,
       bundle.landedCostComponents,
     ).allocations;
-    const [movement] = buildStockMovementPayloads({
+    const movements = buildStockMovementPayloads({
       bundle,
       allocations,
       reference: 'DEMO-REF',
       strategy: 'stock_movement',
     });
+    const movement = movements.find((item) =>
+      String(item.details).includes('ACR-WHT-3MM-48X96'),
+    );
     expect(movement).toMatchObject({
-      stock_item_id: 'stock-1',
-      quantity: 100,
-      cost_price: 62.01,
+      quantity: 102,
     });
     expect(movement).not.toHaveProperty('reference');
-    expect(movement.cost_price).toBeGreaterThan(52.5);
-    expect(String(movement.details).length).toBeLessThanOrEqual(50);
-    expect(movement.details).toContain('DEMO-REF');
-    expect(movement.details).toContain('ACR-CLR-3MM-48X96');
+    expect(Number(movement?.cost_price)).toBeGreaterThan(24.16);
+    expect(String(movement?.details).length).toBeLessThanOrEqual(50);
+    expect(movement?.details).toContain('DEMO-REF');
+    expect(movement?.details).toContain('ACR-WHT-3MM-48X96');
   });
 
   it('builds Sales Invoice with product, tax, shipping and source invoice reference', async () => {
@@ -217,7 +222,7 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       shipping_net_amount: 0,
       shipping_tax_rate_id: 'GB_STANDARD',
     });
-    expect(payload.notes).toContain('GB-CUST-1042');
+    expect(payload.notes).toContain('GA18');
     expect(payload.main_address).toMatchObject({ country_id: 'GB' });
     expect(payload.invoice_lines[0]).toMatchObject({
       product_id: 'stock-1',
@@ -276,7 +281,7 @@ describe('SageGateway read-back verification', () => {
             contact: { id: 'supplier-1' },
             date: '2026-05-19T00:00:00Z',
             currency: { id: 'currency-uuid' },
-            vendor_reference: 'NWA-INV-8841',
+            vendor_reference: 'UG26A0519',
             invoice_lines: [
               {
                 quantity: 100,
@@ -291,7 +296,7 @@ describe('SageGateway read-back verification', () => {
     const result = await new SageGateway('token', 'business').createAndReadPurchaseInvoice({
       contact_id: 'supplier-1',
       reference: 'DEMO-REF',
-      vendor_reference: 'NWA-INV-8841',
+      vendor_reference: 'UG26A0519',
       date: '2026-05-19',
       invoice_lines: [
         {
@@ -320,7 +325,7 @@ describe('SageGateway read-back verification', () => {
             reference: 'DEMO-REF',
             contact: { id: 'supplier-1' },
             status: { id: 'DRAFT' },
-            vendor_reference: 'NWA-INV-8841',
+            vendor_reference: 'UG26A0519',
             date: '2026-05-19',
             invoice_lines: [
               {
@@ -337,7 +342,7 @@ describe('SageGateway read-back verification', () => {
     const result = await new SageGateway('token', 'business').createAndReadPurchaseInvoice({
       contact_id: 'supplier-1',
       reference: 'DEMO-REF',
-      vendor_reference: 'NWA-INV-8841',
+      vendor_reference: 'UG26A0519',
       date: '2026-05-19',
       status_id: 'DRAFT',
       invoice_lines: [

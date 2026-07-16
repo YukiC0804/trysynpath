@@ -7,7 +7,8 @@ import { getValidGmailAccessToken } from '../gmail/auth';
 import { GmailSourceAdapter } from '../gmail/client';
 import { getValidAccessToken } from '../sage/auth';
 import { json } from '../sage/http';
-import { FixtureDocumentExtractionAdapter, type ExtractionOverrides } from './extraction';
+import { type ExtractionOverrides } from './extraction';
+import { resolveDocumentExtractor } from './resolveExtractor';
 import { FixtureSourceAdapter, type SourceAdapter } from './sourceAdapters';
 import {
   type ApprovalTarget,
@@ -101,11 +102,13 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
   if (method === 'POST' && path[0] === 'preview') {
     const options = previewOptions(body);
     const { source, gateway } = await dependencies(req, res, options.mode);
+    const sourceType =
+      source.sourceType === 'gmail' || options.mode === 'gmail_dry_run' ? 'gmail' : 'fixture';
     const preview = await orchestrator.preview({
       ...options,
       source,
       gateway,
-      extractor: new FixtureDocumentExtractionAdapter(),
+      extractor: resolveDocumentExtractor(sourceType),
       existingRun: store.get(req),
     });
     orchestrator.savePreviewRun(res, preview.run);
@@ -132,6 +135,7 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
     try {
       const options = previewOptions({ ...body, mode: run.mode });
       const { source, gateway } = await dependencies(req, res, run.mode);
+      const sourceType = run.sourceType === 'gmail' ? 'gmail' : 'fixture';
       const preview = await orchestrator.preview({
         ...options,
         inventoryPostingStrategy:
@@ -139,7 +143,7 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
           run.inventoryPostingStrategy,
         source,
         gateway,
-        extractor: new FixtureDocumentExtractionAdapter(),
+        extractor: resolveDocumentExtractor(sourceType),
         existingRun: run,
       });
       if (body.approvalDigest !== preview.approvalDigests[target]) {
@@ -178,12 +182,13 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
     const { source, gateway } = await dependencies(req, res, run.mode);
     if (!gateway) return json(res, 401, { error: 'Sage is not connected' });
     const options = previewOptions({ ...body, mode: run.mode });
+    const sourceType = run.sourceType === 'gmail' ? 'gmail' : 'fixture';
     const preview = await orchestrator.preview({
       ...options,
       inventoryPostingStrategy: run.inventoryPostingStrategy,
       source,
       gateway,
-      extractor: new FixtureDocumentExtractionAdapter(),
+      extractor: resolveDocumentExtractor(sourceType),
       existingRun: run,
     });
     const blocking = preview.validationErrors.filter(

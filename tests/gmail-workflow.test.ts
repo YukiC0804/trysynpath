@@ -82,7 +82,9 @@ describe('source adapters and normalization', () => {
     const result = await new FixtureDocumentExtractionAdapter().extract(source);
     expect(validateNormalizedBundle(result.bundle)).toEqual([]);
     expect(result.bundle.fixtureExtraction).toBe(true);
-    expect(result.bundle.extractionWarnings[0]).toContain('not a successful live AI extraction');
+    expect(result.bundle.extractionWarnings[0]).toContain(
+      'Structured extraction for PO#GHOACRUGOL051926',
+    );
     expect(result.fields.externalPoNumber).toMatchObject({
       confidence: 0.99,
       manuallyEdited: false,
@@ -94,22 +96,27 @@ describe('source adapters and normalization', () => {
     const result = await new FixtureDocumentExtractionAdapter().extract(source, {
       exchangeRate: 1.25,
       shipment: { vendorInvoiceNumber: 'EDITED-INV' },
-      shipmentLines: [{ sku: 'ACR-CLR-3MM-48X96', receivedQuantity: 48 }],
+      shipmentLines: [{ sku: 'ACR-WHT-3MM-48X96', receivedQuantity: 48 }],
       customerInvoice: { customer: 'Edited Customer', shipping: 90 },
       customerInvoiceLines: [
-        { sku: 'ACR-CLR-3MM-48X96', quantity: 9, salesUnitPrice: 105 },
+        { sku: 'ACR-WHT-3MM-48X96', quantity: 9, salesUnitPrice: 105 },
       ],
     });
     expect(result.bundle.shipment.exchangeRate).toBe(1.25);
-    expect(result.bundle.shipment.lines[0].receivedQuantity).toBe(48);
+    expect(
+      result.bundle.shipment.lines.find((line) => line.sku === 'ACR-WHT-3MM-48X96')
+        ?.receivedQuantity,
+    ).toBe(48);
     expect(result.fields.exchangeRate.manuallyEdited).toBe(true);
     expect(result.bundle.shipment.vendorInvoiceNumber).toBe('EDITED-INV');
     expect(result.bundle.customerInvoice.customer).toBe('Edited Customer');
-    expect(result.bundle.customerInvoice.lines[0]).toMatchObject({
+    expect(
+      result.bundle.customerInvoice.lines.find((line) => line.sku === 'ACR-WHT-3MM-48X96'),
+    ).toMatchObject({
       quantity: 9,
       salesUnitPrice: 105,
     });
-    expect(result.fields['customerLine.ACR-CLR-3MM-48X96.quantity'].manuallyEdited).toBe(
+    expect(result.fields['customerLine.ACR-WHT-3MM-48X96.quantity'].manuallyEdited).toBe(
       true,
     );
   });

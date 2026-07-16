@@ -17,36 +17,42 @@ process.env.VITEST = 'true';
 
 const stock = {
   id: 'stock-1',
-  sku: 'ACR-MIR-SLV-3MM',
-  description: 'Silver Mirror Acrylic Sheet 3mm',
-  quantityInStock: 12,
-  costPrice: 55,
-  lastCostPrice: 50,
-  averageCostPrice: 52,
-  salesPrice: 102,
+  sku: 'ACR-WHT-3MM-48X96',
+  description: 'White Acrylic Sheet 3mm 48 × 96',
+  quantityInStock: 0,
+  costPrice: 24.16,
+  lastCostPrice: 24.16,
+  averageCostPrice: 24.16,
+  salesPrice: 39.45,
   raw: {},
 };
 
 describe('ghostboards baseline configuration', () => {
-  it('defines canonical baseline SKUs with quantity and cost', () => {
+  it('defines empty-inventory baseline SKUs from the live PO pack', () => {
     expect(GHOSTBOARDS_BASELINE_SKUS.map((item) => item.sku)).toEqual([
-      'ACR-MIR-SLV-3MM',
-      'ACR-BLK-3MM-48X96',
-      'ACR-CLR-6MM-48X96',
-      'ACR-CLR-3MM-48X96',
+      'ACR-WHT-3MM-48X96',
+      'ACR-WHT-18MM-48X96',
+      'ACR-WHT-25MM-48X96',
+      'ACR-WHT-4P8MM-60X120',
+      'ACR-CLR-4MM-48X96',
+      'ACR-PC-CLR-9P5MM-48X96',
     ]);
-    expect(GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === 'ACR-MIR-SLV-3MM')).toMatchObject({
-      costPrice: 77.62,
-      quantityInStock: 66,
-      reorderLevel: 10,
-    });
     expect(
-      GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === 'ACR-CLR-3MM-48X96'),
-    ).toMatchObject({
-      costPrice: 48.94,
-      quantityInStock: 122,
+      GHOSTBOARDS_BASELINE_SKUS.every((item) => item.quantityInStock === 0),
+    ).toBe(true);
+    expect(GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === 'ACR-WHT-3MM-48X96')).toMatchObject({
+      costPrice: 24.16,
+      salesPrice: 39.45,
+      quantityInStock: 0,
     });
-    expect(GHOSTBOARDS_DEMO_WORKFLOW_SKUS).toEqual(['ACR-CLR-3MM-48X96']);
+    expect(GHOSTBOARDS_DEMO_WORKFLOW_SKUS).toEqual([
+      'ACR-WHT-3MM-48X96',
+      'ACR-WHT-18MM-48X96',
+      'ACR-WHT-25MM-48X96',
+      'ACR-WHT-4P8MM-60X120',
+      'ACR-CLR-4MM-48X96',
+      'ACR-PC-CLR-9P5MM-48X96',
+    ]);
     expect(GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE).toBe('GHOSTBOARDS-DEMO-BASELINE');
   });
 });
@@ -66,13 +72,13 @@ describe('demo run baseline and reset bookkeeping', () => {
       sageBusinessId: 'biz-1',
       workflowRunId: 'wf-1',
       externalPoReference: 'GHOACRUGOL051926',
-      vendorInvoiceReference: 'NWA-INV-8841',
-      customerInvoiceReference: 'GB-CUST-1042',
+      vendorInvoiceReference: 'UG26A0519',
+      customerInvoiceReference: 'GA18',
       stockItems: [stock],
     });
     expect(record.baseline).toHaveLength(1);
-    expect(record.baseline[0].costPrice).toBe(55);
-    expect(record.baseline[0].quantityInStock).toBe(12);
+    expect(record.baseline[0].costPrice).toBe(24.16);
+    expect(record.baseline[0].quantityInStock).toBe(0);
     expect(record.demoRunReference.startsWith('DEMO-GHOACRUGOL051926-')).toBe(true);
   });
 
@@ -81,8 +87,8 @@ describe('demo run baseline and reset bookkeeping', () => {
       sageBusinessId: 'biz-1',
       workflowRunId: 'wf-1',
       externalPoReference: 'GHOACRUGOL051926',
-      vendorInvoiceReference: 'NWA-INV-8841',
-      customerInvoiceReference: 'GB-CUST-1042',
+      vendorInvoiceReference: 'UG26A0519',
+      customerInvoiceReference: 'GA18',
       stockItems: [stock],
     });
     await appendDemoTransaction(record.id, {

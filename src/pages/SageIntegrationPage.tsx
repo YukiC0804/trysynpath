@@ -359,7 +359,7 @@ export function SageIntegrationPage() {
         if (prepared.missingSkus.length) {
           setScanDone(false);
           setError(
-            `The following SKU must be prepared in Sage before continuing. ${prepared.missingSkus.join(', ')}. Use Reset Demo to create the baseline products.`,
+            `Could not create or match these SKUs in Sage: ${prepared.missingSkus.join(', ')}. Retry Workflow 1 (auto-creates missing products) or use Reset Demo.`,
           );
           return;
         }
@@ -1067,7 +1067,10 @@ export function SageIntegrationPage() {
         }}
         onConfirm={() => void runReset()}
       >
-        <p>Reset this demo and restore the Sage data to its previous state?</p>
+        <p>
+          Reset this demo: hard-delete Draft Purchase Invoices, void Sales Invoices, remove demo
+          stock movements, and restore all demo SKUs to quantity 0 (empty baseline).
+        </p>
         <p className="text-amber-200">
           Sales Invoices are voided rather than permanently deleted because of Sage audit
           requirements.

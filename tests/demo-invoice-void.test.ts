@@ -70,13 +70,13 @@ vi.mock('../api/_lib/sage/client', async () => {
 
 const stock = {
   id: 'stock-clr',
-  sku: 'ACR-CLR-3MM-48X96',
-  description: 'Clear Acrylic Sheet 3mm 48 × 96',
-  quantityInStock: 122,
-  costPrice: 48.94,
-  lastCostPrice: 48.94,
-  averageCostPrice: 48.94,
-  salesPrice: 79,
+  sku: 'ACR-WHT-3MM-48X96',
+  description: 'White Acrylic Sheet 3mm 48 × 96',
+  quantityInStock: 0,
+  costPrice: 24.16,
+  lastCostPrice: 24.16,
+  averageCostPrice: 24.16,
+  salesPrice: 39.45,
   raw: {},
 };
 
@@ -88,15 +88,8 @@ describe('demo reset invoice cleanup', () => {
       ...stock,
       id: `id-${sku}`,
       sku,
-      quantityInStock: sku === 'ACR-CLR-3MM-48X96' ? 122 : 66,
-      costPrice:
-        sku === 'ACR-CLR-3MM-48X96'
-          ? 48.94
-          : sku === 'ACR-MIR-SLV-3MM'
-            ? 77.62
-            : sku === 'ACR-BLK-3MM-48X96'
-              ? 42
-              : 55,
+      quantityInStock: 0,
+      costPrice: 24.16,
     }));
     getStockItem.mockImplementation(async (_token, _biz, id: string) => ({
       ...stock,
@@ -122,8 +115,8 @@ describe('demo reset invoice cleanup', () => {
       sageBusinessId: 'biz-1',
       workflowRunId: 'wf-1',
       externalPoReference: 'GHOACRUGOL051926',
-      vendorInvoiceReference: 'NWA-INV-8841',
-      customerInvoiceReference: 'GB-CUST-1042',
+      vendorInvoiceReference: 'UG26A0519',
+      customerInvoiceReference: 'GA18',
       stockItems: [stock],
     });
     await appendDemoTransaction(record.id, {
@@ -176,12 +169,12 @@ describe('demo reset invoice cleanup', () => {
 
   it('deletes Purchase Invoices found by Sage search even without a demo-run record', async () => {
     listPurchaseInvoices.mockImplementation(async (_token, _biz, term?: string) => {
-      if (term === 'DEMO-GHOACRUGOL051926' || term === 'NWA-INV-8841') {
+      if (term === 'DEMO-GHOACRUGOL051926' || term === 'UG26A0519') {
         return [
           {
             id: 'pi-orphan-1',
             reference: 'DEMO-GHOACRUGOL051926-ABCDEF12',
-            vendorReference: 'NWA-INV-8841',
+            vendorReference: 'UG26A0519',
             displayedAs: 'Draft PI',
             totalAmount: 5250,
             status: 'DRAFT',

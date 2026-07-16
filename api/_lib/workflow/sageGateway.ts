@@ -7,7 +7,9 @@ import {
   createContact,
   createPurchaseInvoice,
   createSalesInvoice,
+  createStockItem,
   createStockMovement,
+  findStockItemBySku,
   getPurchaseInvoice,
   getSalesInvoice,
   getStockMovement,
@@ -418,17 +420,62 @@ export class SageGateway {
       contact_type_ids: [type] as Array<'VENDOR' | 'CUSTOMER'>,
       reference: type === 'CUSTOMER' ? 'SYN-DEMO-CUSTOMER' : 'SYN-DEMO-SUPPLIER',
       notes: 'Created by the Synpath Ghostboards demo',
-      main_address: { address_line_1: name, country_id: 'GB' },
+      main_address: { address_line_1: name, country_id: 'US' },
     };
     try {
       return await createContact(this.accessToken, this.businessId, {
         ...base,
-        currency_id: 'GBP',
+        currency_id: 'USD',
       });
     } catch {
-      // Some UK businesses reject currency_id=GBP and require the currency GUID.
-      return createContact(this.accessToken, this.businessId, base);
+      try {
+        return await createContact(this.accessToken, this.businessId, {
+          ...base,
+          currency_id: 'GBP',
+          main_address: { address_line_1: name, country_id: 'GB' },
+        });
+      } catch {
+        return createContact(this.accessToken, this.businessId, {
+          name,
+          contact_type_ids: [type],
+          reference: type === 'CUSTOMER' ? 'SYN-DEMO-CUSTOMER' : 'SYN-DEMO-SUPPLIER',
+          notes: 'Created by the Synpath Ghostboards demo',
+        });
+      }
     }
+  }
+
+  /** Create missing Sage Stock Items for demo PO lines (qty starts at 0). */
+  async ensureStockItemsForShipment(
+    shipmentLines: Array<{
+      sku: string;
+      description: string;
+      vendorUnitCost: number;
+    }>,
+    salesLines: Array<{ sku: string; salesUnitPrice: number }>,
+  ) {
+    const created: string[] = [];
+    for (const line of shipmentLines) {
+      const existing = await findStockItemBySku(
+        this.accessToken,
+        this.businessId,
+        line.sku,
+      );
+      if (existing) continue;
+      const salesPrice =
+        salesLines.find((item) => item.sku.toUpperCase() === line.sku.toUpperCase())
+          ?.salesUnitPrice ?? 0;
+      await createStockItem(this.accessToken, this.businessId, {
+        item_code: line.sku,
+        description: line.description,
+        cost_price: line.vendorUnitCost,
+        ...(salesPrice > 0 ? { sales_price: salesPrice } : {}),
+        reorder_level: 10,
+        reorder_quantity: 0,
+      });
+      created.push(line.sku);
+    }
+    return created;
   }
 
   async createAndReadPurchaseInvoice(payload: Record<string, unknown>) {

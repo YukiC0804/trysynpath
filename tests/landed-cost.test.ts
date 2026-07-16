@@ -116,10 +116,10 @@ describe('landed-cost safety and currency behavior', () => {
     const source = await new FixtureSourceAdapter().collect();
     const result = await new FixtureDocumentExtractionAdapter().extract(source, {
       exchangeRate: 1.2,
-      chargeAmounts: { 'charge-freight': 500 },
+      chargeAmounts: { 'charge-pallet': 500 },
     });
     const freight = result.bundle.landedCostComponents.find(
-      (component) => component.id === 'charge-freight',
+      (component) => component.id === 'charge-pallet',
     );
     expect(freight?.baseCurrencyAmount).toBe(600);
   });

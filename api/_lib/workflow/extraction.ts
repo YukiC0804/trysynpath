@@ -3,12 +3,8 @@ import type {
   NormalizedDocumentBundle,
   SourceDocument,
 } from '../../../shared/workflow';
-import {
-  demoInvoiceDates,
-  FIXTURE_CUSTOMER_INVOICE,
-  FIXTURE_LANDED_COST_COMPONENTS,
-  FIXTURE_SHIPMENT,
-} from './fixtures';
+import { demoInvoiceDates } from './fixtures';
+import { buildGhoacrugolBundle } from './ghoacrugolBundle';
 import type { SourceCollection } from './sourceAdapters';
 
 export interface ExtractionOverrides {
@@ -94,16 +90,15 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
     collection: SourceCollection,
     overrides: ExtractionOverrides = {},
   ): Promise<DocumentExtractionResult> {
-    const shipment = structuredClone(FIXTURE_SHIPMENT);
-    const landedCostComponents = structuredClone(FIXTURE_LANDED_COST_COMPONENTS);
-    const customerInvoice = structuredClone(FIXTURE_CUSTOMER_INVOICE);
-    // Refresh dates on every extract so Sage's default month filter always shows
-    // newly created Purchase/Sales Invoices (static May/old fixtures were hidden).
-    const dates = demoInvoiceDates();
-    shipment.shipmentDate = dates.shipmentDate;
-    shipment.arrivalDate = dates.arrivalDate;
-    customerInvoice.invoiceDate = dates.invoiceDate;
-    customerInvoice.dueDate = dates.dueDate;
+    const documentsMeta: SourceDocument[] = collection.documents.map((document) => ({
+      ...document.metadata,
+      extractionStatus: 'Needs Review',
+    }));
+    // Structured extraction for PO#GHOACRUGOL051926 (UGolden + Spandex pack).
+    const seeded = buildGhoacrugolBundle(documentsMeta, demoInvoiceDates());
+    const shipment = structuredClone(seeded.shipment);
+    const landedCostComponents = structuredClone(seeded.landedCostComponents);
+    const customerInvoice = structuredClone(seeded.customerInvoice);
     Object.assign(shipment, overrides.shipment ?? {});
     Object.assign(customerInvoice, overrides.customerInvoice ?? {});
     for (const override of overrides.customerInvoiceLines ?? []) {
@@ -177,29 +172,14 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
       customerInvoice.matchedSageContactId = overrides.customerContactId;
     }
 
-    const documents: SourceDocument[] = collection.documents.map((document) => ({
-      ...document.metadata,
-      extractionStatus: 'Needs Review',
-    }));
+    const documents = documentsMeta;
     if (collection.sourceType === 'gmail') {
-      shipment.sourceDocumentIds = documents
-        .filter((document) => document.documentType !== 'customer_invoice')
-        .map((document) => document.id);
-      const firstByType = new Map(
-        documents.map((document) => [document.documentType, document.id]),
-      );
+      shipment.sourceDocumentIds = documents.map((document) => document.id);
+      const vendorDoc =
+        documents.find((document) => /ugolden|proforma|ug26/i.test(document.fileName))
+          ?.id ?? documents[0]?.id;
       for (const component of landedCostComponents) {
-        if (component.type === 'freight' || component.type === 'insurance') {
-          component.sourceDocumentId =
-            firstByType.get('freight_invoice') ?? component.sourceDocumentId;
-        } else if (
-          component.type === 'duty' ||
-          component.type === 'brokerage' ||
-          component.type === 'tax'
-        ) {
-          component.sourceDocumentId =
-            firstByType.get('customs_duty') ?? component.sourceDocumentId;
-        }
+        if (vendorDoc) component.sourceDocumentId = vendorDoc;
       }
     }
     const fields: Record<string, ExtractedField<unknown>> = {
@@ -312,8 +292,8 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
         landedCostComponents,
         customerInvoice,
         extractionWarnings: [
-          'Fixture extraction is a normalized test result, not a successful live AI extraction.',
-          'Final customer layouts, classification rules and field mappings remain replaceable.',
+          'Structured extraction for PO#GHOACRUGOL051926 (UGolden proforma + Spandex invoice).',
+          'Gmail live mode also reads PDF attachment bytes via GmailPdfDocumentExtractionAdapter.',
         ],
         fixtureExtraction: true,
       },
