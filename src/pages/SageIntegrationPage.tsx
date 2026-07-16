@@ -737,7 +737,7 @@ export function SageIntegrationPage() {
         </section>
       )}
 
-      <nav className="mb-5 grid overflow-hidden rounded-2xl border border-neutral-800 bg-[#080808] sm:grid-cols-3">
+      <nav className="mb-5 grid overflow-hidden rounded-2xl border border-neutral-800 bg-[#0a0a0a] sm:grid-cols-3">
         {[
           {
             id: 'extract' as const,
@@ -792,7 +792,7 @@ export function SageIntegrationPage() {
                 </span>
                 <span
                   className={`mt-0.5 block text-xs ${
-                    tab.complete ? 'text-emerald-400/70' : 'text-neutral-600'
+                    tab.complete ? 'text-emerald-300' : 'text-neutral-600'
                   }`}
                 >
                   {tab.detail}

@@ -33,17 +33,17 @@ function fileSize(value: number) {
 
 function Attachment({ document }: { document: SourceDocument }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950/70 px-3 py-2.5">
+    <div className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900/50 px-3 py-2.5">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
         <FileText size={17} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-neutral-100">{document.fileName}</p>
+        <p className="truncate text-xs font-medium text-white">{document.fileName}</p>
         <p className="mt-0.5 text-[11px] text-neutral-500">
           {documentLabel(document.documentType)} · {fileSize(document.fileSize)}
         </p>
       </div>
-      <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">
+      <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300">
         {document.extractionStatus}
       </span>
     </div>
@@ -79,12 +79,12 @@ export function WorkflowOneWorkspace({
   const customerInvoice = preview?.bundle.customerInvoice;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-neutral-800 bg-[#080808]">
+    <section className="overflow-hidden rounded-2xl border border-neutral-800 bg-[#0a0a0a]">
       <div className="grid min-h-[620px] lg:grid-cols-[0.92fr_1.08fr]">
         <div className="border-b border-neutral-800 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-red-300">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/15 text-red-400">
                 <Mail size={18} />
               </div>
               <div>
@@ -106,7 +106,7 @@ export function WorkflowOneWorkspace({
               <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-neutral-800 bg-neutral-900 text-neutral-400">
                 <Inbox size={24} />
               </div>
-              <h3 className="text-base font-medium text-neutral-100">
+              <h3 className="text-base font-medium text-white">
                 {useLiveGmail ? 'Scan the connected inbox' : 'Load the prepared mailbox'}
               </h3>
               <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
@@ -140,15 +140,15 @@ export function WorkflowOneWorkspace({
                       key={email.gmailMessageId}
                       type="button"
                       onClick={() => setSelectedEmailId(email.gmailMessageId)}
-                      className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                className={`w-full rounded-xl border px-4 py-3 text-left transition ${
                         active
                           ? 'border-violet-500/40 bg-violet-500/10'
-                          : 'border-transparent bg-neutral-950/40 hover:border-neutral-800'
+                          : 'border-transparent bg-neutral-900/40 hover:border-neutral-800'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-neutral-100">
+                          <p className="truncate text-sm font-medium text-white">
                             {email.subject}
                           </p>
                           <p className="mt-1 truncate text-xs text-neutral-500">{email.from}</p>
@@ -216,7 +216,7 @@ export function WorkflowOneWorkspace({
               </div>
             </div>
             {ready && (
-              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-300">
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] text-emerald-300">
                 <CheckCircle2 size={12} />
                 Ready
               </span>
@@ -341,7 +341,7 @@ export function WorkflowOneWorkspace({
               </div>
 
               {preview.bundle.extractionWarnings.length > 0 && (
-                <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-200/80">
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-5 text-amber-200">
                   {preview.bundle.extractionWarnings[0]}
                 </p>
               )}
