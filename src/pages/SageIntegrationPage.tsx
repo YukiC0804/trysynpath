@@ -869,7 +869,7 @@ export function SageIntegrationPage() {
                 />
                 <SummaryLine
                   label="Sage section"
-                  value="Purchases → Purchase Invoices → Draft"
+                  value="Purchases → Purchase Invoices"
                 />
                 <SummaryLine
                   label="Reference"
@@ -886,8 +886,9 @@ export function SageIntegrationPage() {
                 <SummaryLine label="Number of Stock Movements" value={String(movementCount)} />
                 <SummaryLine label="Verified in Sage" value="Yes" />
                 <p className="mt-2 text-xs text-neutral-500">
-                  Purchase Invoices stay Draft so Reset can hard-delete them. In Sage, open the
-                  Draft filter (or clear From/To) and search by Reference.
+                  In Sage, clear or widen the From/To date filter if the list looks empty — demo
+                  invoices use today&apos;s dates. Reset hard-deletes Purchase Invoices; Sales
+                  Invoices are voided.
                 </p>
               </div>
             </div>

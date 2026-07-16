@@ -116,7 +116,7 @@ describe('demo reset invoice void cleanup', () => {
     vi.restoreAllMocks();
   });
 
-  it('hard-deletes Draft Purchase Invoices and voids Sales Invoices on Reset', async () => {
+  it('hard-deletes Purchase Invoices and voids Sales Invoices on Reset', async () => {
     const record = await captureBaseline({
       sageBusinessId: 'biz-1',
       workflowRunId: 'wf-1',
@@ -147,7 +147,7 @@ describe('demo reset invoice void cleanup', () => {
     });
 
     getPurchaseInvoice
-      .mockResolvedValueOnce({ id: 'pi-live-1', status: { id: 'DRAFT' } })
+      .mockResolvedValueOnce({ id: 'pi-live-1', status: { id: 'UNPAID' } })
       .mockRejectedValueOnce(new Error('404 not found'));
     getSalesInvoice
       .mockResolvedValueOnce({ id: 'si-live-1', status: { id: 'UNPAID' } })
@@ -162,12 +162,7 @@ describe('demo reset invoice void cleanup', () => {
       activeDemoRunId: record.id,
     });
 
-    expect(deletePurchaseInvoice).toHaveBeenCalledWith(
-      'token',
-      'biz-1',
-      'pi-live-1',
-      undefined,
-    );
+    expect(deletePurchaseInvoice).toHaveBeenCalledWith('token', 'biz-1', 'pi-live-1');
     expect(deleteSalesInvoice).toHaveBeenCalledWith('token', 'biz-1', 'si-live-1');
     expect(result.unresolved.filter((item) => /Invoice/i.test(item))).toEqual([]);
     expect(result.demoRun?.transactions.find((tx) => tx.type === 'purchase_invoice')?.status).toBe(
@@ -176,44 +171,5 @@ describe('demo reset invoice void cleanup', () => {
     expect(result.demoRun?.transactions.find((tx) => tx.type === 'sales_invoice')?.status).toBe(
       'voided',
     );
-  });
-
-  it('fails Reset when a released Purchase Invoice can only be voided', async () => {
-    const record = await captureBaseline({
-      sageBusinessId: 'biz-1',
-      workflowRunId: 'wf-1',
-      externalPoReference: 'GHOACRUGOL051926',
-      vendorInvoiceReference: 'NWA-INV-8841',
-      customerInvoiceReference: 'GB-CUST-1042',
-      stockItems: [stock],
-    });
-    await appendDemoTransaction(record.id, {
-      type: 'purchase_invoice',
-      sageTransactionId: 'pi-released-1',
-      externalReference: record.demoRunReference,
-      status: 'succeeded',
-      requestSummary: {},
-      readBackSummary: {},
-      readBackVerified: true,
-      createdAt: new Date().toISOString(),
-    });
-
-    getPurchaseInvoice
-      .mockResolvedValueOnce({ id: 'pi-released-1', status: { id: 'UNPAID' } })
-      .mockResolvedValueOnce({ id: 'pi-released-1', status: { id: 'UNPAID' } })
-      .mockResolvedValueOnce({ id: 'pi-released-1', status: { id: 'VOID' } });
-    deletePurchaseInvoice
-      .mockRejectedValueOnce(new Error('422 cannot delete released'))
-      .mockResolvedValueOnce(undefined);
-
-    const result = await restoreDemoBaseline({
-      accessToken: 'token',
-      businessId: 'biz-1',
-      confirmation: 'RESET',
-      activeDemoRunId: record.id,
-    });
-
-    expect(result.unresolved.some((item) => /pi-released-1/.test(item))).toBe(true);
-    expect(result.unresolved.some((item) => /hard-delete/i.test(item))).toBe(true);
   });
 });

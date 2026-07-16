@@ -11,7 +11,6 @@ import {
 import {
   createStockItem,
   createStockMovement,
-  DEMO_INVOICE_VOID_REASON,
   deletePurchaseInvoice,
   deleteSalesInvoice,
   deleteStockMovement,
@@ -338,7 +337,7 @@ async function voidDemoInvoiceById(
   };
 }
 
-/** Draft Purchase Invoices hard-delete (404). Released ones can only void — treat as failure. */
+/** Hard-delete Purchase Invoices (404). Sales Invoices cannot be deleted — void only. */
 async function hardDeletePurchaseInvoiceById(
   accessToken: string,
   businessId: string,
@@ -347,48 +346,25 @@ async function hardDeletePurchaseInvoiceById(
   const before = await readInvoiceStatus('purchase', accessToken, businessId, id);
   if (before.gone) return { ok: true, status: 'MISSING' };
 
-  const tryDelete = async (voidReason?: string) => {
-    try {
-      await deletePurchaseInvoice(accessToken, businessId, id, voidReason);
-      return null;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Purchase Invoice delete failed';
-      if (/not found|404|already/i.test(message)) return 'missing' as const;
-      return message;
+  try {
+    // No void_reason — Purchase Invoices are deleted, not voided.
+    await deletePurchaseInvoice(accessToken, businessId, id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Purchase Invoice delete failed';
+    if (/not found|404|already/i.test(message)) {
+      return { ok: true, status: 'MISSING', detail: message };
     }
-  };
-
-  // Prefer hard delete (no void_reason) so Draft invoices disappear from Sage.
-  let deleteError = await tryDelete();
-  if (deleteError === 'missing') return { ok: true, status: 'MISSING' };
-
-  let after = await readInvoiceStatus('purchase', accessToken, businessId, id);
-  if (after.gone) return { ok: true, status: 'MISSING' };
-
-  // Leftover released invoices: Sage can only void them.
-  if (deleteError || !isVoidLikeStatus(after.status)) {
-    const voidError = await tryDelete(DEMO_INVOICE_VOID_REASON);
-    if (voidError === 'missing') return { ok: true, status: 'MISSING' };
-    after = await readInvoiceStatus('purchase', accessToken, businessId, id);
-    if (after.gone) return { ok: true, status: 'MISSING' };
-    if (isVoidLikeStatus(after.status)) {
-      return {
-        ok: false,
-        status: after.status,
-        detail: `could not hard-delete (Sage voided it instead as ${after.status}). Released Purchase Invoices cannot be removed — keep demo PIs as Draft.`,
-      };
-    }
-    return {
-      ok: false,
-      status: after.status || before.status,
-      detail: voidError || deleteError || `still ${after.status || 'active'} after delete`,
-    };
+    return { ok: false, status: before.status, detail: message };
   }
 
+  const after = await readInvoiceStatus('purchase', accessToken, businessId, id);
+  if (after.gone) return { ok: true, status: 'MISSING' };
   return {
     ok: false,
     status: after.status || before.status,
-    detail: `could not hard-delete (status ${after.status || before.status})`,
+    detail: `Purchase Invoice still present after delete (status ${
+      after.status || before.status || 'unknown'
+    })`,
   };
 }
 

@@ -374,8 +374,62 @@ export async function handleDemoRunRequest(
       });
     }
 
-    // Keep Purchase Invoices as Draft so Reset can hard-delete them.
-    // Released Sage purchase invoices can only be voided, not removed.
+    // Release Purchase Invoice into the normal Sage list. Reset hard-deletes it
+    // (Purchase Invoices can be deleted; Sales Invoices can only be voided).
+    preview = await orchestrator.preview({ ...previewOptions, existingRun: run });
+    if (run.approvals.purchaseInvoiceRelease !== 'approved') {
+      run = orchestrator.approve(
+        res,
+        run,
+        'purchaseInvoiceRelease',
+        confirmation,
+        preview.approvalDigests.purchaseInvoiceRelease,
+        'stock_movement',
+      );
+    }
+    preview = await orchestrator.preview({ ...previewOptions, existingRun: run });
+    const purchaseReleaseResult = await orchestrator.execute(
+      res,
+      run,
+      preview,
+      gateway,
+      'purchase_invoice_release' as ExecuteTarget,
+    );
+    run = purchaseReleaseResult.run;
+    const purchaseReleaseRecord = [...purchaseReleaseResult.run.postingRecords]
+      .reverse()
+      .find((record) => record.transactionType === 'purchase_invoice_release');
+    if (
+      !purchaseReleaseRecord ||
+      purchaseReleaseRecord.status !== 'succeeded' ||
+      !purchaseReleaseRecord.readBackVerified
+    ) {
+      return respond(422, {
+        error:
+          purchaseReleaseRecord?.error ||
+          'Purchase Invoice was created as Draft but could not be released in Sage.',
+        demoRun,
+        run: purchaseReleaseResult.run,
+      });
+    }
+    try {
+      const releasedPi = await getPurchaseInvoice(
+        sage.accessToken,
+        businessId,
+        purchaseRecord.sageTransactionId,
+      );
+      assertReleasedInvoice(releasedPi, 'Purchase Invoice');
+    } catch (error) {
+      return respond(422, {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Purchase Invoice is still Draft in Sage after release.',
+        demoRun,
+        run: purchaseReleaseResult.run,
+      });
+    }
+
     demoRun = await appendDemoTransaction(demoRun.id, {
       type: 'purchase_invoice',
       sageTransactionId: purchaseRecord.sageTransactionId,
