@@ -98,7 +98,18 @@ export function postDemoPurchase(request: PreviewRequest) {
 }
 
 export function postDemoSales(request: PreviewRequest) {
-  return post<{ demoRun: DemoRunRecord; run: WorkflowRun }>('/api/workflow/demo/sales', request);
+  return post<{
+    demoRun: DemoRunRecord;
+    run: WorkflowRun;
+    beforeAfter?: Array<{
+      sku: string;
+      previousQuantity: number;
+      newQuantity: number;
+      soldQuantity: number;
+    }>;
+    unitsSold?: number;
+    salesTotal?: number;
+  }>('/api/workflow/demo/sales', request);
 }
 
 export function resetDemoRun(confirmation = 'RESET', demoRunId?: string) {

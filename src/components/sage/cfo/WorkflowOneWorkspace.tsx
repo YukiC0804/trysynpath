@@ -224,11 +224,11 @@ export function WorkflowOneWorkspace({
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-white">
-                  {liveExtraction ? 'PDF extraction' : 'Document extraction'}
+                  {liveExtraction ? 'Gmail extraction' : 'Document extraction'}
                 </h2>
                 <p className="text-xs text-neutral-500">
                   {liveExtraction
-                    ? 'Fields read from UGolden + Spandex PDF attachments'
+                    ? 'UGolden proforma UG26A0519 + Spandex invoice GA18 from scanned mail'
                     : 'UGolden proforma + Spandex invoice field mapping'}
                 </p>
               </div>

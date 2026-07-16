@@ -53,6 +53,13 @@ type BeforeAfterRow = {
   newLandedCost: number;
 };
 
+type SalesBeforeAfterRow = {
+  sku: string;
+  previousQuantity: number;
+  newQuantity: number;
+  soldQuantity: number;
+};
+
 function ConnectionCard({
   title,
   connected,
@@ -179,6 +186,7 @@ export function SageIntegrationPage() {
   const [preview, setPreview] = useState<WorkflowPreview | null>(null);
   const [demoRun, setDemoRun] = useState<DemoRunRecord | null>(null);
   const [beforeAfter, setBeforeAfter] = useState<BeforeAfterRow[]>([]);
+  const [salesBeforeAfter, setSalesBeforeAfter] = useState<SalesBeforeAfterRow[]>([]);
   const [baselinePreview, setBaselinePreview] = useState<
     Array<{ sku: string; quantityInStock: number; costPrice: number }>
   >([]);
@@ -244,6 +252,7 @@ export function SageIntegrationPage() {
     setScanDone(false);
     setMessageIds([]);
     setBeforeAfter([]);
+    setSalesBeforeAfter([]);
     setBaselinePreview([]);
     setError(null);
     await resetWorkflow().catch(() => undefined);
@@ -452,11 +461,14 @@ export function SageIntegrationPage() {
     try {
       const result = await postDemoSales(buildRequest());
       setDemoRun(result.demoRun);
+      setSalesBeforeAfter(result.beforeAfter ?? []);
       setPreview((current) => (current ? { ...current, run: result.run } : current));
       if (resetRequested) setConfirmReset(true);
     } catch (err) {
       setError(
-        friendlyError(err instanceof Error ? err.message : 'Could not create Sales Invoice'),
+        friendlyError(
+          err instanceof Error ? err.message : 'Could not create Sales Invoice and reduce inventory',
+        ),
       );
       if (resetRequested) setConfirmReset(true);
     } finally {
@@ -494,6 +506,7 @@ export function SageIntegrationPage() {
       if (result.message === 'Demo Baseline Ready') {
         setNotice('Demo Baseline Ready');
         setBeforeAfter([]);
+        setSalesBeforeAfter([]);
       } else {
         setError(
           result.unresolved?.length
@@ -718,9 +731,9 @@ export function SageIntegrationPage() {
             PO#GHOACRUGOL051926 Completed
           </h2>
           <ul className="mt-3 space-y-1 text-sm text-emerald-300">
-            <li>Landed costs calculated</li>
-            <li>Purchase and inventory records created in Sage</li>
-            <li>Sales Invoice created in Sage</li>
+            <li>UGolden + Spandex documents extracted from Gmail</li>
+            <li>Purchase Invoice $46,845.34 and +718 inventory created in Sage</li>
+            <li>Sales Invoice $32,296 and −282 inventory posted in Sage</li>
           </ul>
           <div className="mt-4 space-y-1">
             <SummaryLine
@@ -755,7 +768,7 @@ export function SageIntegrationPage() {
           {
             id: 'sales' as const,
             number: '03',
-            title: 'Sales Invoice',
+            title: 'Sales & Inventory',
             detail: salesDone ? 'Created in Sage' : purchaseDone ? 'Ready to create' : 'Waiting',
             complete: salesDone,
           },
@@ -927,16 +940,34 @@ export function SageIntegrationPage() {
 
       {workflowTab === 'sales' && (
         <WorkflowCard
-          title="Create Sales Invoice in Sage"
-          description="Create the Sales Invoice from the Customer Invoice prepared in Workflow 1."
+          title="Create Sales Invoice & Reduce Inventory in Sage"
+          description="Post Spandex invoice GA18 ($32,296), sell 282 sheets, and reduce the matching Sage stock quantities."
         >
           {activeWorkflow === 'sales' ? (
-            <p className="text-sm text-neutral-300">Creating Sales Invoice in Sage…</p>
+            <p className="text-sm text-neutral-300">
+              Creating Sales Invoice and reducing inventory in Sage…
+            </p>
           ) : salesDone && preview ? (
             <div className="space-y-3">
               <p className="text-base font-medium text-emerald-300">
-                Sales Invoice Created in Sage
+                Sales Invoice &amp; Inventory Reduced in Sage
               </p>
+              {salesBeforeAfter.length > 0 && (
+                <div className="max-w-xl space-y-2 rounded-xl border border-neutral-800 bg-black/30 px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">
+                    Inventory reduced (Spandex sale)
+                  </p>
+                  {salesBeforeAfter.map((row) => (
+                    <div key={row.sku} className="text-sm text-neutral-300">
+                      <p className="font-medium text-white">{row.sku}</p>
+                      <p>
+                        Sold {row.soldQuantity} · Previous Quantity {row.previousQuantity} → New
+                        Quantity {row.newQuantity}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="max-w-md rounded-xl border border-neutral-800 bg-black/30 px-4 py-2">
                 <SummaryLine
                   label="Sales Invoice ID"
@@ -944,7 +975,7 @@ export function SageIntegrationPage() {
                 />
                 <SummaryLine
                   label="Sage section"
-                  value="Sales → Sales Invoices"
+                  value="Sales → Sales Invoices · Products & Services → Stock"
                 />
                 <SummaryLine
                   label="Reference"
@@ -963,6 +994,15 @@ export function SageIntegrationPage() {
                   value={preview.bundle.customerInvoice.customer}
                 />
                 <SummaryLine
+                  label="Units sold"
+                  value={String(
+                    preview.bundle.customerInvoice.lines.reduce(
+                      (sum, line) => sum + line.quantity,
+                      0,
+                    ),
+                  )}
+                />
+                <SummaryLine
                   label="Invoice date"
                   value={preview.bundle.customerInvoice.invoiceDate}
                 />
@@ -972,8 +1012,8 @@ export function SageIntegrationPage() {
                 />
                 <SummaryLine label="Verified in Sage" value="Yes" />
                 <p className="mt-2 text-xs text-neutral-500">
-                  In Sage, clear or widen the From/To date filter if the list looks empty — demo
-                  invoices use today&apos;s dates so they fall in the default month view.
+                  Check Sales → Sales Invoices for GA18 / the demo reference, and Products &amp;
+                  Services for the reduced quantities on the five sold SKUs.
                 </p>
               </div>
             </div>
@@ -985,7 +1025,7 @@ export function SageIntegrationPage() {
                 onClick={() => setConfirmSales(true)}
                 className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Create Sales Invoice in Sage
+                Create Sales Invoice &amp; Reduce Inventory
               </button>
               {salesBlockReason && (
                 <p className="max-w-xl text-sm text-amber-200">{salesBlockReason}</p>
@@ -1029,13 +1069,15 @@ export function SageIntegrationPage() {
 
       <ConfirmModal
         open={confirmSales}
-        title="Confirm Sales Invoice"
+        title="Confirm sales & inventory reduction"
         confirmLabel="Confirm & Create in Sage"
         busy={busy}
         onCancel={() => setConfirmSales(false)}
         onConfirm={() => void runSales()}
       >
-        <p>Create the Sales Invoice in Sage?</p>
+        <p>
+          Create Spandex Sales Invoice GA18 ($32,296) and reduce 282 sheets from Sage inventory?
+        </p>
         <p className="text-amber-200">
           This action will create real records in the connected Sage account.
         </p>
@@ -1045,6 +1087,15 @@ export function SageIntegrationPage() {
             <SummaryLine
               label="Customer Invoice reference"
               value={preview.bundle.customerInvoice.sourceInvoiceNumber}
+            />
+            <SummaryLine
+              label="Units sold"
+              value={String(
+                preview.bundle.customerInvoice.lines.reduce(
+                  (sum, line) => sum + line.quantity,
+                  0,
+                ),
+              )}
             />
             <SummaryLine
               label="Invoice total"

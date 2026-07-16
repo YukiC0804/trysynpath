@@ -2,7 +2,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { DemoPrepareResult } from '../../../shared/demoRun';
 import { getValidAccessToken } from '../sage/auth';
 import { json } from '../sage/http';
-import { getPurchaseInvoice, getSalesInvoice, getStockItem } from '../sage/client';
+import {
+  createStockMovement,
+  getPurchaseInvoice,
+  getSalesInvoice,
+  getStockItem,
+  listStockMovements,
+} from '../sage/client';
 import { resolveDocumentExtractor } from '../workflow/resolveExtractor';
 import {
   type ExecuteTarget,
@@ -12,6 +18,7 @@ import {
   assertReleasedInvoice,
   formatReadBackDifferences,
   SageGateway,
+  stockMovementSalesOutDetailsMarker,
 } from '../workflow/sageGateway';
 import { EncryptedCookieWorkflowStore } from '../workflow/store';
 import { DeferredWorkflowStore } from '../workflow/deferredStore';
@@ -552,6 +559,17 @@ export async function handleDemoRunRequest(
       );
     }
     preview = await orchestrator.preview({ ...previewOptions, existingRun: run });
+    // Snapshot on-hand qty before the Sales Invoice so we can prove the 282-sheet decrease.
+    const salesQtyBefore = new Map<string, number>();
+    for (const line of preview.bundle.customerInvoice.lines) {
+      if (!line.matchedSageStockItemId) continue;
+      const stock = await getStockItem(
+        sage.accessToken,
+        businessId,
+        line.matchedSageStockItemId,
+      );
+      salesQtyBefore.set(line.sku.toUpperCase(), stock.quantityInStock);
+    }
     const salesResult = await orchestrator.execute(
       res,
       run,
@@ -657,7 +675,15 @@ export async function handleDemoRunRequest(
       });
     }
 
-    const updated = await appendDemoTransaction(demoRun.id, {
+    // Ensure Sage on-hand quantity drops by the Spandex sold qty (282 sheets total).
+    // Prefer SI product_id reduction; if shortfall remains, post negative Stock Movements.
+    const salesBeforeAfter: Array<{
+      sku: string;
+      previousQuantity: number;
+      newQuantity: number;
+      soldQuantity: number;
+    }> = [];
+    let updated = await appendDemoTransaction(demoRun.id, {
       type: 'sales_invoice',
       sageTransactionId: salesRecord.sageTransactionId,
       externalReference: salesRecord.externalReference,
@@ -667,11 +693,87 @@ export async function handleDemoRunRequest(
       readBackVerified: salesRecord.readBackVerified,
       createdAt: salesRecord.createdAt,
     });
+
+    for (const line of preview.bundle.customerInvoice.lines) {
+      if (!line.matchedSageStockItemId) continue;
+      const previousQuantity =
+        salesQtyBefore.get(line.sku.toUpperCase()) ??
+        demoRun.baseline.find(
+          (item) => item.itemCode.toUpperCase() === line.sku.toUpperCase(),
+        )?.afterQuantityInStock ??
+        0;
+      let afterItem = await getStockItem(
+        sage.accessToken,
+        businessId,
+        line.matchedSageStockItemId,
+      );
+      let currentQuantity = afterItem.quantityInStock;
+      const targetQuantity = Number((previousQuantity - line.quantity).toFixed(4));
+      const shortfall = Number((currentQuantity - targetQuantity).toFixed(4));
+      if (shortfall > 0.01) {
+        const details = stockMovementSalesOutDetailsMarker(
+          demoRun.demoRunReference,
+          line.sku,
+        );
+        const existing = (
+          await listStockMovements(
+            sage.accessToken,
+            businessId,
+            details,
+            line.matchedSageStockItemId,
+          )
+        ).find((movement) => String(movement.details ?? '') === details);
+        let movementId = String(existing?.id ?? '');
+        if (!existing) {
+          const created = await createStockMovement(sage.accessToken, businessId, {
+            stock_item_id: line.matchedSageStockItemId,
+            date: preview.bundle.customerInvoice.invoiceDate,
+            quantity: -shortfall,
+            cost_price: afterItem.costPrice,
+            details,
+          });
+          movementId = String(created.id ?? '');
+          updated = await appendDemoTransaction(updated.id, {
+            type: 'stock_movement',
+            sageTransactionId: movementId,
+            externalReference: `${demoRun.demoRunReference}:OUT:${line.sku}`,
+            status: 'succeeded',
+            requestSummary: {
+              stock_item_id: line.matchedSageStockItemId,
+              quantity: -shortfall,
+              details,
+            },
+            readBackSummary: { id: movementId },
+            readBackVerified: Boolean(movementId),
+            createdAt: new Date().toISOString(),
+          });
+        }
+        afterItem = await getStockItem(
+          sage.accessToken,
+          businessId,
+          line.matchedSageStockItemId,
+        );
+        currentQuantity = afterItem.quantityInStock;
+      }
+      salesBeforeAfter.push({
+        sku: line.sku,
+        previousQuantity,
+        newQuantity: currentQuantity,
+        soldQuantity: line.quantity,
+      });
+    }
+
     return respond(200, {
       demoRun: updated,
       run: salesReleaseResult.run,
       salesInvoiceId: salesRecord.sageTransactionId,
       salesInvoiceReference: salesRecord.externalReference,
+      beforeAfter: salesBeforeAfter,
+      unitsSold: preview.bundle.customerInvoice.lines.reduce(
+        (sum, line) => sum + line.quantity,
+        0,
+      ),
+      salesTotal: preview.bundle.customerInvoice.total,
     });
   }
 

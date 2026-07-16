@@ -293,6 +293,14 @@ export function stockMovementDetailsMarker(demoReference: string, sku: string): 
   return `${demoReference}|${sku}`.slice(0, 50);
 }
 
+/** Stock-out marker for Spandex sales quantities (negative stock movements). */
+export function stockMovementSalesOutDetailsMarker(
+  demoReference: string,
+  sku: string,
+): string {
+  return `${demoReference}|OUT|${sku}`.slice(0, 50);
+}
+
 export function buildSalesInvoicePayload(input: {
   bundle: NormalizedDocumentBundle;
   reference: string;
