@@ -680,10 +680,10 @@ export function SageIntegrationPage() {
       </p>
 
       {notice && (
-        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
           {notice}
           {notice === 'Demo Baseline Ready' && (
-            <ul className="mt-2 space-y-1 text-emerald-100/90">
+            <ul className="mt-2 space-y-1 text-emerald-300">
               <li>Demo products ready</li>
               <li>Inventory restored</li>
               <li>Costs restored</li>
@@ -715,10 +715,10 @@ export function SageIntegrationPage() {
 
       {allDone && preview && (
         <section className="mb-8 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5">
-          <h2 className="font-display text-xl font-semibold text-emerald-100">
+          <h2 className="font-display text-xl font-semibold text-emerald-300">
             PO#GHOACRUGOL051926 Completed
           </h2>
-          <ul className="mt-3 space-y-1 text-sm text-emerald-100/90">
+          <ul className="mt-3 space-y-1 text-sm text-emerald-300">
             <li>Landed costs calculated</li>
             <li>Purchase and inventory records created in Sage</li>
             <li>Sales Invoice created in Sage</li>

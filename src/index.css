@@ -204,7 +204,8 @@ h1, h2, h3, h4, h5, h6 {
   border-color: #a78bfa !important;
 }
 
-.demo-workspace[data-theme='light'] .border-emerald-500\/25 {
+.demo-workspace[data-theme='light'] .border-emerald-500\/25,
+.demo-workspace[data-theme='light'] .border-emerald-500\/30 {
   border-color: #6ee7b7 !important;
 }
 
@@ -268,9 +269,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .demo-workspace[data-theme='light'] .text-emerald-100,
+.demo-workspace[data-theme='light'] .text-emerald-100\/90,
 .demo-workspace[data-theme='light'] .text-emerald-200,
 .demo-workspace[data-theme='light'] .text-emerald-300,
 .demo-workspace[data-theme='light'] .text-emerald-400 {
+  /* Dark green on mint success panels — pale emerald-* is unreadable in light mode */
   color: #047857 !important;
 }
 
