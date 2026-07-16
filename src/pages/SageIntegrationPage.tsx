@@ -12,6 +12,7 @@ import {
   money,
   purchaseInvoiceRecord,
   purchaseWorkflowComplete,
+  salesBlockedReason,
   salesInvoiceRecord,
   salesWorkflowComplete,
   stockMovementRecords,
@@ -146,9 +147,12 @@ function missingItems(preview: WorkflowPreview): string[] {
 function customerInvoiceReady(preview: WorkflowPreview | null): boolean {
   if (!preview) return false;
   const invoice = preview.bundle.customerInvoice;
+  const customerMatched = Boolean(
+    invoice.matchedSageContactId || preview.selections.customerContactId,
+  );
   return Boolean(
     invoice.sourceInvoiceNumber &&
-      invoice.matchedSageContactId &&
+      customerMatched &&
       invoice.lines.length > 0 &&
       invoice.lines.every((line) => line.matchedSageStockItemId),
   );
@@ -392,7 +396,13 @@ export function SageIntegrationPage() {
       const result = await postDemoPurchase(buildRequest());
       setDemoRun(result.demoRun);
       setBeforeAfter(result.beforeAfter);
-      setPreview((current) => (current ? { ...current, run: result.run } : current));
+      // Refresh full preview so live Sage stock/customer matches are current for Workflow 3.
+      const refreshed = await createWorkflowPreview(buildRequest()).catch(() => null);
+      if (refreshed) {
+        setPreview({ ...refreshed, run: result.run });
+      } else {
+        setPreview((current) => (current ? { ...current, run: result.run } : current));
+      }
       if (result.partial) {
         setError(
           'Partial Completion. Some inventory records need attention. Successful Sage IDs were preserved.',
@@ -554,6 +564,9 @@ export function SageIntegrationPage() {
     !salesDone &&
     !busy &&
     !workflowActionsDisabled;
+
+  const salesBlockReason =
+    purchaseDone && !salesDone && !canSales ? salesBlockedReason(preview) : null;
 
   const canWorkflow1 =
     !busy &&
@@ -856,14 +869,19 @@ export function SageIntegrationPage() {
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              disabled={!canSales}
-              onClick={() => setConfirmSales(true)}
-              className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Create Sales Invoice in Sage
-            </button>
+            <div className="space-y-3">
+              <button
+                type="button"
+                disabled={!canSales}
+                onClick={() => setConfirmSales(true)}
+                className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Create Sales Invoice in Sage
+              </button>
+              {salesBlockReason && (
+                <p className="max-w-xl text-sm text-amber-200">{salesBlockReason}</p>
+              )}
+            </div>
           )}
         </WorkflowCard>
       </div>

@@ -294,16 +294,19 @@ export class SageGateway {
     type: 'VENDOR' | 'CUSTOMER',
     name: string,
   ) {
-    const lower = name.toLowerCase();
+    const lower = name.trim().toLowerCase();
+    if (!lower) return undefined;
+    const matchesType = (contact: NormalizedContact) =>
+      contact.typeIds.some((typeId) => typeId.toUpperCase().includes(type));
+
+    const typed = contacts.filter(matchesType);
+    const pool = typed.length ? typed : contacts;
     return (
-      contacts.find(
-        (contact) =>
-          contact.typeIds.includes(type) && contact.name.toLowerCase() === lower,
-      ) ??
-      contacts.find(
-        (contact) =>
-          contact.typeIds.includes(type) && contact.name.toLowerCase().includes(lower),
-      )
+      pool.find((contact) => contact.name.toLowerCase() === lower) ??
+      pool.find((contact) => contact.name.toLowerCase().includes(lower)) ??
+      pool.find((contact) => lower.includes(contact.name.toLowerCase())) ??
+      contacts.find((contact) => contact.name.toLowerCase() === lower) ??
+      contacts.find((contact) => contact.name.toLowerCase().includes(lower))
     );
   }
 
