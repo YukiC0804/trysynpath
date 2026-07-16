@@ -370,7 +370,7 @@ export function WorkflowOneWorkspace({
                 !/fixture extraction is a normalized test result/i.test(
                   preview.bundle.extractionWarnings[0],
                 ) && (
-                  <p className="rounded-xl border border-sky-500 bg-sky-950 px-4 py-3 text-xs font-medium leading-5 text-white shadow-sm">
+                  <p className="rounded-xl border border-sky-300 bg-sky-100 px-4 py-3 text-xs font-medium leading-5 text-sky-950 shadow-sm">
                     {preview.bundle.extractionWarnings[0]}
                   </p>
                 )}
