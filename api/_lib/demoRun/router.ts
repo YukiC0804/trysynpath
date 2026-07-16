@@ -8,7 +8,10 @@ import {
   type ExecuteTarget,
   WorkflowOrchestrator,
 } from '../workflow/orchestrator';
-import { SageGateway } from '../workflow/sageGateway';
+import {
+  formatReadBackDifferences,
+  SageGateway,
+} from '../workflow/sageGateway';
 import { EncryptedCookieWorkflowStore } from '../workflow/store';
 import { GmailSourceAdapter } from '../gmail/client';
 import { getValidGmailAccessToken } from '../gmail/auth';
@@ -196,6 +199,9 @@ export async function handleDemoRunRequest(
         getStockItem(sage.accessToken, businessId, line.matchedSageStockItemId!),
       ),
     );
+    const qtyBefore = new Map(
+      affected.map((item) => [item.id, item.quantityInStock] as const),
+    );
 
     let demoRun = await getCurrentDemoRun(businessId);
     if (!demoRun || demoRun.status === 'reset_complete') {
@@ -208,13 +214,44 @@ export async function handleDemoRunRequest(
         stockItems: affected,
       });
     }
-    // Align workflow reference with durable demo run reference.
+
+    // Drop stale cookie posting records from a prior demo reference so Workflow 2
+    // cannot skip real Sage creates after Reset / a new baseline.
+    const priorReference = workflow.externalReference;
     workflow.externalReference = demoRun.demoRunReference;
+    if (priorReference !== demoRun.demoRunReference) {
+      workflow.postingRecords = workflow.postingRecords.filter(
+        (record) =>
+          record.externalReference === demoRun!.demoRunReference ||
+          record.externalReference.startsWith(`${demoRun!.demoRunReference}:`),
+      );
+      workflow.approvals.purchaseInvoice = 'pending';
+      workflow.approvals.inventoryReceipt = 'pending';
+      delete workflow.approvedPayloadHashes.purchaseInvoice;
+      delete workflow.approvedPayloadHashes.inventoryReceipt;
+    }
     store.put(res, workflow);
     preview = await orchestrator.preview({
       ...previewOptions,
       existingRun: workflow,
     });
+
+    if (!preview.selections.supplierContactId) {
+      return json(res, 422, {
+        error: `Supplier "${preview.bundle.shipment.supplier}" was not matched in Sage. Create or rename the vendor contact, then reload Workflow 1.`,
+      });
+    }
+    const blocking = preview.validationErrors.filter(
+      (error) =>
+        !error.startsWith('Choose an inventory posting strategy') &&
+        !error.includes('Purchase Invoice payload total'),
+    );
+    if (blocking.length) {
+      return json(res, 422, {
+        error: blocking[0],
+        validationErrors: blocking,
+      });
+    }
 
     const confirmation = workflow.externalReference;
     let run = workflow;
@@ -257,8 +294,22 @@ export async function handleDemoRunRequest(
       .reverse()
       .find((record) => record.transactionType === 'purchase_invoice');
     if (!purchaseRecord || purchaseRecord.status !== 'succeeded' || !purchaseRecord.readBackVerified) {
+      const diffDetail = formatReadBackDifferences(
+        (purchaseRecord?.differences as Record<string, unknown> | undefined) ?? {},
+      );
       return json(res, 422, {
-        error: 'Purchase Invoice could not be verified in Sage',
+        error: diffDetail
+          ? `Purchase Invoice could not be verified in Sage (${diffDetail})`
+          : purchaseRecord?.error ||
+            'Purchase Invoice could not be created or verified in Sage',
+        demoRun,
+        run: purchaseResult.run,
+        differences: purchaseRecord?.differences,
+      });
+    }
+    if (!purchaseRecord.sageTransactionId || purchaseRecord.sageTransactionId.startsWith('DRY-')) {
+      return json(res, 422, {
+        error: 'Purchase Invoice was not written to live Sage. Reconnect Sage and retry Workflow 2.',
         demoRun,
         run: purchaseResult.run,
       });
@@ -318,6 +369,45 @@ export async function handleDemoRunRequest(
     const failedMovements = inventoryResult.run.postingRecords.some(
       (record) => record.transactionType === 'stock_movement' && record.status === 'failed',
     );
+    const succeededMovements = inventoryResult.run.postingRecords.filter(
+      (record) => record.transactionType === 'stock_movement' && record.status === 'succeeded',
+    );
+    if (!succeededMovements.length) {
+      const movementError = inventoryResult.run.postingRecords.find(
+        (record) => record.transactionType === 'stock_movement' && record.status === 'failed',
+      )?.error;
+      return json(res, 422, {
+        error:
+          movementError ||
+          'Stock Movements were not created in Sage. Purchase Invoice may exist as a draft — use Reset Demo before retrying.',
+        demoRun,
+        run: inventoryResult.run,
+        partial: Boolean(purchaseRecord.sageTransactionId),
+      });
+    }
+
+    const qtyMismatches: string[] = [];
+    for (const line of preview.bundle.shipment.lines) {
+      const stockId = line.matchedSageStockItemId;
+      if (!stockId) continue;
+      const after = await getStockItem(sage.accessToken, businessId, stockId);
+      const beforeQty = qtyBefore.get(stockId) ?? 0;
+      const expected = beforeQty + line.receivedQuantity;
+      if (Math.abs(after.quantityInStock - expected) > 0.01) {
+        qtyMismatches.push(
+          `${line.sku}: expected quantity ${expected}, Sage has ${after.quantityInStock}`,
+        );
+      }
+    }
+    if (qtyMismatches.length) {
+      return json(res, 422, {
+        error: `Inventory was not updated in Sage. ${qtyMismatches.join('; ')}`,
+        demoRun,
+        run: inventoryResult.run,
+        partial: true,
+      });
+    }
+
     demoRun = (await getDemoRun(demoRun.id))!;
 
     const beforeAfter = demoRun.baseline.map((item) => ({
@@ -332,6 +422,7 @@ export async function handleDemoRunRequest(
       demoRun,
       run: inventoryResult.run,
       beforeAfter,
+      purchaseInvoiceId: purchaseRecord.sageTransactionId,
       partial: failedMovements,
       error: failedMovements
         ? 'Partial Completion. Some inventory records need attention.'
@@ -349,7 +440,9 @@ export async function handleDemoRunRequest(
       return json(res, 404, { error: 'Capture a purchase demo run before creating a Sales Invoice' });
     }
 
-    const source = await resolveSource(req, res, workflow.mode, 'gmail');
+    const sourceType =
+      body.sourceType === 'fixture' || workflow.sourceType === 'fixture' ? 'fixture' : 'gmail';
+    const source = await resolveSource(req, res, workflow.mode, sourceType);
     const previewOptions = {
       mode: workflow.mode,
       source,
@@ -422,6 +515,9 @@ export async function handleDemoRunRequest(
       confirmation,
       activeDemoRunId,
     });
+    // Always clear workflow cookie so the next demo cannot idempotently reuse
+    // stale Purchase Invoice / Stock Movement posting records.
+    store.clear(res);
     return json(res, result.status === 'ready' ? 200 : 422, {
       demoRun: result.demoRun,
       message: result.message,

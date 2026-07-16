@@ -214,6 +214,7 @@ export class WorkflowOrchestrator {
       },
       taxPercentage: Number(purchaseTax?.percentage ?? 0),
       inventoryPostingStrategy: run.inventoryPostingStrategy,
+      mainAddress: supplier?.mainAddress,
     });
     const stockMovements = buildStockMovementPayloads({
       bundle: extraction.bundle,
@@ -258,6 +259,7 @@ export class WorkflowOrchestrator {
         salesTaxRateId: selections.salesTaxRateId ?? '',
       },
       taxPercentage: Number(salesTax?.percentage ?? 0),
+      mainAddress: customer?.mainAddress,
     });
     const purchaseRecord = [...run.postingRecords]
       .reverse()
@@ -467,10 +469,24 @@ export class WorkflowOrchestrator {
         'Approved payload changed after review. Refresh the preview and approve again.',
       );
     }
-    const successful = run.postingRecords.filter(
-      (record) => record.transactionType === target.replace(/s$/, '') && record.status === 'succeeded',
-    );
-    if (target !== 'stock_movements' && successful.length) {
+    const successful = run.postingRecords.filter((record) => {
+      if (record.status !== 'succeeded') return false;
+      if (target === 'stock_movements') return false;
+      if (target === 'purchase_invoice') {
+        return (
+          record.transactionType === 'purchase_invoice' &&
+          record.externalReference === run.externalReference
+        );
+      }
+      if (target === 'sales_invoice') {
+        return (
+          record.transactionType === 'sales_invoice' &&
+          record.externalReference === preview.bundle.customerInvoice.sourceInvoiceNumber
+        );
+      }
+      return record.transactionType === target;
+    });
+    if (successful.length) {
       return { run, idempotentReplay: true, records: successful };
     }
 

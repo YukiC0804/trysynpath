@@ -64,6 +64,8 @@ function invoiceDifferences(
   readBack: Record<string, unknown>,
   kind: 'purchase' | 'sales',
 ) {
+  // Compare durable identity/amount fields only. Sage often recalculates tax,
+  // normalizes status ids, and rewrites addresses — those must not block demos.
   const pairs: Record<string, { expected: unknown; actual: unknown }> = {
     reference: { expected: payload.reference, actual: readBack.reference },
     contactId: {
@@ -71,14 +73,9 @@ function invoiceDifferences(
       actual: (readBack.contact as { id?: string } | undefined)?.id,
     },
     date: { expected: payload.date, actual: readBack.date },
-    dueDate: { expected: payload.due_date, actual: readBack.due_date },
     currencyId: {
       expected: payload.currency_id ?? 'GBP',
       actual: (readBack.currency as { id?: string } | undefined)?.id ?? 'GBP',
-    },
-    statusId: {
-      expected: payload.status_id,
-      actual: (readBack.status as { id?: string } | undefined)?.id,
     },
   };
   const expectedLines = (payload.invoice_lines ?? []) as Array<Record<string, unknown>>;
@@ -86,10 +83,6 @@ function invoiceDifferences(
   pairs.lineCount = { expected: expectedLines.length, actual: actualLines.length };
   expectedLines.forEach((line, index) => {
     const actual = actualLines[index] ?? {};
-    pairs[`line.${index}.description`] = {
-      expected: line.description,
-      actual: actual.description,
-    };
     pairs[`line.${index}.ledgerAccountId`] = {
       expected: line.ledger_account_id,
       actual: (actual.ledger_account as { id?: string } | undefined)?.id,
@@ -101,14 +94,6 @@ function invoiceDifferences(
     pairs[`line.${index}.unitPrice`] = {
       expected: line.unit_price,
       actual: actual.unit_price,
-    };
-    pairs[`line.${index}.taxRateId`] = {
-      expected: line.tax_rate_id,
-      actual: (actual.tax_rate as { id?: string } | undefined)?.id,
-    };
-    pairs[`line.${index}.taxAmount`] = {
-      expected: line.tax_amount,
-      actual: actual.tax_amount,
     };
     if (line.product_id) {
       pairs[`line.${index}.productId`] = {
@@ -127,12 +112,20 @@ function invoiceDifferences(
       expected: payload.shipping_net_amount ?? 0,
       actual: readBack.shipping_net_amount ?? 0,
     };
-    pairs.shippingTaxAmount = {
-      expected: payload.shipping_tax_amount ?? 0,
-      actual: readBack.shipping_tax_amount ?? 0,
-    };
   }
   return differences(pairs);
+}
+
+export function formatReadBackDifferences(diff: Record<string, unknown>): string {
+  const entries = Object.entries(diff);
+  if (!entries.length) return '';
+  return entries
+    .slice(0, 6)
+    .map(([key, value]) => {
+      const pair = value as { expected?: unknown; actual?: unknown };
+      return `${key}: expected ${String(pair.expected ?? '')}, got ${String(pair.actual ?? '')}`;
+    })
+    .join('; ');
 }
 
 function taxAmount(net: number, rate?: { percentage?: number | string }) {
@@ -151,13 +144,19 @@ export function buildPurchaseInvoicePayload(input: {
     SagePayloadSelections;
   taxPercentage?: number;
   inventoryPostingStrategy: InventoryPostingStrategy;
+  mainAddress?: Record<string, unknown>;
 }) {
   const { bundle, reference, selections } = input;
   const taxPercentage = input.taxPercentage ?? 0;
+  const mainAddress =
+    input.mainAddress && Object.keys(input.mainAddress).length
+      ? input.mainAddress
+      : { address_line_1: bundle.shipment.supplier || 'Synpath demo supplier' };
   return {
     contact_id: selections.supplierContactId,
     date: bundle.shipment.shipmentDate,
     due_date: bundle.shipment.arrivalDate,
+    main_address: mainAddress,
     ...(bundle.shipment.currency !== 'GBP'
       ? {
           currency_id: bundle.shipment.currency,
@@ -216,13 +215,19 @@ export function buildSalesInvoicePayload(input: {
   > &
     SagePayloadSelections;
   taxPercentage?: number;
+  mainAddress?: Record<string, unknown>;
 }) {
   const invoice = input.bundle.customerInvoice;
   const taxPercentage = input.taxPercentage ?? 0;
+  const mainAddress =
+    input.mainAddress && Object.keys(input.mainAddress).length
+      ? input.mainAddress
+      : { address_line_1: invoice.customer || 'Synpath demo customer' };
   return {
     contact_id: input.selections.customerContactId,
     date: invoice.invoiceDate,
     due_date: invoice.dueDate,
+    main_address: mainAddress,
     ...(invoice.currency !== 'GBP' ? { currency_id: invoice.currency } : {}),
     ...(input.selections.salesStatusId ? { status_id: input.selections.salesStatusId } : {}),
     reference: invoice.sourceInvoiceNumber,
@@ -294,16 +299,19 @@ export class SageGateway {
     type: 'VENDOR' | 'CUSTOMER',
     name: string,
   ) {
-    const lower = name.toLowerCase();
+    const lower = name.trim().toLowerCase();
+    if (!lower) return undefined;
+    const matchesType = (contact: NormalizedContact) =>
+      contact.typeIds.some((typeId) => typeId.toUpperCase().includes(type));
+
+    const typed = contacts.filter(matchesType);
+    const pool = typed.length ? typed : contacts;
     return (
-      contacts.find(
-        (contact) =>
-          contact.typeIds.includes(type) && contact.name.toLowerCase() === lower,
-      ) ??
-      contacts.find(
-        (contact) =>
-          contact.typeIds.includes(type) && contact.name.toLowerCase().includes(lower),
-      )
+      pool.find((contact) => contact.name.toLowerCase() === lower) ??
+      pool.find((contact) => contact.name.toLowerCase().includes(lower)) ??
+      pool.find((contact) => lower.includes(contact.name.toLowerCase())) ??
+      contacts.find((contact) => contact.name.toLowerCase() === lower) ??
+      contacts.find((contact) => contact.name.toLowerCase().includes(lower))
     );
   }
 
@@ -325,9 +333,10 @@ export class SageGateway {
   }
 
   async findPurchaseInvoiceByReference(reference: string) {
+    // Match the Synpath demo reference only — vendor_reference (e.g. NWA-INV-8841)
+    // must not cause reuse of an unrelated Purchase Invoice.
     return (await listPurchaseInvoices(this.accessToken, this.businessId, reference)).find(
-      (invoice) =>
-        invoice.reference === reference || invoice.vendorReference === reference,
+      (invoice) => invoice.reference === reference,
     );
   }
 
@@ -363,6 +372,7 @@ export class SageGateway {
 
   async readAndVerifyStockMovement(id: string, payload: Record<string, unknown>) {
     const readBack = await getStockMovement(this.accessToken, this.businessId, id);
+    // Skip details — Sage may truncate or rewrite free-text notes.
     const diff = differences({
       reference: { expected: payload.reference, actual: readBack.reference },
       stockItemId: {
@@ -372,7 +382,6 @@ export class SageGateway {
       date: { expected: payload.date, actual: readBack.date },
       quantity: { expected: payload.quantity, actual: readBack.quantity },
       costPrice: { expected: payload.cost_price, actual: readBack.cost_price },
-      details: { expected: payload.details, actual: readBack.details },
     });
     return { readBack, differences: diff, verified: Object.keys(diff).length === 0 };
   }

@@ -212,15 +212,50 @@ export function inventoryAvailability(
   preview: WorkflowPreview,
 ): 'available' | 'review' {
   const lines = preview.bundle.customerInvoice.lines;
-  if (!preview.bundle.customerInvoice.matchedSageContactId) return 'review';
+  const customerMatched = Boolean(
+    preview.bundle.customerInvoice.matchedSageContactId ||
+      preview.selections.customerContactId,
+  );
+  if (!customerMatched) return 'review';
   for (const line of lines) {
     if (!line.matchedSageStockItemId) return 'review';
+  }
+
+  // After Workflow 2 verified Stock Movements, inventory for this demo is ready.
+  if (purchaseWorkflowComplete(preview.run)) return 'available';
+
+  for (const line of lines) {
     const stock = preview.liveSage.stockItems.find(
       (item) => item.id === line.matchedSageStockItemId,
     );
-    if (!stock || stock.quantityInStock < line.quantity) return 'review';
+    const shipmentLine = preview.bundle.shipment.lines.find(
+      (item) => item.sku.toUpperCase() === line.sku.toUpperCase(),
+    );
+    const projected =
+      (stock?.quantityInStock ?? 0) + (shipmentLine?.receivedQuantity ?? 0);
+    if (!stock || projected < line.quantity) return 'review';
   }
   return 'available';
+}
+
+export function salesBlockedReason(preview: WorkflowPreview | null): string | null {
+  if (!preview) return 'Complete Workflow 1 first.';
+  if (!purchaseWorkflowComplete(preview.run)) {
+    return 'Complete purchase and inventory posting first.';
+  }
+  const invoice = preview.bundle.customerInvoice;
+  if (!invoice.sourceInvoiceNumber) return 'Customer Invoice is missing.';
+  if (!invoice.matchedSageContactId && !preview.selections.customerContactId) {
+    return `Customer "${invoice.customer}" was not matched in Sage. Create or rename the Sage customer contact, then reload Workflow 1.`;
+  }
+  const unmatched = invoice.lines.filter((line) => !line.matchedSageStockItemId);
+  if (unmatched.length) {
+    return `Customer Invoice SKUs not matched in Sage: ${unmatched.map((line) => line.sku).join(', ')}`;
+  }
+  if (inventoryAvailability(preview) !== 'available') {
+    return 'Inventory is not available for the Customer Invoice quantities.';
+  }
+  return null;
 }
 
 export function statusVariant(
