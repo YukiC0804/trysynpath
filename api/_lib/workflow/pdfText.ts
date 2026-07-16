@@ -6,12 +6,21 @@ export async function extractPdfText(content: Buffer): Promise<string> {
   if (!content?.length) return '';
   try {
     const mod = (await import('pdf-parse')) as unknown as {
-      PDFParse: new (options: { data: Uint8Array | Buffer }) => {
+      PDFParse: new (options: {
+        data: Uint8Array;
+        verbosity?: number;
+      }) => {
         getText: () => Promise<{ text?: string }>;
         destroy?: () => Promise<void>;
       };
+      VerbosityLevel?: { ERRORS?: number };
     };
-    const parser = new mod.PDFParse({ data: content });
+    // Copy into a plain Uint8Array — some runtimes reject Buffer subclasses.
+    const data = Uint8Array.from(content);
+    const parser = new mod.PDFParse({
+      data,
+      verbosity: mod.VerbosityLevel?.ERRORS ?? 0,
+    });
     try {
       const result = await parser.getText();
       return String(result?.text ?? '')

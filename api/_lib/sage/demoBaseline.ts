@@ -94,5 +94,17 @@ export const SAGE_DEMO_BASELINE: readonly DemoStockBaseline[] = GHOSTBOARDS_BASE
   }),
 );
 
-export const SAGE_DEMO_CREATED_SKUS = ['ACR-WHT-3MM-48X96'] as const;
+/**
+ * Legacy Sage products that already exist and cannot be hard-deleted.
+ * Reset never deletes or rewrites these — they stay as-is in the business.
+ */
+export const GHOSTBOARDS_PRESERVED_SKUS = [
+  'ACR-MIR-SLV-3MM',
+  'ACR-BLK-3MM-48X96',
+  'ACR-CLR-6MM-48X96',
+  'ACR-CLR-3MM-48X96',
+] as const;
+
+/** @deprecated No longer delete demo SKUs on reset — keep workflow products at qty 0. */
+export const SAGE_DEMO_CREATED_SKUS: readonly string[] = [];
 export const SAGE_DEMO_PURCHASE_INVOICE_REFERENCE = 'SYN-PO-2026-0714-001';

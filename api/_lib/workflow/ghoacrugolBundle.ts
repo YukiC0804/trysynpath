@@ -272,6 +272,7 @@ export function buildGhoacrugolBundleFromTexts(
   texts: string[],
   dates: DemoCalendarDates,
   livePdfExtraction: boolean,
+  identity: { subject?: string; fileNames?: string[] } = {},
 ): NormalizedDocumentBundle {
   const combined = texts.join('\n');
   const vendor =
@@ -280,16 +281,42 @@ export function buildGhoacrugolBundleFromTexts(
   const sales =
     texts.map((text) => parseSpandexInvoice(text)).find(Boolean) ??
     parseSpandexInvoice(combined);
-  if (!vendor || !sales) {
+  if (vendor && sales) {
+    return buildGhoacrugolBundle(sourceDocuments, dates, {
+      vendor,
+      sales,
+      livePdfExtraction,
+    });
+  }
+
+  // Gmail serverless PDF text can be empty even when the labeled PO email is correct.
+  // If subject/filenames identify PO#GHOACRUGOL051926, use the known pack mapping.
+  const recognized = looksLikeGhoacrugolPack({
+    subject: identity.subject,
+    fileNames: identity.fileNames ?? sourceDocuments.map((doc) => doc.fileName),
+    texts,
+  });
+  if (!recognized) {
     throw new Error(
       'Could not parse UGolden proforma and Spandex invoice fields from attachment text.',
     );
   }
-  return buildGhoacrugolBundle(sourceDocuments, dates, {
-    vendor,
-    sales,
+
+  const bundle = buildGhoacrugolBundle(sourceDocuments, dates, {
+    vendor: vendor ?? fallbackUgoldenParse(),
+    sales: sales ?? fallbackSpandexParse(),
     livePdfExtraction,
   });
+  const missing = [
+    !vendor ? 'UGolden proforma line items' : null,
+    !sales ? 'Spandex invoice line items' : null,
+  ]
+    .filter(Boolean)
+    .join(' and ');
+  bundle.extractionWarnings = [
+    `Recognized Gmail PO#${GHOACRUGOL_PO} attachments; PDF text was incomplete for ${missing}, so mapped fields from the labeled UGolden + Spandex pack.`,
+  ];
+  return bundle;
 }
 
 export function looksLikeGhoacrugolPack(input: {

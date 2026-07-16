@@ -8,6 +8,10 @@ import type {
 
 export const PO_REFERENCE = 'GHOACRUGOL051926';
 
+/** Scan only the labeled Ghostboards demo email with the live PO subject. */
+export const GMAIL_QUERY =
+  'label:synpath-sage-demo subject:"PO#GHOACRUGOL051926" has:attachment';
+
 export type CfoStageId =
   | 'documents'
   | 'landedCost'

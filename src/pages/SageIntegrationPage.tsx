@@ -5,6 +5,7 @@ import type { WorkflowPreview, WorkflowRun } from '../../shared/workflow';
 import { ConfirmModal } from '../components/sage/cfo/ConfirmModal';
 import { WorkflowOneWorkspace } from '../components/sage/cfo/WorkflowOneWorkspace';
 import {
+  GMAIL_QUERY,
   PO_REFERENCE,
   accountingReady,
   friendlyError,
@@ -40,8 +41,6 @@ import {
   type GmailStatus,
   type PreviewRequest,
 } from '../lib/workflowApi';
-
-const GMAIL_QUERY = `${PO_REFERENCE} OR GHOACRUGOL051926 has:attachment`;
 
 type WorkflowKey = 'scan' | 'purchase' | 'sales' | 'reset' | null;
 type WorkflowTab = 'extract' | 'purchase' | 'sales';

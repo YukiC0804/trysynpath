@@ -183,7 +183,8 @@ export class GmailSourceAdapter implements SourceAdapter {
         : (
             await listGmailMessageIds(
               this.accessToken,
-              input.searchQuery ?? 'label:"Synpath Sage Demo" has:attachment',
+              input.searchQuery ??
+                'label:synpath-sage-demo subject:"PO#GHOACRUGOL051926" has:attachment',
             )
           ).messages;
     if (ids.length > MAX_SELECTED_MESSAGES) {

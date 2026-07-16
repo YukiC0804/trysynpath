@@ -116,7 +116,19 @@ export class GmailPdfDocumentExtractionAdapter implements DocumentExtractionAdap
     }
 
     const dates = demoInvoiceDates();
-    let bundle = buildGhoacrugolBundleFromTexts(documents, texts, dates, true);
+    // Include subject/snippet so recognition still works when PDF.js returns little text.
+    const identityTexts = [
+      subject,
+      ...collection.emails.map((email) => email.snippet ?? ''),
+      ...texts,
+    ];
+    let bundle = buildGhoacrugolBundleFromTexts(
+      documents,
+      identityTexts,
+      dates,
+      true,
+      { subject, fileNames },
+    );
     bundle = applyOverrides(bundle, overrides);
     bundle.emails = collection.emails;
     bundle.documents = documents.map((document) => ({

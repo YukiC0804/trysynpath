@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { discoverCapabilities } from '../api/_lib/sage/client';
 import {
+  GHOSTBOARDS_BASELINE_SKUS,
+  GHOSTBOARDS_PRESERVED_SKUS,
   SAGE_DEMO_BASELINE,
   SAGE_DEMO_CREATED_SKUS,
   SAGE_DEMO_PURCHASE_INVOICE_REFERENCE,
@@ -16,10 +18,14 @@ describe('Sage demo reset baseline', () => {
       'ACR-CLR-4MM-48X96',
       'ACR-PC-CLR-9P5MM-48X96',
     ]);
-    expect(SAGE_DEMO_BASELINE.every((item) => item.quantityInStock === undefined || true)).toBe(
-      true,
-    );
-    expect(SAGE_DEMO_CREATED_SKUS).toContain('ACR-WHT-3MM-48X96');
+    expect(GHOSTBOARDS_BASELINE_SKUS.every((item) => item.quantityInStock === 0)).toBe(true);
+    expect(SAGE_DEMO_CREATED_SKUS).toEqual([]);
+    expect(GHOSTBOARDS_PRESERVED_SKUS).toEqual([
+      'ACR-MIR-SLV-3MM',
+      'ACR-BLK-3MM-48X96',
+      'ACR-CLR-6MM-48X96',
+      'ACR-CLR-3MM-48X96',
+    ]);
     expect(SAGE_DEMO_BASELINE.find((item) => item.sku === 'ACR-WHT-3MM-48X96')).toMatchObject({
       description: 'White Acrylic Sheet 3mm 48 × 96',
       costPrice: 24.16,

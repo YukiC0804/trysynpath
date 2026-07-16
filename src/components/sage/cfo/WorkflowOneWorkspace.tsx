@@ -122,7 +122,7 @@ export function WorkflowOneWorkspace({
               </h3>
               <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
                 {useLiveGmail
-                  ? 'Scan subject PO#GHOACRUGOL051926, read the UGolden proforma and Spandex invoice PDFs, then create or match contacts and SKUs in Sage.'
+                  ? 'Scan label synpath-sage-demo for subject PO#GHOACRUGOL051926, read the UGolden + Spandex PDFs, then create or match contacts and SKUs in Sage.'
                   : 'Load the UGolden proforma + Spandex invoice pack for PO#GHOACRUGOL051926 and match contacts and SKUs in Sage.'}
               </p>
               <button
