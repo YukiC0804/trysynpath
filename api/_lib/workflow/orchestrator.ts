@@ -7,7 +7,6 @@ import type {
   WorkflowRun,
   WorkflowApprovalTarget,
 } from '../../../shared/workflow';
-import { validateNormalizedBundle } from '../../../shared/workflow';
 import type { DocumentExtractionAdapter, ExtractionOverrides } from './extraction';
 import { calculateLandedCosts } from './landedCostEngine';
 import { matchShipmentLines } from './matcher';
@@ -26,6 +25,7 @@ import {
   deduplicateSourceCollection,
   type SourceAdapter,
 } from './sourceAdapters';
+import { validateNormalizedBundle } from './validation';
 
 export type ApprovalTarget = WorkflowApprovalTarget;
 export type ExecuteTarget =
