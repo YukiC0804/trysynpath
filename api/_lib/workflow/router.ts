@@ -80,8 +80,14 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
   const orchestrator = new WorkflowOrchestrator(store);
 
   if (path[0] === 'demo') {
-    const { handleDemoRunRequest } = await import('../demoRun/router');
-    return handleDemoRunRequest(req, res, path.slice(1));
+    try {
+      const { handleDemoRunRequest } = await import('../demoRun/router');
+      return await handleDemoRunRequest(req, res, path.slice(1));
+    } catch (error) {
+      return json(res, 500, {
+        error: error instanceof Error ? error.message : 'Demo run request failed',
+      });
+    }
   }
 
   if (method === 'GET' && (path.length === 0 || path[0] === 'status')) {

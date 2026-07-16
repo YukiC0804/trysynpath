@@ -7,16 +7,26 @@ import type {
 
 async function parseJson<T>(response: Response): Promise<T> {
   const text = await response.text();
+  const trimmed = text.replace(/^\uFEFF/, '').trim();
   let data: Record<string, unknown> = {};
-  if (text) {
-    try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 220);
+  if (trimmed) {
+    const looksLikeJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+    if (!looksLikeJson) {
+      const snippet = trimmed.replace(/\s+/g, ' ').slice(0, 220);
       throw new Error(
         response.ok
-          ? `Unexpected server response (not JSON): ${snippet || '(empty)'}`
-          : `Request failed (${response.status}): ${snippet || 'empty response'}`,
+          ? `Unexpected server response (not JSON): ${snippet}`
+          : `Request failed (${response.status}): ${snippet}`,
+      );
+    }
+    try {
+      data = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      const snippet = trimmed.replace(/\s+/g, ' ').slice(0, 220);
+      throw new Error(
+        response.ok
+          ? `Unexpected server response (not JSON): ${snippet}`
+          : `Request failed (${response.status}): ${snippet}`,
       );
     }
   }

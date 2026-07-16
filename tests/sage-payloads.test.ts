@@ -44,8 +44,8 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       contact_id: 'supplier-1',
       reference: 'DEMO-GHOACRUGOL051926-20260716',
       vendor_reference: 'NWA-INV-8841',
-      main_address: { address_line_1: 'Nationwide Acrylics' },
     });
+    expect(payload).not.toHaveProperty('main_address');
     expect(payload.invoice_lines).toHaveLength(3);
     expect(payload.invoice_lines.reduce((sum, line) => sum + line.quantity * line.unit_price, 0)).toBe(
       6620,
@@ -235,5 +235,64 @@ describe('SageGateway read-back verification', () => {
       'pi-1',
     );
     expect(result.verified).toBe(false);
+  });
+});
+
+describe('Sage UK payload allowlists', () => {
+  it('strips purchase invoice main_address and stock movement reference', async () => {
+    const {
+      sanitizePurchaseInvoicePayload,
+      sanitizeStockMovementPayload,
+    } = await import('../api/_lib/sage/payloadAllowlist');
+    const pi = sanitizePurchaseInvoicePayload({
+      contact_id: 'c1',
+      date: '2026-05-19',
+      due_date: '2026-06-02',
+      reference: 'DEMO-1',
+      vendor_reference: 'NWA-1',
+      main_address: { address_line_1: 'should not send' },
+      vat_reverse_charge: true,
+      invoice_lines: [
+        {
+          description: 'line',
+          ledger_account_id: 'l1',
+          quantity: 1,
+          unit_price: 10,
+          tax_rate_id: 'GB_ZERO',
+          tax_amount: 0,
+          mystery: 'nope',
+        },
+      ],
+    });
+    expect(pi).not.toHaveProperty('main_address');
+    expect(pi).not.toHaveProperty('vat_reverse_charge');
+    expect(pi.invoice_lines).toEqual([
+      {
+        description: 'line',
+        ledger_account_id: 'l1',
+        quantity: 1,
+        unit_price: 10,
+        tax_rate_id: 'GB_ZERO',
+        tax_amount: 0,
+      },
+    ]);
+
+    const movement = sanitizeStockMovementPayload({
+      stock_item_id: 's1',
+      date: '2026-06-02',
+      quantity: 5,
+      cost_price: 12.34,
+      details: 'DEMO-1|SKU',
+      reference: 'must-omit-for-uk',
+      movement_number: '01',
+    });
+    expect(movement).not.toHaveProperty('reference');
+    expect(movement).toMatchObject({
+      stock_item_id: 's1',
+      date: '2026-06-02',
+      quantity: 5,
+      cost_price: 12.34,
+      details: 'DEMO-1|SKU',
+    });
   });
 });
