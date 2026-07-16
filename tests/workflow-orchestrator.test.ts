@@ -341,3 +341,130 @@ describe('Encrypted WorkflowStore', () => {
     expect(restored?.approvedPayloadHashes.purchaseInvoice).toBe('digest');
   });
 });
+
+describe('WorkflowOrchestrator accounting defaults', () => {
+  it('auto-fills purchase ledger, tax and draft status from Sage reference data', async () => {
+    const store = new MemoryStore();
+    const orchestrator = new WorkflowOrchestrator(store);
+    const { FixtureSourceAdapter } = await import('../api/_lib/workflow/sourceAdapters');
+    const { FixtureDocumentExtractionAdapter } = await import('../api/_lib/workflow/extraction');
+    const gateway = {
+      businessId: 'business',
+      async loadReferenceData() {
+        return {
+          stockItems: [
+            {
+              id: 'stock-1',
+              sku: 'ACR-MIR-SLV-3MM',
+              description: 'Silver Mirror',
+              quantityInStock: 16,
+              costPrice: 68,
+              lastCostPrice: 68,
+              averageCostPrice: 68,
+              salesPrice: 100,
+              reorderLevel: 10,
+              reorderQuantity: 20,
+              supplier: '',
+              supplierId: '',
+              supplierPartNumber: '',
+              active: true,
+            },
+            {
+              id: 'stock-2',
+              sku: 'ACR-CLR-3MM-48X96',
+              description: 'Clear 3mm',
+              quantityInStock: 82,
+              costPrice: 42.5,
+              lastCostPrice: 42.5,
+              averageCostPrice: 42.5,
+              salesPrice: 80,
+              reorderLevel: 10,
+              reorderQuantity: 20,
+              supplier: '',
+              supplierId: '',
+              supplierPartNumber: '',
+              active: true,
+            },
+            {
+              id: 'stock-3',
+              sku: 'ACR-CLR-6MM-48X96',
+              description: 'Clear 6mm',
+              quantityInStock: 38,
+              costPrice: 76,
+              lastCostPrice: 76,
+              averageCostPrice: 76,
+              salesPrice: 120,
+              reorderLevel: 10,
+              reorderQuantity: 20,
+              supplier: '',
+              supplierId: '',
+              supplierPartNumber: '',
+              active: true,
+            },
+          ],
+          contacts: [
+            {
+              id: 'supplier-1',
+              name: 'Nationwide Acrylics',
+              reference: 'NWA',
+              typeIds: ['VENDOR'],
+            },
+            {
+              id: 'customer-1',
+              name: 'Acrylic Display Studio',
+              reference: 'ADS',
+              typeIds: ['CUSTOMER'],
+            },
+          ],
+          ledgerAccounts: [
+            { id: 'ledger-purchase', displayed_as: 'Stock / Inventory', nominal_code: '1000' },
+          ],
+          salesLedgerAccounts: [
+            { id: 'ledger-sales', displayed_as: 'Sales - Products', nominal_code: '4000' },
+          ],
+          taxRates: [],
+          purchaseTaxRates: [
+            { id: 'GB_ZERO', displayed_as: 'No VAT', percentage: 0 },
+            { id: 'GB_STANDARD', displayed_as: 'Standard 20%', percentage: 20 },
+          ],
+          salesTaxRates: [
+            { id: 'GB_STANDARD', displayed_as: 'Standard 20%', percentage: 20 },
+          ],
+          currencies: [],
+          artefactStatuses: [{ id: 'UNPAID', displayed_as: 'Unpaid' }],
+        };
+      },
+      findContact(
+        contacts: Array<{ id: string; name: string; typeIds: string[] }>,
+        type: 'VENDOR' | 'CUSTOMER',
+        name: string,
+      ) {
+        const lower = name.toLowerCase();
+        return contacts.find(
+          (contact) =>
+            contact.typeIds.some((id) => id.includes(type)) &&
+            contact.name.toLowerCase().includes(lower),
+        );
+      },
+    } as unknown as SageGateway;
+
+    const previewResult = await orchestrator.preview({
+      mode: 'live_sage_write',
+      source: new FixtureSourceAdapter(),
+      gateway,
+      extractor: new FixtureDocumentExtractionAdapter(),
+      inventoryPostingStrategy: 'stock_movement',
+      selections: { accountingMappingConfirmed: true },
+    });
+
+    expect(previewResult.selections.purchaseLedgerAccountId).toBe('ledger-purchase');
+    expect(previewResult.selections.purchaseTaxRateId).toBe('GB_ZERO');
+    expect(previewResult.selections.purchaseStatusId).toBe('DRAFT');
+    expect(previewResult.selections.salesLedgerAccountId).toBe('ledger-sales');
+    expect(
+      previewResult.validationErrors.filter((error) =>
+        /purchaseLedgerAccountId|purchaseTaxRateId|purchaseStatusId/.test(error),
+      ),
+    ).toEqual([]);
+  });
+});

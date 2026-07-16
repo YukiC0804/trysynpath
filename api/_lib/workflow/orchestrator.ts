@@ -26,6 +26,43 @@ import {
   type SourceAdapter,
 } from './sourceAdapters';
 import { validateNormalizedBundle } from './validation';
+import { pickLedgerAccount, pickTaxRate } from '../sage/client';
+
+function pickArtefactStatusId(
+  statuses: Array<{ id: string; displayed_as?: string }> | undefined,
+  fallback = 'DRAFT',
+): string | undefined {
+  if (!statuses?.length) return fallback;
+  return (
+    statuses.find((status) => status.id === 'DRAFT')?.id ??
+    statuses.find((status) => /draft/i.test(`${status.id} ${status.displayed_as ?? ''}`))
+      ?.id ??
+    fallback
+  );
+}
+
+function pickPreferredTaxRateId(
+  rates: Array<{
+    id: string;
+    name?: string;
+    displayed_as?: string;
+    percentage?: number | string;
+  }> | undefined,
+  preferZero: boolean,
+): string | undefined {
+  if (!rates?.length) return undefined;
+  if (preferZero) {
+    const zero =
+      rates.find((rate) => Number(rate.percentage ?? NaN) === 0) ??
+      rates.find((rate) =>
+        /no[_ ]?tax|zero|exempt|nill|nil/i.test(
+          `${rate.id} ${rate.name ?? ''} ${rate.displayed_as ?? ''}`,
+        ),
+      );
+    if (zero) return zero.id;
+  }
+  return pickTaxRate(rates)?.id ?? rates[0]?.id;
+}
 
 export type ApprovalTarget = WorkflowApprovalTarget;
 export type ExecuteTarget =
@@ -143,30 +180,54 @@ export class WorkflowOrchestrator {
         referenceData?.stockItems.find((item) => item.id === line.matchedSageStockItemId),
       )
       .find(Boolean);
+    // Prefer any stock item that already has ledger/tax configured in Sage.
+    const stockWithPurchaseLedger = referenceData?.stockItems.find(
+      (item) => item.purchaseLedgerAccountId,
+    );
+    const stockWithSalesLedger = referenceData?.stockItems.find(
+      (item) => item.salesLedgerAccountId,
+    );
+    const stockWithPurchaseTax = referenceData?.stockItems.find(
+      (item) => item.purchaseTaxRateId,
+    );
+    const stockWithSalesTax = referenceData?.stockItems.find((item) => item.salesTaxRateId);
+    const preferZeroPurchaseTax = extraction.bundle.shipment.vendorInvoiceTax === 0;
+    const preferZeroSalesTax =
+      Number(extraction.bundle.customerInvoice.tax ?? 0) === 0 &&
+      Number(extraction.bundle.customerInvoice.shipping ?? 0) >= 0;
+
     const selections = {
       supplierContactId: input.selections?.supplierContactId ?? supplier?.id,
       customerContactId: input.selections?.customerContactId ?? customer?.id,
       purchaseLedgerAccountId:
         input.selections?.purchaseLedgerAccountId ??
         supplier?.defaultPurchaseLedgerAccountId ??
-        firstStock?.purchaseLedgerAccountId,
+        firstStock?.purchaseLedgerAccountId ??
+        stockWithPurchaseLedger?.purchaseLedgerAccountId ??
+        pickLedgerAccount(referenceData?.ledgerAccounts ?? [], 'purchase')?.id,
       salesLedgerAccountId:
         input.selections?.salesLedgerAccountId ??
         customer?.defaultSalesLedgerAccountId ??
-        firstStock?.salesLedgerAccountId,
+        firstStock?.salesLedgerAccountId ??
+        stockWithSalesLedger?.salesLedgerAccountId ??
+        pickLedgerAccount(referenceData?.salesLedgerAccounts ?? [], 'sales')?.id,
       purchaseTaxRateId:
         input.selections?.purchaseTaxRateId ??
-        firstStock?.purchaseTaxRateId,
+        firstStock?.purchaseTaxRateId ??
+        stockWithPurchaseTax?.purchaseTaxRateId ??
+        pickPreferredTaxRateId(referenceData?.purchaseTaxRates, preferZeroPurchaseTax),
       salesTaxRateId:
         input.selections?.salesTaxRateId ??
         customer?.defaultSalesTaxRateId ??
-        firstStock?.salesTaxRateId,
+        firstStock?.salesTaxRateId ??
+        stockWithSalesTax?.salesTaxRateId ??
+        pickPreferredTaxRateId(referenceData?.salesTaxRates, preferZeroSalesTax),
       purchaseStatusId:
         input.selections?.purchaseStatusId ??
-        referenceData?.artefactStatuses.find((status) => status.id === 'DRAFT')?.id,
+        pickArtefactStatusId(referenceData?.artefactStatuses),
       salesStatusId:
         input.selections?.salesStatusId ??
-        referenceData?.artefactStatuses.find((status) => status.id === 'DRAFT')?.id,
+        pickArtefactStatusId(referenceData?.artefactStatuses),
       accountingMappingConfirmed: Boolean(input.selections?.accountingMappingConfirmed),
     };
     for (const [key, value] of Object.entries(selections)) {

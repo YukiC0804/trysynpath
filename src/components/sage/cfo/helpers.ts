@@ -391,6 +391,21 @@ export function friendlyError(message: string): string {
   if (lower.includes('dry-run') || lower.includes('live sage write')) {
     return 'Sage must be connected before approval posts records.';
   }
+  if (lower.includes('purchaseledgeraccountid requires review')) {
+    return 'No purchase ledger account was found in Sage. Add a purchases-visible ledger, then retry Workflow 1.';
+  }
+  if (lower.includes('purchasetaxrateid requires review')) {
+    return 'No purchase tax rate was found in Sage. Add a purchase tax rate, then retry Workflow 1.';
+  }
+  if (lower.includes('purchasestatusid requires review')) {
+    return 'Sage draft invoice status could not be resolved. Retry Workflow 1 after reconnecting Sage.';
+  }
+  if (lower.includes('suppliercontactid requires review')) {
+    return 'Supplier was not matched in Sage. Create or rename the vendor contact, then retry Workflow 1.';
+  }
+  if (lower.includes('customercontactid requires review')) {
+    return 'Customer was not matched in Sage. Create or rename the customer contact, then retry Workflow 1.';
+  }
   if (lower.includes('accounting') || lower.includes('ledger') || lower.includes('tax')) {
     return 'Accounting configuration is incomplete. Complete it in the internal admin page before the demo.';
   }
