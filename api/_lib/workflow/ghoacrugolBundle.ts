@@ -6,6 +6,12 @@ import type {
   SourceDocument,
 } from '../../../shared/workflow';
 import { GHOSTBOARDS_BASELINE_SKUS } from '../sage/demoBaseline';
+import {
+  parseSpandexInvoice,
+  parseUgoldenProforma,
+  type ParsedSpandexInvoice,
+  type ParsedUgoldenProforma,
+} from './parseGhoacrugolPdfs';
 
 /** Live PO / vendor / customer identifiers from the Gmail PDF pack. */
 export const GHOACRUGOL_PO = 'GHOACRUGOL051926';
@@ -13,6 +19,8 @@ export const GHOACRUGOL_VENDOR = 'Shanghai UGolden Industry Co., Ltd.';
 export const GHOACRUGOL_CUSTOMER = 'Spandex';
 export const GHOACRUGOL_VENDOR_INVOICE = 'UG26A0519';
 export const GHOACRUGOL_CUSTOMER_INVOICE = 'GA18';
+export const GHOACRUGOL_TOTAL_DDP = 46845.34;
+export const GHOACRUGOL_SALES_TOTAL = 32296;
 
 export type DemoCalendarDates = {
   shipmentDate: string;
@@ -21,89 +29,112 @@ export type DemoCalendarDates = {
   dueDate: string;
 };
 
-type ProductLine = {
-  sku: string;
-  description: string;
-  quantity: number;
-  vendorUnitCost: number;
-  salesUnitPrice: number;
-  weight: number;
-  volume: number;
-};
-
-const PRODUCT_LINES: ProductLine[] = [
-  {
-    sku: 'ACR-WHT-3MM-48X96',
-    description: 'White Acrylic Sheet 3mm 48 × 96',
-    quantity: 102,
-    vendorUnitCost: 24.16,
-    salesUnitPrice: 39.45,
-    weight: 1123,
-    volume: 0.91,
-  },
-  {
-    sku: 'ACR-WHT-18MM-48X96',
-    description: 'White Acrylic Sheet 18mm 48 × 96',
-    quantity: 46,
-    vendorUnitCost: 144.9,
-    salesUnitPrice: 227.26,
-    weight: 2988,
-    volume: 2.46,
-  },
-  {
-    sku: 'ACR-WHT-25MM-48X96',
-    description: 'White Acrylic Sheet 25mm 48 × 96',
-    quantity: 10,
-    vendorUnitCost: 214.1,
-    salesUnitPrice: 331.97,
-    weight: 923,
-    volume: 0.74,
-  },
-  {
-    sku: 'ACR-WHT-4P8MM-60X120',
-    description: 'White Acrylic Sheet 4.8mm 60 × 120',
-    quantity: 74,
-    vendorUnitCost: 57.43,
-    salesUnitPrice: 98.06,
-    weight: 2019,
-    volume: 1.66,
-  },
-  {
-    sku: 'ACR-CLR-4MM-48X96',
-    description: 'Clear Acrylic Sheet 4mm 48 × 96',
-    quantity: 436,
-    vendorUnitCost: 34.3,
-    salesUnitPrice: 0,
-    weight: 6320,
-    volume: 5.19,
-  },
-  {
-    sku: 'ACR-PC-CLR-9P5MM-48X96',
-    description: 'Clear Polycarbonate Sheet 9.5mm 48 × 96',
-    quantity: 50,
-    vendorUnitCost: 89,
-    salesUnitPrice: 144.84,
-    weight: 1727,
-    volume: 1.41,
-  },
-];
-
-const PALLET_COST = 320;
-const DDP_COST = 11600;
-
 function round2(value: number) {
   return Number(value.toFixed(2));
 }
 
-export function buildGhoacrugolShipment(dates: DemoCalendarDates): Shipment {
-  const lines = PRODUCT_LINES.map((line) => ({
+/** Canonical fallback when PDF bytes are unavailable (fixture dry-run). */
+export function fallbackUgoldenParse(): ParsedUgoldenProforma {
+  return {
+    poNumber: GHOACRUGOL_PO,
+    vendorInvoiceNumber: GHOACRUGOL_VENDOR_INVOICE,
+    supplier: GHOACRUGOL_VENDOR,
+    currency: 'USD',
+    lines: GHOSTBOARDS_BASELINE_SKUS.map((item) => {
+      const quantity =
+        item.sku === 'ACR-WHT-3MM-48X96'
+          ? 102
+          : item.sku === 'ACR-WHT-18MM-48X96'
+            ? 46
+            : item.sku === 'ACR-WHT-25MM-48X96'
+              ? 10
+              : item.sku === 'ACR-WHT-4P8MM-60X120'
+                ? 74
+                : item.sku === 'ACR-CLR-4MM-48X96'
+                  ? 436
+                  : 50;
+      const weight =
+        item.sku === 'ACR-WHT-3MM-48X96'
+          ? 1123
+          : item.sku === 'ACR-WHT-18MM-48X96'
+            ? 2988
+            : item.sku === 'ACR-WHT-25MM-48X96'
+              ? 923
+              : item.sku === 'ACR-WHT-4P8MM-60X120'
+                ? 2019
+                : item.sku === 'ACR-CLR-4MM-48X96'
+                  ? 6320
+                  : 1727;
+      const volume =
+        item.sku === 'ACR-WHT-3MM-48X96'
+          ? 0.91
+          : item.sku === 'ACR-WHT-18MM-48X96'
+            ? 2.46
+            : item.sku === 'ACR-WHT-25MM-48X96'
+              ? 0.74
+              : item.sku === 'ACR-WHT-4P8MM-60X120'
+                ? 1.66
+                : item.sku === 'ACR-CLR-4MM-48X96'
+                  ? 5.19
+                  : 1.41;
+      return {
+        sku: item.sku,
+        description: item.description,
+        quantity,
+        vendorUnitCost: item.costPrice,
+        vendorLineTotal: round2(quantity * item.costPrice),
+        weight,
+        volume,
+        color: item.sku.includes('WHT') ? 'WHITE' : 'CLEAR',
+        thicknessMm: 0,
+        widthMm: 0,
+        lengthMm: 0,
+      };
+    }),
+    palletCost: 320,
+    ddpCost: 11600,
+    totalDdpAmount: GHOACRUGOL_TOTAL_DDP,
+    totalPieces: 718,
+  };
+}
+
+export function fallbackSpandexParse(): ParsedSpandexInvoice {
+  const vendor = fallbackUgoldenParse();
+  const lines = vendor.lines
+    .filter((line) => line.sku !== 'ACR-CLR-4MM-48X96')
+    .map((line) => {
+      const salesUnitPrice =
+        GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === line.sku)?.salesPrice ?? 0;
+      return {
+        sku: line.sku,
+        description: line.description,
+        quantity: line.quantity,
+        salesUnitPrice,
+        total: round2(line.quantity * salesUnitPrice),
+      };
+    });
+  return {
+    invoiceNumber: GHOACRUGOL_CUSTOMER_INVOICE,
+    customer: GHOACRUGOL_CUSTOMER,
+    currency: 'USD',
+    lines,
+    subtotal: GHOACRUGOL_SALES_TOTAL,
+    total: GHOACRUGOL_SALES_TOTAL,
+  };
+}
+
+export function buildGhoacrugolShipment(
+  dates: DemoCalendarDates,
+  vendor: ParsedUgoldenProforma = fallbackUgoldenParse(),
+): Shipment {
+  const lines = vendor.lines.map((line) => ({
     sku: line.sku,
     description: line.description,
     quantity: line.quantity,
     receivedQuantity: line.quantity,
     unitOfMeasure: 'sheet',
     vendorUnitCost: line.vendorUnitCost,
-    vendorLineTotal: round2(line.quantity * line.vendorUnitCost),
+    vendorLineTotal: line.vendorLineTotal,
     weight: line.weight,
     volume: line.volume,
     matchingStatus: 'unmatched' as const,
@@ -114,15 +145,16 @@ export function buildGhoacrugolShipment(dates: DemoCalendarDates): Shipment {
   );
   return {
     id: 'shipment-ghoacrugol051926',
-    externalPoNumber: GHOACRUGOL_PO,
-    containerNumber: 'UG26A0519',
+    externalPoNumber: vendor.poNumber,
+    containerNumber: vendor.vendorInvoiceNumber,
     shipmentDate: dates.shipmentDate,
     arrivalDate: dates.arrivalDate,
-    supplier: GHOACRUGOL_VENDOR,
-    vendorInvoiceNumber: GHOACRUGOL_VENDOR_INVOICE,
+    supplier: vendor.supplier,
+    vendorInvoiceNumber: vendor.vendorInvoiceNumber,
     vendorInvoiceSubtotal,
     vendorInvoiceTax: 0,
-    vendorInvoiceTotal: vendorInvoiceSubtotal,
+    // Full UGolden TOTAL DDP Amount (goods + pallets + DDP).
+    vendorInvoiceTotal: vendor.totalDdpAmount || GHOACRUGOL_TOTAL_DDP,
     currency: 'USD',
     exchangeRate: 1,
     status: 'Needs Review',
@@ -133,17 +165,18 @@ export function buildGhoacrugolShipment(dates: DemoCalendarDates): Shipment {
 }
 
 export function buildGhoacrugolLandedCosts(
-  sourceDocumentId = 'fixture-freight',
+  sourceDocumentId = 'ugolden-proforma',
+  vendor: ParsedUgoldenProforma = fallbackUgoldenParse(),
 ): LandedCostComponent[] {
   return [
     {
       id: 'charge-pallet',
       type: 'freight',
-      supplier: GHOACRUGOL_VENDOR,
+      supplier: vendor.supplier,
       sourceDocumentId,
-      amount: PALLET_COST,
+      amount: vendor.palletCost,
       currency: 'USD',
-      baseCurrencyAmount: PALLET_COST,
+      baseCurrencyAmount: vendor.palletCost,
       allocationMethod: 'quantity',
       classification: 'capitalizable',
       capitalizable: true,
@@ -152,12 +185,13 @@ export function buildGhoacrugolLandedCosts(
     {
       id: 'charge-ddp',
       type: 'duty',
-      supplier: GHOACRUGOL_VENDOR,
+      supplier: vendor.supplier,
       sourceDocumentId,
-      amount: DDP_COST,
+      amount: vendor.ddpCost,
       currency: 'USD',
-      baseCurrencyAmount: DDP_COST,
-      allocationMethod: 'product_value',
+      baseCurrencyAmount: vendor.ddpCost,
+      // User requirement: DDP allocated by weight onto each piece.
+      allocationMethod: 'weight',
       classification: 'capitalizable',
       capitalizable: true,
       recoverableTax: false,
@@ -167,32 +201,29 @@ export function buildGhoacrugolLandedCosts(
 
 export function buildGhoacrugolCustomerInvoice(
   dates: DemoCalendarDates,
+  sales: ParsedSpandexInvoice = fallbackSpandexParse(),
 ): CustomerInvoice {
-  const lines = PRODUCT_LINES.filter((line) => line.salesUnitPrice > 0).map((line) => {
-    const net = round2(line.quantity * line.salesUnitPrice);
-    return {
-      sku: line.sku,
-      description: line.description,
-      quantity: line.quantity,
-      salesUnitPrice: line.salesUnitPrice,
-      discount: 0,
-      tax: 0,
-      total: net,
-    };
-  });
-  const subtotal = round2(lines.reduce((sum, line) => sum + line.total, 0));
+  const lines = sales.lines.map((line) => ({
+    sku: line.sku,
+    description: line.description,
+    quantity: line.quantity,
+    salesUnitPrice: line.salesUnitPrice,
+    discount: 0,
+    tax: 0,
+    total: line.total,
+  }));
   return {
-    sourceInvoiceNumber: GHOACRUGOL_CUSTOMER_INVOICE,
-    customer: GHOACRUGOL_CUSTOMER,
+    sourceInvoiceNumber: sales.invoiceNumber,
+    customer: sales.customer,
     invoiceDate: dates.invoiceDate,
     dueDate: dates.dueDate,
     currency: 'USD',
     reference: GHOACRUGOL_PO,
     lines,
-    subtotal,
+    subtotal: sales.subtotal,
     tax: 0,
     shipping: 0,
-    total: subtotal,
+    total: sales.total,
     approvalStatus: 'pending',
   };
 }
@@ -200,26 +231,65 @@ export function buildGhoacrugolCustomerInvoice(
 export function buildGhoacrugolBundle(
   sourceDocuments: SourceDocument[] = [],
   dates: DemoCalendarDates,
+  options: {
+    vendor?: ParsedUgoldenProforma;
+    sales?: ParsedSpandexInvoice;
+    livePdfExtraction?: boolean;
+  } = {},
 ): NormalizedDocumentBundle {
-  const shipment = buildGhoacrugolShipment(dates);
+  const vendor = options.vendor ?? fallbackUgoldenParse();
+  const sales = options.sales ?? fallbackSpandexParse();
+  const shipment = buildGhoacrugolShipment(dates, vendor);
   const landedCostComponents = buildGhoacrugolLandedCosts(
     sourceDocuments.find((doc) => /ugolden|proforma|ug26/i.test(doc.fileName))?.id ??
       sourceDocuments[0]?.id ??
-      'fixture-freight',
+      'ugolden-proforma',
+    vendor,
   );
-  const customerInvoice = buildGhoacrugolCustomerInvoice(dates);
+  const customerInvoice = buildGhoacrugolCustomerInvoice(dates, sales);
   shipment.sourceDocumentIds = sourceDocuments.map((doc) => doc.id);
+  const live = Boolean(options.livePdfExtraction);
   return {
     emails: [],
     documents: sourceDocuments,
     shipment,
     landedCostComponents,
     customerInvoice,
-    extractionWarnings: [
-      'Structured extraction for PO#GHOACRUGOL051926 (UGolden proforma + Spandex invoice).',
-    ],
-    fixtureExtraction: true,
+    extractionWarnings: live
+      ? [
+          `Extracted from UGolden proforma ${vendor.vendorInvoiceNumber} and Spandex invoice ${sales.invoiceNumber} PDF attachments.`,
+        ]
+      : [
+          'Demo mailbox uses the same UGolden + Spandex field mapping as live Gmail PDF extraction.',
+        ],
+    fixtureExtraction: !live,
   };
+}
+
+/** Build a bundle by parsing attachment texts (PDF-extracted or fixture mirrors). */
+export function buildGhoacrugolBundleFromTexts(
+  sourceDocuments: SourceDocument[],
+  texts: string[],
+  dates: DemoCalendarDates,
+  livePdfExtraction: boolean,
+): NormalizedDocumentBundle {
+  const combined = texts.join('\n');
+  const vendor =
+    texts.map((text) => parseUgoldenProforma(text)).find(Boolean) ??
+    parseUgoldenProforma(combined);
+  const sales =
+    texts.map((text) => parseSpandexInvoice(text)).find(Boolean) ??
+    parseSpandexInvoice(combined);
+  if (!vendor || !sales) {
+    throw new Error(
+      'Could not parse UGolden proforma and Spandex invoice fields from attachment text.',
+    );
+  }
+  return buildGhoacrugolBundle(sourceDocuments, dates, {
+    vendor,
+    sales,
+    livePdfExtraction,
+  });
 }
 
 export function looksLikeGhoacrugolPack(input: {

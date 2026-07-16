@@ -133,15 +133,20 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       vendor_reference: 'UG26A0519',
     });
     expect(payload).not.toHaveProperty('main_address');
-    expect(payload.invoice_lines).toHaveLength(6);
+    // 6 product lines + pallet + DDP = full UGolden TOTAL DDP Amount
+    expect(payload.invoice_lines).toHaveLength(8);
     expect(
       Number(
         payload.invoice_lines
           .reduce((sum, line) => sum + line.quantity * line.unit_price, 0)
           .toFixed(2),
       ),
-    ).toBe(34925.34);
-    expect(payload.invoice_lines.every((line) => !('product_id' in line))).toBe(true);
+    ).toBe(46845.34);
+    expect(payload.invoice_lines.slice(0, 6).every((line) => !('product_id' in line))).toBe(
+      true,
+    );
+    expect(payload.invoice_lines[6].description).toBe('PALLETS COST');
+    expect(payload.invoice_lines[7].description).toBe('DDP COST');
   });
 
   it('prevents double inventory posting between product lines and Stock Movements', async () => {
@@ -160,7 +165,11 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       },
       inventoryPostingStrategy: 'purchase_invoice_product_lines',
     });
-    expect(productPayload.invoice_lines.every((line) => 'product_id' in line)).toBe(true);
+    expect(
+      productPayload.invoice_lines
+        .filter((line) => !/PALLETS COST|DDP COST/.test(line.description))
+        .every((line) => 'product_id' in line),
+    ).toBe(true);
     expect(
       buildStockMovementPayloads({
         bundle,

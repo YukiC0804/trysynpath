@@ -6,7 +6,7 @@ import type {
 import type { DocumentExtractionAdapter, DocumentExtractionResult, ExtractionOverrides } from './extraction';
 import { demoInvoiceDates } from './fixtures';
 import {
-  buildGhoacrugolBundle,
+  buildGhoacrugolBundleFromTexts,
   looksLikeGhoacrugolPack,
 } from './ghoacrugolBundle';
 import { extractPdfText } from './pdfText';
@@ -60,6 +60,14 @@ function applyOverrides(
       component.baseCurrencyAmount = Number((amount * shipment.exchangeRate).toFixed(2));
     }
   }
+  if (overrides.exchangeRate != null) {
+    shipment.exchangeRate = overrides.exchangeRate;
+    for (const component of landedCostComponents) {
+      component.baseCurrencyAmount = Number(
+        (component.amount * shipment.exchangeRate).toFixed(2),
+      );
+    }
+  }
   return {
     ...bundle,
     shipment,
@@ -69,9 +77,8 @@ function applyOverrides(
 }
 
 /**
- * Extracts Ghostboards PO#GHOACRUGOL051926 from real Gmail PDF attachments
- * (UGolden proforma + Spandex customer invoice). Falls back to structured
- * mapping when PDF text is sparse but filenames/subject identify the pack.
+ * Extracts Ghostboards PO#GHOACRUGOL051926 by reading real Gmail PDF attachment
+ * bytes (UGolden proforma + Spandex customer invoice) and parsing line items.
  */
 export class GmailPdfDocumentExtractionAdapter implements DocumentExtractionAdapter {
   readonly adapterName = 'gmail-pdf-ghoacrugol';
@@ -109,14 +116,13 @@ export class GmailPdfDocumentExtractionAdapter implements DocumentExtractionAdap
     }
 
     const dates = demoInvoiceDates();
-    let bundle = buildGhoacrugolBundle(documents, dates);
+    let bundle = buildGhoacrugolBundleFromTexts(documents, texts, dates, true);
     bundle = applyOverrides(bundle, overrides);
     bundle.emails = collection.emails;
-    bundle.documents = documents;
-    bundle.fixtureExtraction = false;
-    bundle.extractionWarnings = [
-      'Extracted from Gmail PDF attachments for PO#GHOACRUGOL051926 (UGolden proforma + Spandex invoice).',
-    ];
+    bundle.documents = documents.map((document) => ({
+      ...document,
+      extractionStatus: 'Ready',
+    }));
 
     const vendorDoc =
       documents.find((document) => /ugolden|proforma|ug26/i.test(document.fileName))?.id ??
@@ -139,8 +145,10 @@ export class GmailPdfDocumentExtractionAdapter implements DocumentExtractionAdap
       ),
       customer: field(bundle.customerInvoice.customer, customerDoc, 0.96),
       currency: field(bundle.shipment.currency, vendorDoc, 0.99),
+      purchaseTotal: field(bundle.shipment.vendorInvoiceTotal, vendorDoc, 0.99),
+      salesTotal: field(bundle.customerInvoice.total, customerDoc, 0.99),
       extractedFrom: field(
-        'Gmail PDF attachments (UGolden proforma + Spandex invoice)',
+        'Live PDF text extraction (UGolden proforma + Spandex invoice)',
         vendorDoc,
         1,
       ),

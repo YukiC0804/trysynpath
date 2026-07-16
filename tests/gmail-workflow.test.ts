@@ -71,10 +71,11 @@ describe('source adapters and normalization', () => {
     const collection = await new FixtureSourceAdapter().collect();
     const grouped = groupDocumentsByReference(collection, {
       externalPoNumber: 'GHOACRUGOL051926',
-      containerNumber: 'TLLU4819203',
+      containerNumber: 'UG26A0519',
     });
-    expect(grouped.length).toBeGreaterThanOrEqual(5);
-    expect(new Set(grouped.map((item) => item.metadata.emailMessageId)).size).toBeGreaterThan(1);
+    expect(grouped.length).toBe(2);
+    expect(grouped.map((item) => item.metadata.fileName).join(' ')).toMatch(/UGolden/i);
+    expect(grouped.map((item) => item.metadata.fileName).join(' ')).toMatch(/SPANDEX|GA18/i);
   });
 
   it('validates fixture extraction through normalized schemas', async () => {
@@ -82,9 +83,9 @@ describe('source adapters and normalization', () => {
     const result = await new FixtureDocumentExtractionAdapter().extract(source);
     expect(validateNormalizedBundle(result.bundle)).toEqual([]);
     expect(result.bundle.fixtureExtraction).toBe(true);
-    expect(result.bundle.extractionWarnings[0]).toContain(
-      'Structured extraction for PO#GHOACRUGOL051926',
-    );
+    expect(result.bundle.shipment.vendorInvoiceTotal).toBe(46845.34);
+    expect(result.bundle.customerInvoice.total).toBe(32296);
+    expect(result.bundle.extractionWarnings[0]).toContain('UGolden');
     expect(result.fields.externalPoNumber).toMatchObject({
       confidence: 0.99,
       manuallyEdited: false,

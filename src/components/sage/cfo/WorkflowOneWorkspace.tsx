@@ -6,12 +6,12 @@ import {
   Inbox,
   Mail,
   Paperclip,
-  Sparkles,
+  ScanText,
 } from 'lucide-react';
 import type { SourceDocument, WorkflowPreview } from '../../../../shared/workflow';
 
 function money(value: number, currency: string) {
-  return new Intl.NumberFormat('en-GB', {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
     maximumFractionDigits: 2,
@@ -26,7 +26,7 @@ function documentLabel(value: string) {
 }
 
 function fileSize(value: number) {
-  if (!value) return 'Text attachment';
+  if (!value) return 'PDF attachment';
   if (value < 1024) return `${value} B`;
   return `${(value / 1024).toFixed(1)} KB`;
 }
@@ -34,7 +34,7 @@ function fileSize(value: number) {
 function Attachment({ document }: { document: SourceDocument }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900/50 px-3 py-2.5">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-300">
         <FileText size={17} />
       </div>
       <div className="min-w-0 flex-1">
@@ -74,9 +74,20 @@ export function WorkflowOneWorkspace({
     ? documents.filter((document) => document.emailMessageId === selectedEmail.gmailMessageId)
     : [];
   const shipment = preview?.bundle.shipment;
-  const currency = shipment?.currency ?? 'GBP';
-  const allocation = preview?.allocations[0];
+  const currency = shipment?.currency ?? 'USD';
   const customerInvoice = preview?.bundle.customerInvoice;
+  const purchaseUnits =
+    shipment?.lines.reduce((sum, line) => sum + line.receivedQuantity, 0) ?? 0;
+  const salesUnits =
+    customerInvoice?.lines.reduce((sum, line) => sum + line.quantity, 0) ?? 0;
+  const goodsTotal = shipment?.vendorInvoiceSubtotal ?? 0;
+  const pallet =
+    preview?.bundle.landedCostComponents.find((c) => c.id === 'charge-pallet')
+      ?.baseCurrencyAmount ?? 0;
+  const ddp =
+    preview?.bundle.landedCostComponents.find((c) => c.id === 'charge-ddp')
+      ?.baseCurrencyAmount ?? 0;
+  const liveExtraction = Boolean(preview && !preview.bundle.fixtureExtraction);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-neutral-800 bg-[#0a0a0a]">
@@ -111,7 +122,7 @@ export function WorkflowOneWorkspace({
               </h3>
               <p className="mt-2 max-w-sm text-sm leading-6 text-neutral-500">
                 {useLiveGmail
-                  ? 'Scan subject PO#GHOACRUGOL051926, extract the UGolden proforma and Spandex invoice PDFs, then match or create contacts and SKUs in Sage.'
+                  ? 'Scan subject PO#GHOACRUGOL051926, read the UGolden proforma and Spandex invoice PDFs, then create or match contacts and SKUs in Sage.'
                   : 'Load the UGolden proforma + Spandex invoice pack for PO#GHOACRUGOL051926 and match contacts and SKUs in Sage.'}
               </p>
               <button
@@ -121,7 +132,7 @@ export function WorkflowOneWorkspace({
                 className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {loading
-                  ? 'Reading source documents…'
+                  ? 'Reading PDF attachments…'
                   : useLiveGmail
                     ? 'Scan Gmail'
                     : 'Load Demo Data'}
@@ -141,9 +152,9 @@ export function WorkflowOneWorkspace({
                       key={email.gmailMessageId}
                       type="button"
                       onClick={() => setSelectedEmailId(email.gmailMessageId)}
-                className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                      className={`w-full rounded-xl border px-4 py-3 text-left transition ${
                         active
-                          ? 'border-violet-500/40 bg-violet-500/10'
+                          ? 'border-sky-500/40 bg-sky-500/10'
                           : 'border-transparent bg-neutral-900/40 hover:border-neutral-800'
                       }`}
                     >
@@ -205,15 +216,21 @@ export function WorkflowOneWorkspace({
           )}
         </div>
 
-        <div className="bg-[radial-gradient(circle_at_top_right,rgba(124,58,237,0.08),transparent_40%)]">
+        <div className="bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.08),transparent_40%)]">
           <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-                <Sparkles size={18} />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
+                <ScanText size={18} />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-white">Structured extraction</h2>
-                <p className="text-xs text-neutral-500">Normalized and reconciled for Sage</p>
+                <h2 className="text-sm font-semibold text-white">
+                  {liveExtraction ? 'PDF extraction' : 'Document extraction'}
+                </h2>
+                <p className="text-xs text-neutral-500">
+                  {liveExtraction
+                    ? 'Fields read from UGolden + Spandex PDF attachments'
+                    : 'UGolden proforma + Spandex invoice field mapping'}
+                </p>
               </div>
             </div>
             {ready && (
@@ -227,9 +244,10 @@ export function WorkflowOneWorkspace({
           {!preview ? (
             <div className="flex min-h-[540px] items-center justify-center p-8">
               <div className="max-w-sm text-center">
-                <div className="mx-auto mb-4 h-px w-20 bg-gradient-to-r from-transparent via-violet-400/60 to-transparent" />
+                <div className="mx-auto mb-4 h-px w-20 bg-gradient-to-r from-transparent via-sky-400/60 to-transparent" />
                 <p className="text-sm text-neutral-500">
-                  Extraction results, Sage matching and landed-cost calculations will appear here.
+                  Extracted purchase lines, landed-cost allocation and Spandex sales lines will
+                  appear here after Scan Gmail.
                 </p>
               </div>
             </div>
@@ -238,12 +256,9 @@ export function WorkflowOneWorkspace({
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   ['PO', shipment?.externalPoNumber ?? '—'],
-                  ['Units', String(shipment?.lines[0]?.receivedQuantity ?? 0)],
-                  ['Vendor cost', money(shipment?.vendorInvoiceTotal ?? 0, currency)],
-                  [
-                    'Landed value',
-                    money(preview.reconciliation.totalCapitalizableCost, currency),
-                  ],
+                  ['Units in', String(purchaseUnits)],
+                  ['Purchase total', money(shipment?.vendorInvoiceTotal ?? 0, currency)],
+                  ['Sales total', money(customerInvoice?.total ?? 0, currency)],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-xl border border-neutral-800 bg-black/30 p-3">
                     <p className="text-[10px] uppercase tracking-wider text-neutral-600">{label}</p>
@@ -253,37 +268,45 @@ export function WorkflowOneWorkspace({
               </div>
 
               <div className="rounded-xl border border-neutral-800 bg-black/30">
-                <div className="border-b border-neutral-800 px-4 py-3">
+                <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                    Purchase order line
+                    UGolden purchase lines
+                  </p>
+                  <p className="text-[11px] text-neutral-500">
+                    {shipment?.supplier} · {shipment?.vendorInvoiceNumber}
                   </p>
                 </div>
-                <div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto]">
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {shipment?.lines[0]?.sku}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {shipment?.lines[0]?.description}
-                    </p>
-                    <p className="mt-3 text-xs text-neutral-400">
-                      {shipment?.supplier} · Invoice {shipment?.vendorInvoiceNumber}
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-right text-xs">
-                    <span className="text-neutral-500">Quantity</span>
-                    <span className="font-medium text-white">
-                      {shipment?.lines[0]?.receivedQuantity}
-                    </span>
-                    <span className="text-neutral-500">Unit cost</span>
-                    <span className="font-medium text-white">
-                      {money(shipment?.lines[0]?.vendorUnitCost ?? 0, currency)}
-                    </span>
-                    <span className="text-neutral-500">Sage match</span>
-                    <span className="font-medium text-emerald-300">
-                      {shipment?.lines[0]?.matchedSageItemCode ?? 'Pending'}
-                    </span>
-                  </div>
+                <div className="divide-y divide-neutral-800/80">
+                  {shipment?.lines.map((line) => {
+                    const allocation = preview.allocations.find((item) => item.sku === line.sku);
+                    return (
+                      <div
+                        key={line.sku}
+                        className="grid gap-3 px-4 py-3 sm:grid-cols-[1.4fr_auto]"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-white">{line.sku}</p>
+                          <p className="mt-1 text-xs text-neutral-500">{line.description}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-right text-xs sm:min-w-[220px]">
+                          <span className="text-neutral-500">Qty</span>
+                          <span className="font-medium text-white">{line.receivedQuantity}</span>
+                          <span className="text-neutral-500">Unit cost</span>
+                          <span className="font-medium text-white">
+                            {money(line.vendorUnitCost, currency)}
+                          </span>
+                          <span className="text-neutral-500">Landed / pc</span>
+                          <span className="font-medium text-sky-300">
+                            {money(allocation?.landedUnitCost ?? line.vendorUnitCost, currency)}
+                          </span>
+                          <span className="text-neutral-500">Sage</span>
+                          <span className="font-medium text-emerald-300">
+                            {line.matchedSageItemCode ?? 'Create on run'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -294,11 +317,9 @@ export function WorkflowOneWorkspace({
                   </p>
                   <div className="mt-3 space-y-2 text-xs">
                     {[
-                      ['Goods', allocation?.goodsCost ?? 0],
-                      ['Freight', allocation?.allocatedFreight ?? 0],
-                      ['Insurance', allocation?.allocatedInsurance ?? 0],
-                      ['Duty', allocation?.allocatedDuty ?? 0],
-                      ['Brokerage', allocation?.allocatedBrokerage ?? 0],
+                      ['Goods', goodsTotal],
+                      ['Pallets', pallet],
+                      ['DDP (by weight)', ddp],
                     ].map(([label, value]) => (
                       <div key={String(label)} className="flex justify-between gap-4">
                         <span className="text-neutral-500">{label}</span>
@@ -306,46 +327,52 @@ export function WorkflowOneWorkspace({
                       </div>
                     ))}
                     <div className="mt-3 flex justify-between border-t border-neutral-800 pt-3">
-                      <span className="font-medium text-neutral-300">Landed unit cost</span>
-                      <span className="font-semibold text-violet-300">
-                        {money(allocation?.landedUnitCost ?? 0, currency)}
+                      <span className="font-medium text-neutral-300">Purchase Invoice</span>
+                      <span className="font-semibold text-sky-300">
+                        {money(shipment?.vendorInvoiceTotal ?? 0, currency)}
                       </span>
                     </div>
+                    <p className="pt-1 text-[11px] leading-4 text-neutral-600">
+                      Inventory cost per sheet = unit cost + pallet share + DDP share by weight.
+                    </p>
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-neutral-800 bg-black/30 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                    Matching customer invoice
+                    Spandex customer invoice
                   </p>
                   <p className="mt-3 text-sm font-semibold text-white">
                     {customerInvoice?.sourceInvoiceNumber}
                   </p>
                   <p className="mt-1 text-xs text-neutral-500">{customerInvoice?.customer}</p>
-                  <div className="mt-4 space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-neutral-500">SKU</span>
-                      <span className="text-neutral-200">{customerInvoice?.lines[0]?.sku}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-neutral-500">Quantity</span>
-                      <span className="text-neutral-200">{customerInvoice?.lines[0]?.quantity}</span>
-                    </div>
-                    <div className="flex justify-between border-t border-neutral-800 pt-2">
-                      <span className="text-neutral-500">Invoice total</span>
-                      <span className="font-semibold text-white">
-                        {money(customerInvoice?.total ?? 0, customerInvoice?.currency ?? currency)}
-                      </span>
-                    </div>
+                  <div className="mt-4 max-h-40 space-y-2 overflow-auto text-xs">
+                    {customerInvoice?.lines.map((line) => (
+                      <div key={line.sku} className="flex justify-between gap-3">
+                        <span className="truncate text-neutral-500">{line.sku}</span>
+                        <span className="shrink-0 text-neutral-200">
+                          {line.quantity} · {money(line.total, currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex justify-between border-t border-neutral-800 pt-3 text-xs">
+                    <span className="text-neutral-500">Sell units / total</span>
+                    <span className="font-semibold text-white">
+                      {salesUnits} · {money(customerInvoice?.total ?? 0, currency)}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {preview.bundle.extractionWarnings.length > 0 && (
-                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-5 text-amber-200">
-                  {preview.bundle.extractionWarnings[0]}
-                </p>
-              )}
+              {preview.bundle.extractionWarnings[0] &&
+                !/fixture extraction is a normalized test result/i.test(
+                  preview.bundle.extractionWarnings[0],
+                ) && (
+                  <p className="rounded-xl border border-sky-500/20 bg-sky-500/10 px-4 py-3 text-xs leading-5 text-sky-100">
+                    {preview.bundle.extractionWarnings[0]}
+                  </p>
+                )}
             </div>
           )}
         </div>

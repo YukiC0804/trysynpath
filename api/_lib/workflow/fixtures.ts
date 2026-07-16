@@ -9,9 +9,10 @@ import {
   buildGhoacrugolCustomerInvoice,
   buildGhoacrugolLandedCosts,
   buildGhoacrugolShipment,
+  GHOACRUGOL_PO,
 } from './ghoacrugolBundle';
 
-export const FIXTURE_REFERENCE = 'GHOACRUGOL051926';
+export const FIXTURE_REFERENCE = GHOACRUGOL_PO;
 export const DEMO_REFERENCE_PREFIX = `DEMO-${FIXTURE_REFERENCE}`;
 
 /** Calendar dates for demo invoices — always near "today" so Sage's default
@@ -58,146 +59,73 @@ export interface FixtureDocumentDefinition {
   content: string;
 }
 
+/** Mirror of the live Gmail subject/body for offline demos. */
 export const FIXTURE_EMAILS: EmailSource[] = [
   {
     gmailMessageId: 'fixture-msg-po',
-    gmailThreadId: 'fixture-thread-shipment',
-    from: 'orders@nationwide-acrylics.example',
-    to: 'operations@ghostboards.example',
-    subject: `PO confirmation ${FIXTURE_REFERENCE}`,
+    gmailThreadId: 'fixture-thread-ghoacrugol',
+    from: 'ada@ugolden.com.cn',
+    to: 'operations@ghostacrylic.com',
+    subject: `PO#${FIXTURE_REFERENCE}`,
     receivedAt: DEMO_DATES.poReceivedAt,
-    snippet: 'Purchase order for 100 clear acrylic sheets and the matching vendor invoice.',
+    snippet:
+      'UGolden proforma UG26A0519 and Spandex customer invoice GA18 for PO#GHOACRUGOL051926.',
     labelIds: ['Synpath Sage Demo'],
-    attachmentIds: ['fixture-po', 'fixture-vendor-invoice'],
-    processingStatus: 'Ready',
-  },
-  {
-    gmailMessageId: 'fixture-msg-logistics',
-    gmailThreadId: 'fixture-thread-shipment',
-    from: 'docs@pacific-freight.example',
-    to: 'operations@ghostboards.example',
-    subject: `Container TLLU4819203 / ${FIXTURE_REFERENCE}`,
-    receivedAt: DEMO_DATES.logisticsReceivedAt,
-    snippet: 'BOL, freight invoice and customs entry attached.',
-    labelIds: ['Synpath Sage Demo'],
-    attachmentIds: ['fixture-bol', 'fixture-freight', 'fixture-duty'],
-    processingStatus: 'Ready',
-  },
-  {
-    gmailMessageId: 'fixture-msg-sale',
-    gmailThreadId: 'fixture-thread-sale',
-    from: 'billing@ghostboards.example',
-    to: 'operations@ghostboards.example',
-    subject: `Customer invoice GB-CUST-1042 / ${FIXTURE_REFERENCE}`,
-    receivedAt: DEMO_DATES.saleReceivedAt,
-    snippet: 'Customer invoice for received acrylic inventory.',
-    labelIds: ['Synpath Sage Demo'],
-    attachmentIds: ['fixture-customer-invoice', 'fixture-pricing-csv'],
+    attachmentIds: ['fixture-ugolden-proforma', 'fixture-spandex-invoice'],
     processingStatus: 'Ready',
   },
 ];
 
+/**
+ * Parseable text mirrors of the live PDF attachments so fixture mode exercises
+ * the same field parsers as Gmail PDF extraction.
+ */
 export const FIXTURE_DOCUMENTS: FixtureDocumentDefinition[] = [
   {
-    id: 'fixture-po',
+    id: 'fixture-ugolden-proforma',
     emailMessageId: 'fixture-msg-po',
-    fileName: 'GHOACRUGOL051926-purchase-order.txt',
-    mimeType: 'text/plain',
-    documentType: 'purchase_order',
-    content: `SYNTHETIC TEST DOCUMENT — NOT A LIVE EXTRACTION
-External PO: ${FIXTURE_REFERENCE}
-Container: TLLU4819203
-Supplier: Nationwide Acrylics
-Currency: GBP
-Shipment date: ${DEMO_DATES.shipmentDate}
-Expected arrival: ${DEMO_DATES.arrivalDate}
-ACR-CLR-3MM-48X96,100,52.50,5250.00`,
-  },
-  {
-    id: 'fixture-vendor-invoice',
-    emailMessageId: 'fixture-msg-po',
-    fileName: 'NWA-INV-8841-vendor-invoice.txt',
-    mimeType: 'text/plain',
+    fileName: 'UPDATE Ghost PO#GHOACRUGOL051926 (UGolden Proforma Invoice UG26A0519).pdf',
+    mimeType: 'application/pdf',
     documentType: 'vendor_invoice',
-    content: `SYNTHETIC VENDOR INVOICE
-Invoice: NWA-INV-8841
-Reference: ${FIXTURE_REFERENCE}
-ACR-CLR-3MM-48X96,100,52.50,5250.00
-Subtotal GBP 5250.00
-Tax GBP 0.00
-Total GBP 5250.00`,
+    content: `SHANGHAI UGOLDEN INDUSTRY CO., LTD. Proforma Invoice
+PO#GHOACRUGOL051926 Invoice No: UG26A0519
+1.20 WHITE 3 1220 2440 102 Pallet:#1 $24.16 $2,464.32 1123 1093 0.91
+1.20 WHITE 18 1220 2440 46 $144.90 $6,665.40 2988 2958 2.46
+1.20 WHITE 25 1220 2440 10 Pallet:#2,3,4 $214.10 $2,141.00 923 893 0.74
+1.20 WHITE 4.8 1530 3050 74 $57.43 $4,249.82 2019 1989 1.66
+1.20 CLEAR 4.0 1220 2440 436 Pallet:#5,6,7 $34.30 $14,954.80 6320 6230 5.19
+POLY CARBONATE 1.20 CLEAR 9.5 1220 2440 50 Pallet:#8 $89.00 $4,450.00 1727 1697 1.41
+PALLETS COST 8 $40.00 $320.00 15100 14860 20.38
+DDP COST amount to your company wearhouse $11,600.00
+TOTAL DDP Amount (Destination, Seller clears import & pays duties) 718 pcs $46,845.34`,
   },
   {
-    id: 'fixture-bol',
-    emailMessageId: 'fixture-msg-logistics',
-    fileName: 'TLLU4819203-packing-list.txt',
-    mimeType: 'text/plain',
-    documentType: 'packing_list',
-    content: `SYNTHETIC BOL / PACKING LIST
-Container TLLU4819203
-Reference ${FIXTURE_REFERENCE}
-Gross weight 1,825 KG
-Volume 12.9 CBM
-Packages 100`,
-  },
-  {
-    id: 'fixture-freight',
-    emailMessageId: 'fixture-msg-logistics',
-    fileName: 'PF-22910-freight-invoice.txt',
-    mimeType: 'text/plain',
-    documentType: 'freight_invoice',
-    content: `SYNTHETIC FREIGHT INVOICE
-Reference ${FIXTURE_REFERENCE}
-Ocean freight GBP 420.00
-Insurance GBP 75.00`,
-  },
-  {
-    id: 'fixture-duty',
-    emailMessageId: 'fixture-msg-logistics',
-    fileName: 'HMRC-entry-GHOACRUGOL051926.txt',
-    mimeType: 'text/plain',
-    documentType: 'customs_duty',
-    content: `SYNTHETIC CUSTOMS ENTRY
-Reference ${FIXTURE_REFERENCE}
-Customs duty GBP 331.00
-Brokerage GBP 125.00
-Import VAT GBP 1240.20 (recoverable)`,
-  },
-  {
-    id: 'fixture-customer-invoice',
-    emailMessageId: 'fixture-msg-sale',
-    fileName: 'GB-CUST-1042-customer-invoice.txt',
-    mimeType: 'text/plain',
+    id: 'fixture-spandex-invoice',
+    emailMessageId: 'fixture-msg-po',
+    fileName: 'GHOST ACRYLIC LLC - SPANDEX Invoice # GA18 - 5_18_2026.pdf',
+    mimeType: 'application/pdf',
     documentType: 'customer_invoice',
-    content: `SYNTHETIC CUSTOMER INVOICE
-Invoice GB-CUST-1042
-Customer Acrylic Display Studio
-Reference ${FIXTURE_REFERENCE}
-ACR-CLR-3MM-48X96,100,79.00
-Shipping GBP 0.00
-VAT GBP 1580.00
-Total GBP 9480.00`,
-  },
-  {
-    id: 'fixture-pricing-csv',
-    emailMessageId: 'fixture-msg-sale',
-    fileName: 'acrylic-pricing.csv',
-    mimeType: 'text/csv',
-    documentType: 'pricing_csv',
-    content: `sku,description,sales_unit_price
-ACR-CLR-3MM-48X96,Clear Acrylic Sheet 3mm 48 x 96,79.00`,
+    content: `INVOICE PAID GHOST ACRYLIC LLC Invoice #: GA18
+SPANDEX Attention: ANDREW GREEN
+3mm x 48" x 96" WHITE 102.00 $39.45 $4,023.90
+18mm x 48" x 96" WHITE 46.00 $227.26 $10,453.96
+25mm x 48" x 96" WHITE 10.00 $331.97 $3,319.70
+4.8mm x 60" x 120" WHITE 74.00 $98.06 $7,256.44
+9.5mm x 48" x 96" CLEAR POLY CARB 50.00 $144.84 $7,242.00
+Subtotal: $32,296.00
+Total Due: $32,296.00`,
   },
 ];
 
 /** Live PO#GHOACRUGOL051926 shipment extracted from UGolden proforma + Spandex invoice. */
 export const FIXTURE_SHIPMENT: Shipment = (() => {
   const shipment = buildGhoacrugolShipment(DEMO_DATES);
-  shipment.sourceDocumentIds = FIXTURE_DOCUMENTS.slice(0, 5).map((document) => document.id);
+  shipment.sourceDocumentIds = FIXTURE_DOCUMENTS.map((document) => document.id);
   return shipment;
 })();
 
 export const FIXTURE_LANDED_COST_COMPONENTS: LandedCostComponent[] =
-  buildGhoacrugolLandedCosts('fixture-freight');
+  buildGhoacrugolLandedCosts('fixture-ugolden-proforma');
 
 export const FIXTURE_CUSTOMER_INVOICE: CustomerInvoice =
   buildGhoacrugolCustomerInvoice(DEMO_DATES);

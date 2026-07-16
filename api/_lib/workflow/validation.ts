@@ -5,10 +5,14 @@ export function validateNormalizedBundle(bundle: NormalizedDocumentBundle): stri
   if (!bundle.shipment.externalPoNumber) errors.push('External PO number is required');
   if (!bundle.shipment.containerNumber) errors.push('Container number is required');
   if (!bundle.shipment.vendorInvoiceNumber) errors.push('Vendor invoice number is required');
+  const capitalizableCharges = bundle.landedCostComponents
+    .filter((component) => component.capitalizable && !component.recoverableTax)
+    .reduce((sum, component) => sum + Number(component.amount ?? 0), 0);
   if (
     Math.abs(
       bundle.shipment.vendorInvoiceSubtotal +
-        bundle.shipment.vendorInvoiceTax -
+        bundle.shipment.vendorInvoiceTax +
+        capitalizableCharges -
         bundle.shipment.vendorInvoiceTotal,
     ) > 0.01
   ) {

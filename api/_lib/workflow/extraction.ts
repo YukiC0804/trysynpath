@@ -4,7 +4,7 @@ import type {
   SourceDocument,
 } from '../../../shared/workflow';
 import { demoInvoiceDates } from './fixtures';
-import { buildGhoacrugolBundle } from './ghoacrugolBundle';
+import { buildGhoacrugolBundleFromTexts } from './ghoacrugolBundle';
 import type { SourceCollection } from './sourceAdapters';
 
 export interface ExtractionOverrides {
@@ -92,10 +92,16 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
   ): Promise<DocumentExtractionResult> {
     const documentsMeta: SourceDocument[] = collection.documents.map((document) => ({
       ...document.metadata,
-      extractionStatus: 'Needs Review',
+      extractionStatus: 'Ready',
     }));
-    // Structured extraction for PO#GHOACRUGOL051926 (UGolden + Spandex pack).
-    const seeded = buildGhoacrugolBundle(documentsMeta, demoInvoiceDates());
+    // Parse the same UGolden + Spandex field layout used by live Gmail PDF extraction.
+    const texts = collection.documents.map((document) => document.content.toString('utf8'));
+    const seeded = buildGhoacrugolBundleFromTexts(
+      documentsMeta,
+      texts,
+      demoInvoiceDates(),
+      false,
+    );
     const shipment = structuredClone(seeded.shipment);
     const landedCostComponents = structuredClone(seeded.landedCostComponents);
     const customerInvoice = structuredClone(seeded.customerInvoice);
@@ -185,56 +191,56 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
     const fields: Record<string, ExtractedField<unknown>> = {
       externalPoNumber: fixtureField(
         shipment.externalPoNumber,
-        'fixture-po',
+        'fixture-ugolden-proforma',
         0.99,
-        'Fixture extraction result — not live AI extraction',
+        undefined,
         overrides.shipment?.externalPoNumber != null,
       ),
       containerNumber: fixtureField(
         shipment.containerNumber,
-        'fixture-bol',
+        'fixture-ugolden-proforma',
         0.98,
         undefined,
         overrides.shipment?.containerNumber != null,
       ),
       supplier: fixtureField(
         shipment.supplier,
-        'fixture-vendor-invoice',
+        'fixture-ugolden-proforma',
         0.97,
         undefined,
         overrides.shipment?.supplier != null,
       ),
       exchangeRate: fixtureField(
         shipment.exchangeRate,
-        'fixture-vendor-invoice',
+        'fixture-ugolden-proforma',
         0.95,
         undefined,
         overrides.exchangeRate != null,
       ),
       vendorInvoiceNumber: fixtureField(
         shipment.vendorInvoiceNumber,
-        'fixture-vendor-invoice',
+        'fixture-ugolden-proforma',
         0.99,
         undefined,
         overrides.shipment?.vendorInvoiceNumber != null,
       ),
       customerInvoiceNumber: fixtureField(
         customerInvoice.sourceInvoiceNumber,
-        'fixture-customer-invoice',
+        'fixture-spandex-invoice',
         0.99,
         undefined,
         overrides.customerInvoice?.sourceInvoiceNumber != null,
       ),
       customer: fixtureField(
         customerInvoice.customer,
-        'fixture-customer-invoice',
+        'fixture-spandex-invoice',
         0.97,
         undefined,
         overrides.customerInvoice?.customer != null,
       ),
       customerInvoiceDate: fixtureField(
         customerInvoice.invoiceDate,
-        'fixture-customer-invoice',
+        'fixture-spandex-invoice',
         0.98,
         undefined,
         overrides.customerInvoice?.invoiceDate != null,
@@ -243,14 +249,14 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
     for (const line of shipment.lines) {
       fields[`line.${line.sku}.quantity`] = fixtureField(
         line.receivedQuantity,
-        'fixture-vendor-invoice',
+        'fixture-ugolden-proforma',
         0.98,
         undefined,
         Boolean(overrides.shipmentLines?.find((item) => item.sku === line.sku)),
       );
       fields[`line.${line.sku}.unitCost`] = fixtureField(
         line.vendorUnitCost,
-        'fixture-vendor-invoice',
+        'fixture-ugolden-proforma',
         0.98,
         undefined,
         Boolean(overrides.shipmentLines?.find((item) => item.sku === line.sku)),
@@ -262,21 +268,21 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
       );
       fields[`customerLine.${line.sku}.quantity`] = fixtureField(
         line.quantity,
-        'fixture-customer-invoice',
+        'fixture-spandex-invoice',
         0.98,
         undefined,
         manuallyEdited,
       );
       fields[`customerLine.${line.sku}.unitPrice`] = fixtureField(
         line.salesUnitPrice,
-        'fixture-customer-invoice',
+        'fixture-spandex-invoice',
         0.98,
         undefined,
         manuallyEdited,
       );
       fields[`customerLine.${line.sku}.tax`] = fixtureField(
         line.tax,
-        'fixture-customer-invoice',
+        'fixture-spandex-invoice',
         0.95,
         undefined,
         manuallyEdited,
@@ -291,10 +297,7 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
         shipment,
         landedCostComponents,
         customerInvoice,
-        extractionWarnings: [
-          'Structured extraction for PO#GHOACRUGOL051926 (UGolden proforma + Spandex invoice).',
-          'Gmail live mode also reads PDF attachment bytes via GmailPdfDocumentExtractionAdapter.',
-        ],
+        extractionWarnings: seeded.extractionWarnings,
         fixtureExtraction: true,
       },
     };

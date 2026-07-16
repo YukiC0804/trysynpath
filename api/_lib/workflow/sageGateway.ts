@@ -223,21 +223,42 @@ export function buildPurchaseInvoicePayload(input: {
     reference,
     vendor_reference: bundle.shipment.vendorInvoiceNumber,
     notes: `Synpath demo shipment ${bundle.shipment.containerNumber}`,
-    invoice_lines: bundle.shipment.lines.map((line) => {
-      const net = round(line.receivedQuantity * line.vendorUnitCost);
-      return {
-        description: `${line.sku} — ${line.description}`,
-        ledger_account_id: selections.purchaseLedgerAccountId,
-        quantity: line.receivedQuantity,
-        unit_price: line.vendorUnitCost,
-        tax_rate_id: selections.purchaseTaxRateId,
-        tax_amount: taxAmount(net, { percentage: taxPercentage }),
-        ...(input.inventoryPostingStrategy === 'purchase_invoice_product_lines' &&
-        line.matchedSageStockItemId
-          ? { product_id: line.matchedSageStockItemId }
-          : {}),
-      };
-    }),
+    invoice_lines: [
+      ...bundle.shipment.lines.map((line) => {
+        const net = round(line.receivedQuantity * line.vendorUnitCost);
+        return {
+          description: `${line.sku} — ${line.description}`,
+          ledger_account_id: selections.purchaseLedgerAccountId,
+          quantity: line.receivedQuantity,
+          unit_price: line.vendorUnitCost,
+          tax_rate_id: selections.purchaseTaxRateId,
+          tax_amount: taxAmount(net, { percentage: taxPercentage }),
+          ...(input.inventoryPostingStrategy === 'purchase_invoice_product_lines' &&
+          line.matchedSageStockItemId
+            ? { product_id: line.matchedSageStockItemId }
+            : {}),
+        };
+      }),
+      // UGolden TOTAL DDP Amount includes pallet + DDP charges on the same PI.
+      ...bundle.landedCostComponents
+        .filter((component) => component.capitalizable && !component.recoverableTax)
+        .map((component) => {
+          const amount = round(component.amount);
+          return {
+            description:
+              component.id === 'charge-pallet'
+                ? 'PALLETS COST'
+                : component.id === 'charge-ddp'
+                  ? 'DDP COST'
+                  : `${component.type} — ${component.supplier}`,
+            ledger_account_id: selections.purchaseLedgerAccountId,
+            quantity: 1,
+            unit_price: amount,
+            tax_rate_id: selections.purchaseTaxRateId,
+            tax_amount: taxAmount(amount, { percentage: taxPercentage }),
+          };
+        }),
+    ],
   };
 }
 
