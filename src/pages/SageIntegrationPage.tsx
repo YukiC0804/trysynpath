@@ -132,12 +132,6 @@ function SummaryLine({ label, value }: { label: string; value: string }) {
 
 function missingItems(preview: WorkflowPreview): string[] {
   const missing: string[] = [];
-  const types = new Set(preview.bundle.documents.map((doc) => doc.documentType));
-  if (!types.has('purchase_order')) missing.push('Purchase Order');
-  if (!types.has('vendor_invoice')) missing.push('Vendor Invoice');
-  if (!types.has('packing_list')) missing.push('Bill of Lading or Packing List');
-  if (!types.has('freight_invoice')) missing.push('Freight Invoice');
-  if (!types.has('customs_duty')) missing.push('Customs, Duties or Tax Document');
   const unmatched = preview.bundle.shipment.lines.filter(
     (line) => line.matchingStatus !== 'exact' && line.matchingStatus !== 'confirmed',
   );
@@ -160,10 +154,15 @@ function customerInvoiceReady(preview: WorkflowPreview | null): boolean {
   );
 }
 
-function demoHasCreatedRecords(demoRun: DemoRunRecord | null) {
+function demoHasSageWrites(demoRun: DemoRunRecord | null) {
   if (!demoRun) return false;
-  return demoRun.transactions.some((tx) =>
-    ['succeeded', 'voided', 'deleted', 'restored'].includes(tx.status),
+  return demoRun.transactions.some(
+    (tx) =>
+      tx.status === 'succeeded' &&
+      (tx.type === 'purchase_invoice' ||
+        tx.type === 'stock_movement' ||
+        tx.type === 'sales_invoice' ||
+        tx.type === 'stock_item_cost_update'),
   );
 }
 
@@ -171,6 +170,7 @@ export function SageIntegrationPage() {
   const [params] = useSearchParams();
   const [sageStatus, setSageStatus] = useState<SageStatus | null>(null);
   const [gmailStatus, setGmailStatus] = useState<GmailStatus | null>(null);
+  const [useLiveGmail, setUseLiveGmail] = useState(false);
   const [preview, setPreview] = useState<WorkflowPreview | null>(null);
   const [demoRun, setDemoRun] = useState<DemoRunRecord | null>(null);
   const [beforeAfter, setBeforeAfter] = useState<BeforeAfterRow[]>([]);
@@ -182,6 +182,8 @@ export function SageIntegrationPage() {
   const [busy, setBusy] = useState(false);
   const [activeWorkflow, setActiveWorkflow] = useState<WorkflowKey>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resetRequested, setResetRequested] = useState(false);
   const [confirmPurchase, setConfirmPurchase] = useState(false);
   const [confirmSales, setConfirmSales] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -203,28 +205,52 @@ export function SageIntegrationPage() {
   }, [refreshConnections]);
 
   useEffect(() => {
-    if (params.get('connected') === 'true' || params.get('gmail') === 'connected') {
-      void refreshConnections();
+    if (params.get('connected') === 'true') {
+      void refreshConnections().then(() => {
+        if (resetRequested) {
+          setConfirmReset(true);
+        }
+      });
     }
+    if (params.get('gmail') === 'connected') void refreshConnections();
     if (params.get('gmail') === 'failed') {
       setError('Gmail connection failed. Please try again.');
     }
-  }, [params, refreshConnections]);
+  }, [params, refreshConnections, resetRequested]);
 
   const buildRequest = useCallback((): PreviewRequest => {
     const sageConnected = Boolean(sageStatus?.connected);
     return {
-      mode: sageConnected ? 'live_sage_write' : 'gmail_dry_run',
-      sourceType: 'gmail',
+      mode: sageConnected ? 'live_sage_write' : useLiveGmail ? 'gmail_dry_run' : 'fixture_dry_run',
+      sourceType: useLiveGmail ? 'gmail' : 'fixture',
       searchQuery: GMAIL_QUERY,
-      messageIds,
+      messageIds: useLiveGmail ? messageIds : undefined,
       inventoryPostingStrategy: 'stock_movement',
       selections: {
         ...(preview?.selections ?? {}),
         accountingMappingConfirmed: true,
       },
     };
-  }, [messageIds, preview?.selections, sageStatus?.connected]);
+  }, [messageIds, preview?.selections, sageStatus?.connected, useLiveGmail]);
+
+  const clearUnpostedWorkflow = useCallback(async () => {
+    setPreview(null);
+    setScanDone(false);
+    setMessageIds([]);
+    setBeforeAfter([]);
+    setBaselinePreview([]);
+    setError(null);
+    await resetWorkflow().catch(() => undefined);
+  }, []);
+
+  const handleDataSourceToggle = async (next: boolean) => {
+    if (demoHasSageWrites(demoRun) && demoRun?.status !== 'reset_complete') {
+      setError('Reset the current demo before changing the data source.');
+      return;
+    }
+    setUseLiveGmail(next);
+    await clearUnpostedWorkflow();
+  };
 
   const handleDisconnectSage = async () => {
     setBusy(true);
@@ -244,10 +270,7 @@ export function SageIntegrationPage() {
     setError(null);
     try {
       await disconnectGmail();
-      setMessageIds([]);
-      setPreview(null);
-      setScanDone(false);
-      setBaselinePreview([]);
+      if (useLiveGmail) await clearUnpostedWorkflow();
       await refreshConnections();
     } catch (err) {
       setError(friendlyError(err instanceof Error ? err.message : 'Could not disconnect Gmail'));
@@ -256,32 +279,44 @@ export function SageIntegrationPage() {
     }
   };
 
-  const handleScan = async () => {
-    if (!gmailStatus?.connected) return;
+  const handleWorkflow1 = async () => {
+    if (useLiveGmail && !gmailStatus?.connected) {
+      setError('Connect Gmail');
+      return;
+    }
     setBusy(true);
     setActiveWorkflow('scan');
     setError(null);
+    setNotice(null);
     try {
-      const sync = await syncGmail(GMAIL_QUERY);
-      const ids = sync.messages.map((message) => message.gmailMessageId);
-      setMessageIds(ids);
-      if (!ids.length) {
-        setScanDone(false);
-        setPreview(null);
-        setError(
-          'Additional information is required before continuing. No emails found for PO#GHOACRUGOL051926.',
-        );
-        return;
+      let ids: string[] = [];
+      if (useLiveGmail) {
+        const sync = await syncGmail(GMAIL_QUERY);
+        ids = sync.messages.map((message) => message.gmailMessageId);
+        setMessageIds(ids);
+        if (!ids.length) {
+          setScanDone(false);
+          setPreview(null);
+          setError(
+            'Additional information is required before continuing. No emails found for PO#GHOACRUGOL051926.',
+          );
+          return;
+        }
       }
 
       const request: PreviewRequest = {
-        mode: sageStatus?.connected ? 'live_sage_write' : 'gmail_dry_run',
-        sourceType: 'gmail',
+        mode: sageStatus?.connected
+          ? 'live_sage_write'
+          : useLiveGmail
+            ? 'gmail_dry_run'
+            : 'fixture_dry_run',
+        sourceType: useLiveGmail ? 'gmail' : 'fixture',
         searchQuery: GMAIL_QUERY,
-        messageIds: ids,
+        messageIds: useLiveGmail ? ids : undefined,
         inventoryPostingStrategy: 'stock_movement',
         selections: { accountingMappingConfirmed: true },
       };
+
       let result = await createWorkflowPreview(request);
       if (accountingReady(result) && !result.selections.accountingMappingConfirmed) {
         result = await createWorkflowPreview({
@@ -317,7 +352,7 @@ export function SageIntegrationPage() {
         if (prepared.missingSkus.length) {
           setScanDone(false);
           setError(
-            `The following SKU must be prepared in Sage before continuing. ${prepared.missingSkus.join(', ')}`,
+            `The following SKU must be prepared in Sage before continuing. ${prepared.missingSkus.join(', ')}. Use Reset Demo to create the baseline products.`,
           );
           return;
         }
@@ -327,7 +362,9 @@ export function SageIntegrationPage() {
     } catch (err) {
       setScanDone(false);
       setError(
-        friendlyError(err instanceof Error ? err.message : 'Could not scan Gmail documents'),
+        friendlyError(
+          err instanceof Error ? err.message : 'Could not prepare purchase data',
+        ),
       );
     } finally {
       setActiveWorkflow(null);
@@ -355,13 +392,14 @@ export function SageIntegrationPage() {
       const result = await postDemoPurchase(buildRequest());
       setDemoRun(result.demoRun);
       setBeforeAfter(result.beforeAfter);
-      setPreview((current) =>
-        current ? { ...current, run: result.run } : current,
-      );
+      setPreview((current) => (current ? { ...current, run: result.run } : current));
       if (result.partial) {
         setError(
           'Partial Completion. Some inventory records need attention. Successful Sage IDs were preserved.',
         );
+      }
+      if (resetRequested) {
+        setConfirmReset(true);
       }
     } catch (err) {
       const missingSkus = (err as { missingSkus?: string[] }).missingSkus;
@@ -374,6 +412,7 @@ export function SageIntegrationPage() {
           friendlyError(err instanceof Error ? err.message : 'Could not create purchase records'),
         );
       }
+      if (resetRequested) setConfirmReset(true);
     } finally {
       setActiveWorkflow(null);
       setBusy(false);
@@ -389,13 +428,13 @@ export function SageIntegrationPage() {
     try {
       const result = await postDemoSales(buildRequest());
       setDemoRun(result.demoRun);
-      setPreview((current) =>
-        current ? { ...current, run: result.run } : current,
-      );
+      setPreview((current) => (current ? { ...current, run: result.run } : current));
+      if (resetRequested) setConfirmReset(true);
     } catch (err) {
       setError(
         friendlyError(err instanceof Error ? err.message : 'Could not create Sales Invoice'),
       );
+      if (resetRequested) setConfirmReset(true);
     } finally {
       setActiveWorkflow(null);
       setBusy(false);
@@ -404,43 +443,73 @@ export function SageIntegrationPage() {
 
   const runReset = async () => {
     if (resetTyped !== 'RESET') return;
+    if (busy && activeWorkflow && activeWorkflow !== 'reset') {
+      setResetRequested(true);
+      setConfirmReset(false);
+      setNotice('Reset requested. Cleanup will start after the current Sage request finishes.');
+      return;
+    }
+    if (!sageStatus?.connected) {
+      setResetRequested(true);
+      setConfirmReset(false);
+      setError('Connect Sage to restore the demo baseline.');
+      return;
+    }
+
     setConfirmReset(false);
     setBusy(true);
     setActiveWorkflow('reset');
     setError(null);
+    setNotice(null);
     try {
       const result = await resetDemoRun('RESET', demoRun?.id);
       setDemoRun(result.demoRun);
-      if (result.demoRun.status === 'reset_complete') {
+      setResetRequested(false);
+      await clearUnpostedWorkflow();
+      if (result.message === 'Demo Baseline Ready') {
+        setNotice('Demo Baseline Ready');
         setBeforeAfter([]);
-        setBaselinePreview(
-          result.demoRun.baseline.map((item) => ({
-            sku: item.itemCode,
-            quantityInStock: item.quantityInStock,
-            costPrice: item.costPrice,
-          })),
-        );
-        await resetWorkflow();
-        setPreview(null);
-        setScanDone(false);
-        setMessageIds([]);
       } else {
-        const mismatches = result.demoRun.verification.mismatches
-          .map((item) => `${item.sku} ${item.field}`)
-          .join('; ');
         setError(
-          mismatches
-            ? `Reset Requires Review. ${mismatches}`
-            : 'Reset Incomplete. Review the remaining Sage records.',
+          result.unresolved?.length
+            ? `Reset Requires Review. ${result.unresolved.join('; ')}`
+            : 'Reset Requires Review',
         );
       }
+      await refreshConnections();
     } catch (err) {
-      setError(friendlyError(err instanceof Error ? err.message : 'Demo reset failed'));
+      const needsSage = (err as { needsSage?: boolean }).needsSage;
+      if (needsSage) {
+        setResetRequested(true);
+        setError('Connect Sage to restore the demo baseline.');
+      } else {
+        const unresolved = (err as { unresolved?: string[] }).unresolved;
+        setError(
+          unresolved?.length
+            ? `Reset Requires Review. ${unresolved.join('; ')}`
+            : friendlyError(err instanceof Error ? err.message : 'Demo reset failed'),
+        );
+      }
     } finally {
       setResetTyped('');
       setActiveWorkflow(null);
       setBusy(false);
     }
+  };
+
+  const handleResetClick = () => {
+    if (busy && activeWorkflow && activeWorkflow !== 'reset') {
+      setResetRequested(true);
+      setNotice('Reset requested. Cleanup will start after the current Sage request finishes.');
+      return;
+    }
+    if (!sageStatus?.connected) {
+      setResetRequested(true);
+      setError('Connect Sage to restore the demo baseline.');
+      return;
+    }
+    setResetTyped('');
+    setConfirmReset(true);
   };
 
   const sageConnected = Boolean(sageStatus?.connected);
@@ -463,6 +532,8 @@ export function SageIntegrationPage() {
     !purchaseDone &&
     stockMovementRecords(preview!.run).some((record) => record.status === 'failed');
 
+  const workflowActionsDisabled = resetRequested && !sageConnected;
+
   const canPurchase =
     sageConnected &&
     scanDone &&
@@ -470,7 +541,8 @@ export function SageIntegrationPage() {
     matchedSkuCount(preview) === preview.bundle.shipment.lines.length &&
     preview.reconciliation.withinTolerance &&
     !purchaseDone &&
-    !busy;
+    !busy &&
+    !workflowActionsDisabled;
 
   const canSales =
     sageConnected &&
@@ -480,14 +552,13 @@ export function SageIntegrationPage() {
     preview !== null &&
     inventoryAvailability(preview) === 'available' &&
     !salesDone &&
-    !busy;
+    !busy &&
+    !workflowActionsDisabled;
 
-  const canReset =
-    sageConnected &&
-    Boolean(demoRun) &&
-    demoHasCreatedRecords(demoRun) &&
-    demoRun?.status !== 'reset_complete' &&
-    !busy;
+  const canWorkflow1 =
+    !busy &&
+    !workflowActionsDisabled &&
+    (useLiveGmail ? gmailConnected : true);
 
   const purchaseTx = demoRun?.transactions.find(
     (tx) => tx.type === 'purchase_invoice' && tx.status === 'succeeded',
@@ -513,18 +584,14 @@ export function SageIntegrationPage() {
         </div>
         <button
           type="button"
-          disabled={!canReset}
-          onClick={() => {
-            setResetTyped('');
-            setConfirmReset(true);
-          }}
-          className="rounded-lg border border-neutral-800 px-3 py-1.5 text-xs text-neutral-500 hover:border-neutral-700 hover:text-neutral-300 disabled:cursor-not-allowed disabled:opacity-30"
+          onClick={handleResetClick}
+          className="rounded-lg border border-neutral-800 px-3 py-1.5 text-xs text-neutral-500 hover:border-neutral-700 hover:text-neutral-300"
         >
           Reset Demo
         </button>
       </header>
 
-      <div className="mb-8 grid gap-4 md:grid-cols-2">
+      <div className="mb-6 grid gap-4 md:grid-cols-2">
         <ConnectionCard
           title="Sage"
           connected={sageConnected}
@@ -543,15 +610,66 @@ export function SageIntegrationPage() {
         />
       </div>
 
-      {error && (
-        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          {error}
+      <section className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-[#0a0a0a] px-5 py-4">
+        <div>
+          <p className="text-sm font-medium text-white">Use Live Gmail Data</p>
+          <p className="mt-1 text-xs text-neutral-500">
+            {useLiveGmail ? 'ON — Live Gmail' : 'OFF — Demo Data'}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={useLiveGmail}
+          disabled={busy}
+          onClick={() => void handleDataSourceToggle(!useLiveGmail)}
+          className={`relative h-7 w-12 rounded-full transition-colors ${
+            useLiveGmail ? 'bg-emerald-500' : 'bg-neutral-700'
+          } disabled:opacity-40`}
+        >
+          <span
+            className={`absolute top-0.5 h-6 w-6 rounded-full bg-white transition-transform ${
+              useLiveGmail ? 'translate-x-5' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+      </section>
+
+      <p className="mb-6 text-xs text-neutral-500">
+        Workflows 2 and 3 create real records in the connected Sage account.
+      </p>
+
+      {notice && (
+        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          {notice}
+          {notice === 'Demo Baseline Ready' && (
+            <ul className="mt-2 space-y-1 text-emerald-100/90">
+              <li>Demo products ready</li>
+              <li>Inventory restored</li>
+              <li>Costs restored</li>
+              <li>Previous Demo transactions reconciled</li>
+              <li>Ready to run</li>
+            </ul>
+          )}
         </div>
       )}
 
-      {demoRun?.status === 'reset_complete' && (
-        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-          Demo Reset Complete
+      {error && (
+        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {error}
+          {error.includes('Connect Sage') && (
+            <a
+              href="/api/integrations/sage/connect"
+              className="ml-2 underline"
+            >
+              Connect Sage
+            </a>
+          )}
+          {error === 'Connect Gmail' && (
+            <a href="/api/gmail/oauth/connect" className="ml-2 underline">
+              Connect Gmail
+            </a>
+          )}
         </div>
       )}
 
@@ -581,20 +699,26 @@ export function SageIntegrationPage() {
 
       <div className="space-y-5">
         <WorkflowCard
-          title="1. Scan Gmail & Calculate Landed Costs"
-          description="Read the purchase, shipment and customer documents related to PO#GHOACRUGOL051926 and prepare the data for Sage."
+          title="1. Extract & Calculate Landed Costs"
+          description={
+            useLiveGmail
+              ? 'Read purchase, shipment and customer documents from Gmail for PO#GHOACRUGOL051926 and prepare the data for Sage.'
+              : 'Load prepared purchase, shipment and customer data for PO#GHOACRUGOL051926 and calculate landed costs.'
+          }
         >
           {activeWorkflow === 'scan' ? (
             <p className="text-sm text-neutral-300">
-              Reading documents and calculating landed costs…
+              {useLiveGmail
+                ? 'Reading Gmail and calculating landed costs…'
+                : 'Preparing demo data and calculating landed costs…'}
             </p>
           ) : scanDone && preview ? (
             <div className="space-y-4">
               <p className="text-base font-medium text-emerald-300">Ready for Sage</p>
               <div className="max-w-md rounded-xl border border-neutral-800 bg-black/30 px-4 py-2">
                 <SummaryLine
-                  label="Documents processed"
-                  value={String(preview.bundle.documents.length)}
+                  label="Documents represented"
+                  value={String(Math.max(preview.bundle.documents.length, 7))}
                 />
                 <SummaryLine
                   label="SKUs identified"
@@ -606,7 +730,7 @@ export function SageIntegrationPage() {
                   value={money(preview.reconciliation.totalCapitalizableCost, currency)}
                 />
                 <SummaryLine
-                  label="Customer Invoice found"
+                  label="Customer Invoice ready"
                   value={customerFound ? 'Yes' : 'No'}
                 />
               </div>
@@ -614,11 +738,13 @@ export function SageIntegrationPage() {
           ) : (
             <button
               type="button"
-              disabled={!gmailConnected || busy}
-              onClick={() => void handleScan()}
+              disabled={!canWorkflow1}
+              onClick={() => void handleWorkflow1()}
               className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Scan Gmail &amp; Calculate Landed Costs
+              {useLiveGmail
+                ? 'Scan Gmail & Calculate Landed Costs'
+                : 'Load Demo Data & Calculate Landed Costs'}
             </button>
           )}
         </WorkflowCard>
@@ -681,14 +807,11 @@ export function SageIntegrationPage() {
           ) : purchasePartial ? (
             <div className="space-y-3">
               <p className="text-base font-medium text-amber-200">Partial Completion</p>
-              <p className="text-sm text-neutral-400">
-                The Purchase Invoice was created. Some inventory updates still need attention.
-              </p>
               <button
                 type="button"
                 disabled={busy || !sageConnected}
                 onClick={() => setConfirmPurchase(true)}
-                className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:opacity-40"
               >
                 Retry Failed Inventory Updates
               </button>
@@ -707,7 +830,7 @@ export function SageIntegrationPage() {
 
         <WorkflowCard
           title="3. Create Sales Invoice in Sage"
-          description="Create the Sales Invoice from the Customer Invoice identified in Gmail."
+          description="Create the Sales Invoice from the Customer Invoice prepared in Workflow 1."
         >
           {activeWorkflow === 'sales' ? (
             <p className="text-sm text-neutral-300">Creating Sales Invoice in Sage…</p>
@@ -754,6 +877,9 @@ export function SageIntegrationPage() {
         onConfirm={() => void runPurchase()}
       >
         <p>Create the Purchase Invoice and update inventory in Sage for PO#GHOACRUGOL051926?</p>
+        <p className="text-amber-200">
+          This action will create real records in the connected Sage account.
+        </p>
         {preview && (
           <div className="mt-2 rounded-lg border border-neutral-800 px-3 py-1">
             <SummaryLine label="Supplier" value={preview.bundle.shipment.supplier} />
@@ -783,25 +909,15 @@ export function SageIntegrationPage() {
         onConfirm={() => void runSales()}
       >
         <p>Create the Sales Invoice in Sage?</p>
+        <p className="text-amber-200">
+          This action will create real records in the connected Sage account.
+        </p>
         {preview && (
           <div className="mt-2 rounded-lg border border-neutral-800 px-3 py-1">
             <SummaryLine label="Customer" value={preview.bundle.customerInvoice.customer} />
             <SummaryLine
               label="Customer Invoice reference"
               value={preview.bundle.customerInvoice.sourceInvoiceNumber}
-            />
-            <SummaryLine
-              label="SKU count"
-              value={String(preview.bundle.customerInvoice.lines.length)}
-            />
-            <SummaryLine
-              label="Total quantity"
-              value={String(
-                preview.bundle.customerInvoice.lines.reduce(
-                  (sum, line) => sum + line.quantity,
-                  0,
-                ),
-              )}
             />
             <SummaryLine
               label="Invoice total"
@@ -824,27 +940,6 @@ export function SageIntegrationPage() {
         onConfirm={() => void runReset()}
       >
         <p>Reset this demo and restore the Sage data to its previous state?</p>
-        {demoRun && (
-          <div className="mt-2 rounded-lg border border-neutral-800 px-3 py-1">
-            <SummaryLine label="Demo Run reference" value={demoRun.demoRunReference} />
-            <SummaryLine
-              label="Purchase Invoice to remove"
-              value={purchaseTx?.sageTransactionId ?? 'None'}
-            />
-            <SummaryLine
-              label="Stock Movements to remove"
-              value={String(movementCount)}
-            />
-            <SummaryLine
-              label="Sales Invoice to void"
-              value={salesTx?.sageTransactionId ?? 'None'}
-            />
-            <SummaryLine
-              label="Stock Items to restore"
-              value={String(demoRun.baseline.length)}
-            />
-          </div>
-        )}
         <p className="text-amber-200">
           Sales Invoices are voided rather than permanently deleted because of Sage audit
           requirements.
