@@ -74,11 +74,19 @@ export function setCookie(
   if (httpOnly) parts.push('HttpOnly');
   if (secure) parts.push('Secure');
   const existing = res.getHeader('Set-Cookie');
-  const next = Array.isArray(existing)
-    ? [...existing, parts.join('; ')]
+  const previous = Array.isArray(existing)
+    ? existing.map(String)
     : existing
-      ? [String(existing), parts.join('; ')]
-      : [parts.join('; ')];
+      ? [String(existing)]
+      : [];
+  // Replace any prior Set-Cookie for the same name. Workflow 2 calls store.put
+  // many times in one request; appending duplicates blows past Vercel header
+  // limits and surfaces as FUNCTION_INVOCATION_FAILED.
+  const prefix = `${name}=`;
+  const next = [
+    ...previous.filter((cookie) => !cookie.startsWith(prefix)),
+    parts.join('; '),
+  ];
   res.setHeader('Set-Cookie', next);
 }
 

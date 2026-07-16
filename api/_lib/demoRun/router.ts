@@ -13,6 +13,7 @@ import {
   SageGateway,
 } from '../workflow/sageGateway';
 import { EncryptedCookieWorkflowStore } from '../workflow/store';
+import { DeferredWorkflowStore } from '../workflow/deferredStore';
 import { GmailSourceAdapter } from '../gmail/client';
 import { getValidGmailAccessToken } from '../gmail/auth';
 import { FixtureSourceAdapter, type SourceAdapter } from '../workflow/sourceAdapters';
@@ -31,7 +32,16 @@ const DEMO_RUN_COOKIE = 'synpath_demo_run_id';
 
 function bodyOf(req: VercelRequest): Record<string, unknown> {
   if (!req.body) return {};
-  if (typeof req.body === 'string') return JSON.parse(req.body || '{}') as Record<string, unknown>;
+  if (typeof req.body === 'string') {
+    const raw = req.body.trim();
+    if (!raw) return {};
+    if (raw[0] !== '{' && raw[0] !== '[') return {};
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
   return req.body as Record<string, unknown>;
 }
 
@@ -66,15 +76,22 @@ export async function handleDemoRunRequest(
 ) {
   const method = (req.method ?? 'GET').toUpperCase();
   const body = bodyOf(req);
-  const store = new EncryptedCookieWorkflowStore();
+  const cookieStore = new EncryptedCookieWorkflowStore();
+  const store = new DeferredWorkflowStore(cookieStore, req);
   const orchestrator = new WorkflowOrchestrator(store);
   bindDemoRunCookieContext(req, res);
+
+  const respond = (status: number, payload: unknown) => {
+    // Flush buffered workflow cookies once, before the response is sent.
+    store.flush(res);
+    return json(res, status, payload);
+  };
 
   const sage = await getValidAccessToken(req, res);
 
   // Reset remains clickable when Sage is disconnected — queue reconnect.
   if (method === 'POST' && path[0] === 'reset' && !sage?.session.businessId) {
-    return json(res, 401, {
+    return respond(401, {
       error: 'Connect Sage to restore the demo baseline.',
       needsSage: true,
       resetRequested: true,
@@ -82,7 +99,7 @@ export async function handleDemoRunRequest(
   }
 
   if (!sage?.session.businessId) {
-    return json(res, 401, { error: 'Connect Sage before using demo run controls' });
+    return respond(401, { error: 'Connect Sage before using demo run controls' });
   }
   const businessId = sage.session.businessId;
   const gateway = new SageGateway(sage.accessToken, businessId);
@@ -91,12 +108,12 @@ export async function handleDemoRunRequest(
     const cookieId = readDemoRunCookie(req);
     const fromCookie = cookieId ? await getDemoRun(cookieId) : null;
     const active = fromCookie ?? (await getCurrentDemoRun(businessId));
-    return json(res, 200, { run: active });
+    return respond(200, { run: active });
   }
 
   if (method === 'POST' && path[0] === 'prepare') {
     const workflow = store.get(req);
-    if (!workflow) return json(res, 404, { error: 'Create a workflow preview first' });
+    if (!workflow) return respond(404, { error: 'Create a workflow preview first' });
     const mode = (body.mode ?? workflow.mode) as SafeMode;
     const sourceType = body.sourceType === 'fixture' ? 'fixture' : 'gmail';
     const source = await resolveSource(req, res, mode, sourceType);
@@ -152,14 +169,14 @@ export async function handleDemoRunRequest(
       missingSkus,
       stockItems,
     };
-    return json(res, 200, result);
+    return respond(200, result);
   }
 
   if (method === 'POST' && path[0] === 'purchase') {
     const workflow = store.get(req);
-    if (!workflow) return json(res, 404, { error: 'Create a workflow preview first' });
+    if (!workflow) return respond(404, { error: 'Create a workflow preview first' });
     if (workflow.mode !== 'live_sage_write') {
-      return json(res, 422, { error: 'Sage must be connected for live purchase posting' });
+      return respond(422, { error: 'Sage must be connected for live purchase posting' });
     }
 
     const sourceType =
@@ -185,13 +202,13 @@ export async function handleDemoRunRequest(
     let preview = await orchestrator.preview(previewOptions);
     const missingSkus = missingSkusFromPreview(preview.bundle.shipment.lines);
     if (missingSkus.length) {
-      return json(res, 422, {
+      return respond(422, {
         error: 'The following SKU must be prepared in Sage before continuing.',
         missingSkus,
       });
     }
     if (!preview.reconciliation.withinTolerance) {
-      return json(res, 422, { error: 'Landed-cost totals do not reconcile' });
+      return respond(422, { error: 'Landed-cost totals do not reconcile' });
     }
 
     const affected = await Promise.all(
@@ -237,7 +254,7 @@ export async function handleDemoRunRequest(
     });
 
     if (!preview.selections.supplierContactId) {
-      return json(res, 422, {
+      return respond(422, {
         error: `Supplier "${preview.bundle.shipment.supplier}" was not matched in Sage. Create or rename the vendor contact, then reload Workflow 1.`,
       });
     }
@@ -269,7 +286,7 @@ export async function handleDemoRunRequest(
       return true;
     });
     if (blocking.length) {
-      return json(res, 422, {
+      return respond(422, {
         error: blocking[0],
         validationErrors: blocking,
       });
@@ -319,7 +336,7 @@ export async function handleDemoRunRequest(
       const diffDetail = formatReadBackDifferences(
         (purchaseRecord?.differences as Record<string, unknown> | undefined) ?? {},
       );
-      return json(res, 422, {
+      return respond(422, {
         error: diffDetail
           ? `Purchase Invoice could not be verified in Sage (${diffDetail})`
           : purchaseRecord?.error ||
@@ -330,7 +347,7 @@ export async function handleDemoRunRequest(
       });
     }
     if (!purchaseRecord.sageTransactionId || purchaseRecord.sageTransactionId.startsWith('DRY-')) {
-      return json(res, 422, {
+      return respond(422, {
         error: 'Purchase Invoice was not written to live Sage. Reconnect Sage and retry Workflow 2.',
         demoRun,
         run: purchaseResult.run,
@@ -346,7 +363,7 @@ export async function handleDemoRunRequest(
         throw new Error('Purchase Invoice read-back returned no id');
       }
     } catch {
-      return json(res, 422, {
+      return respond(422, {
         error:
           'Purchase Invoice could not be found in Sage after posting. Check Draft purchase invoices, or use Reset Demo and retry Workflow 2.',
         demoRun,
@@ -415,7 +432,7 @@ export async function handleDemoRunRequest(
       const movementError = inventoryResult.run.postingRecords.find(
         (record) => record.transactionType === 'stock_movement' && record.status === 'failed',
       )?.error;
-      return json(res, 422, {
+      return respond(422, {
         error:
           movementError ||
           'Stock Movements were not created in Sage. Purchase Invoice may exist as a draft — use Reset Demo before retrying.',
@@ -461,7 +478,7 @@ export async function handleDemoRunRequest(
     // Prefer HTTP 200 when PI + at least one movement succeeded so the UI can
     // advance; surface partial via flag instead of a hard 422.
     if (failedMovements && succeededMovements.length) {
-      return json(res, 200, {
+      return respond(200, {
         demoRun,
         run: inventoryResult.run,
         beforeAfter,
@@ -473,7 +490,7 @@ export async function handleDemoRunRequest(
       });
     }
 
-    return json(res, failedMovements ? 422 : 200, {
+    return respond(failedMovements ? 422 : 200, {
       demoRun,
       run: inventoryResult.run,
       beforeAfter,
@@ -488,12 +505,12 @@ export async function handleDemoRunRequest(
 
   if (method === 'POST' && path[0] === 'sales') {
     const workflow = store.get(req);
-    if (!workflow) return json(res, 404, { error: 'Create a workflow preview first' });
+    if (!workflow) return respond(404, { error: 'Create a workflow preview first' });
     const demoRun =
       (readDemoRunCookie(req) ? await getDemoRun(readDemoRunCookie(req)!) : null) ??
       (await getCurrentDemoRun(businessId));
     if (!demoRun) {
-      return json(res, 404, { error: 'Capture a purchase demo run before creating a Sales Invoice' });
+      return respond(404, { error: 'Capture a purchase demo run before creating a Sales Invoice' });
     }
 
     const sourceType =
@@ -539,7 +556,7 @@ export async function handleDemoRunRequest(
       .reverse()
       .find((record) => record.transactionType === 'sales_invoice');
     if (!salesRecord || salesRecord.status !== 'succeeded' || !salesRecord.readBackVerified) {
-      return json(res, 422, {
+      return respond(422, {
         error: 'Sales Invoice could not be verified in Sage',
         demoRun,
         run: salesResult.run,
@@ -555,7 +572,7 @@ export async function handleDemoRunRequest(
       readBackVerified: salesRecord.readBackVerified,
       createdAt: salesRecord.createdAt,
     });
-    return json(res, 200, { demoRun: updated, run: salesResult.run });
+    return respond(200, { demoRun: updated, run: salesResult.run });
   }
 
   if (method === 'POST' && path[0] === 'reset') {
@@ -574,7 +591,7 @@ export async function handleDemoRunRequest(
     // Always clear workflow cookie so the next demo cannot idempotently reuse
     // stale Purchase Invoice / Stock Movement posting records.
     store.clear(res);
-    return json(res, result.status === 'ready' ? 200 : 422, {
+    return respond(result.status === 'ready' ? 200 : 422, {
       demoRun: result.demoRun,
       message: result.message,
       unresolved: result.unresolved,
@@ -582,5 +599,5 @@ export async function handleDemoRunRequest(
     });
   }
 
-  return json(res, 404, { error: 'Unknown demo-run route', path });
+  return respond(404, { error: 'Unknown demo-run route', path });
 }
