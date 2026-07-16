@@ -427,34 +427,33 @@ export async function updateStockItem(
       query: { attributes: 'all' },
     });
     const existing = current.sales_prices ?? [];
+    const priceTypeId =
+      existing.find((price) => price.product_sales_price_type?.id)?.product_sales_price_type
+        ?.id ?? (await resolveProductSalesPriceTypeId(accessToken, businessId));
+    // Sage rejects sales_prices rows without product_sales_price_type_id. Always
+    // attach one so Reset can zero sales prices after Workflow 3 wrote them.
     salesPrices = existing.length
       ? existing.map((price, index) => ({
-          ...(price.price_name ? { price_name: price.price_name } : {}),
-          price: index === 0 ? salesPrice : Number(price.price ?? 0),
-          ...(price.price_includes_tax != null
-            ? { price_includes_tax: price.price_includes_tax }
-            : {}),
-          ...(price.product_sales_price_type?.id
+          ...(price.price_name ? { price_name: price.price_name } : { price_name: 'Sales Price' }),
+          price: index === 0 ? Number(salesPrice) : Number(price.price ?? 0),
+          price_includes_tax: Boolean(price.price_includes_tax),
+          ...(price.product_sales_price_type?.id || priceTypeId
             ? {
                 product_sales_price_type_id:
-                  price.product_sales_price_type.id,
+                  price.product_sales_price_type?.id ?? priceTypeId,
               }
             : {}),
         }))
-      : await (async () => {
-          const priceTypeId = await resolveProductSalesPriceTypeId(
-            accessToken,
-            businessId,
-          );
-          return [
+      : Number(salesPrice) === 0
+        ? undefined
+        : [
             {
               price_name: 'Sales Price',
-              price: salesPrice,
+              price: Number(salesPrice),
               price_includes_tax: false,
               ...(priceTypeId ? { product_sales_price_type_id: priceTypeId } : {}),
             },
           ];
-        })();
   }
   const body = {
     stock_item: {

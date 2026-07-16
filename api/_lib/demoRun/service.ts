@@ -398,41 +398,135 @@ async function voidSalesInvoices(
   }
 }
 
+function isBaselineStockMovement(movement: Record<string, unknown>): boolean {
+  const details = String(movement.details ?? '');
+  const reference = String(movement.reference ?? '');
+  return (
+    details.includes(GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE) ||
+    reference.includes(GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE)
+  );
+}
+
+async function deleteStockMovementById(
+  accessToken: string,
+  businessId: string,
+  id: string,
+  resetLog: string[],
+  unresolved: string[],
+): Promise<boolean> {
+  if (!id) return true;
+  try {
+    await deleteStockMovement(accessToken, businessId, id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Stock Movement delete failed';
+    if (/not found|404|already/i.test(message)) {
+      resetLog.push(`Stock Movement already deleted (${id})`);
+      return true;
+    }
+    unresolved.push(`Stock Movement ${id}: ${message}`);
+    return false;
+  }
+
+  try {
+    await getStockMovement(accessToken, businessId, id);
+    unresolved.push(`Stock Movement ${id}: still present after delete`);
+    return false;
+  } catch {
+    resetLog.push(`Stock Movement deleted (${id})`);
+    return true;
+  }
+}
+
+/**
+ * Delete demo Stock Movements from the transaction log and by Sage search.
+ * UK movements store the demo token in `details` (not `reference`), so search
+ * by DEMO-* is required when the demo-run cookie/log is incomplete.
+ */
 async function deleteDemoStockMovements(
   accessToken: string,
   businessId: string,
-  record: DemoRunRecord,
+  record: DemoRunRecord | null,
   unresolved: string[],
+  resetLog: string[],
 ) {
-  const movements = record.transactions.filter(
-    (tx) => tx.type === 'stock_movement' && ['succeeded', 'deleted'].includes(tx.status),
+  const attempted = new Set<string>();
+
+  const deleteOne = async (id: string) => {
+    if (!id || attempted.has(id)) return;
+    attempted.add(id);
+    const ok = await deleteStockMovementById(
+      accessToken,
+      businessId,
+      id,
+      resetLog,
+      unresolved,
+    );
+    if (!record) return;
+    const tracked = record.transactions.find(
+      (tx) => tx.type === 'stock_movement' && tx.sageTransactionId === id,
+    );
+    if (tracked) {
+      if (ok) {
+        tracked.status = 'deleted';
+        tracked.cleanedAt = new Date().toISOString();
+        tracked.readBackSummary = { missingAfterDelete: true };
+      }
+      return;
+    }
+    if (ok) {
+      record.transactions.push({
+        type: 'stock_movement',
+        sageTransactionId: id,
+        externalReference: record.demoRunReference,
+        status: 'deleted',
+        requestSummary: { foundBySearch: true },
+        readBackSummary: { missingAfterDelete: true },
+        readBackVerified: true,
+        createdAt: new Date().toISOString(),
+        cleanedAt: new Date().toISOString(),
+      });
+    }
+  };
+
+  if (record) {
+    const movements = record.transactions.filter(
+      (tx) => tx.type === 'stock_movement' && ['succeeded', 'deleted'].includes(tx.status),
+    );
+    for (const movement of [...movements].reverse()) {
+      if (movement.status === 'deleted') {
+        attempted.add(movement.sageTransactionId);
+        continue;
+      }
+      // Never delete canonical baseline movements.
+      if (movement.externalReference === GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE) continue;
+      await deleteOne(movement.sageTransactionId);
+    }
+  }
+
+  const searchTerms = Array.from(
+    new Set(
+      [
+        record?.demoRunReference,
+        DEMO_REFERENCE_PREFIX,
+        'DEMO-GHOACRUGOL051926',
+      ].filter((term): term is string => Boolean(term)),
+    ),
   );
-  for (const movement of [...movements].reverse()) {
-    if (movement.status === 'deleted') continue;
-    // Never delete canonical baseline movements.
-    if (movement.externalReference === GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE) continue;
+
+  for (const term of searchTerms) {
     try {
-      await deleteStockMovement(accessToken, businessId, movement.sageTransactionId);
-      try {
-        await getStockMovement(accessToken, businessId, movement.sageTransactionId);
-        movement.readBackSummary = { stillPresent: true };
-      } catch {
-        movement.readBackSummary = { missingAfterDelete: true };
+      const found = await listStockMovements(accessToken, businessId, term);
+      for (const movement of found) {
+        const id = String(movement.id ?? '');
+        if (!id || isBaselineStockMovement(movement)) continue;
+        await deleteOne(id);
       }
-      movement.status = 'deleted';
-      movement.cleanedAt = new Date().toISOString();
-      record.resetLog.push(`Stock Movement deleted (${movement.sageTransactionId})`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Stock Movement delete failed';
-      if (/not found|404|already/i.test(message)) {
-        movement.status = 'deleted';
-        movement.cleanedAt = new Date().toISOString();
-        record.resetLog.push(
-          `Stock Movement already deleted (${movement.sageTransactionId})`,
-        );
-      } else {
-        unresolved.push(`Stock Movement ${movement.sageTransactionId}: ${message}`);
-      }
+      unresolved.push(
+        `Stock Movement search (${term}) failed: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
     }
   }
 }
@@ -630,22 +724,16 @@ async function ensureBaselineStockItem(
     }
   }
 
-  // Restore controlled fields.
+  // Always rewrite controlled fields (cost/sales/description). Sage may keep
+  // stale sales_prices or recalculate cost from leftover movements — force PUT.
   try {
-    const needsUpdate =
-      item.description !== baseline.description ||
-      !nearlyEqual(item.costPrice, baseline.costPrice) ||
-      !nearlyEqual(item.salesPrice, baseline.salesPrice) ||
-      item.reorderLevel !== baseline.reorderLevel;
-    if (needsUpdate) {
-      item = await updateStockItem(accessToken, businessId, item.id, {
-        description: baseline.description,
-        cost_price: baseline.costPrice,
-        sales_price: baseline.salesPrice,
-        reorder_level: baseline.reorderLevel,
-      });
-      log.push(`Restored Stock Item fields for ${baseline.sku}`);
-    }
+    item = await updateStockItem(accessToken, businessId, item.id, {
+      description: baseline.description,
+      cost_price: baseline.costPrice,
+      sales_price: baseline.salesPrice,
+      reorder_level: baseline.reorderLevel,
+    });
+    log.push(`Restored Stock Item fields for ${baseline.sku}`);
   } catch (error) {
     unresolved.push(
       `${baseline.sku}: field restore failed — ${
@@ -685,33 +773,24 @@ async function ensureBaselineStockItem(
     }
   }
 
-  // Final cost restore after quantity movement (visible cost_price).
-  if (!nearlyEqual(item.costPrice, baseline.costPrice)) {
+  // Final cost + sales restore after quantity movement (visible prices).
+  try {
+    item = await updateStockItem(accessToken, businessId, item.id, {
+      cost_price: baseline.costPrice,
+      sales_price: baseline.salesPrice,
+    });
+    item = await getStockItem(accessToken, businessId, item.id);
+    log.push(`Restored prices for ${baseline.sku}`);
+  } catch (error) {
+    unresolved.push(
+      `${baseline.sku}: price restore failed — ${
+        error instanceof Error ? error.message : 'unknown error'
+      }`,
+    );
     try {
-      item = await updateStockItem(accessToken, businessId, item.id, {
-        cost_price: baseline.costPrice,
-      });
       item = await getStockItem(accessToken, businessId, item.id);
-    } catch (error) {
-      unresolved.push(
-        `${baseline.sku}: cost restore failed — ${
-          error instanceof Error ? error.message : 'unknown error'
-        }`,
-      );
-    }
-  }
-  if (!nearlyEqual(item.salesPrice, baseline.salesPrice)) {
-    try {
-      item = await updateStockItem(accessToken, businessId, item.id, {
-        sales_price: baseline.salesPrice,
-      });
-      item = await getStockItem(accessToken, businessId, item.id);
-    } catch (error) {
-      unresolved.push(
-        `${baseline.sku}: sales price restore failed — ${
-          error instanceof Error ? error.message : 'unknown error'
-        }`,
-      );
+    } catch {
+      // keep prior item snapshot
     }
   }
 
@@ -760,32 +839,45 @@ export async function restoreDemoBaseline(input: {
     await saveDemoRun(demoRun);
   }
 
-  // Always clean demo invoices in Sage — even when the demo-run cookie/KV record
-  // is missing. Otherwise Reset only restores inventory and leaves invoices behind.
+  // Always clean demo invoices + stock movements in Sage — even when the
+  // demo-run cookie/KV record is missing. Otherwise Reset only restores
+  // inventory qty and leaves prices/invoices/movements behind.
   // Order: delete Purchase Invoices first (hard-delete Draft), then void Sales,
-  // then delete Stock Movements.
+  // then delete Stock Movements (so cost_price can return to 0).
+  const activeDemoRun =
+    demoRun && demoRun.sageBusinessId === input.businessId ? demoRun : null;
+
   await deleteDemoPurchaseInvoices(
     input.accessToken,
     input.businessId,
-    demoRun && demoRun.sageBusinessId === input.businessId ? demoRun : null,
+    activeDemoRun,
     unresolved,
     resetLog,
   );
 
-  if (demoRun && demoRun.sageBusinessId === input.businessId) {
-    await voidSalesInvoices(input.accessToken, input.businessId, demoRun, unresolved);
+  if (activeDemoRun) {
+    await voidSalesInvoices(input.accessToken, input.businessId, activeDemoRun, unresolved);
     await voidOrphanSalesInvoicesByReference(
       input.accessToken,
       input.businessId,
-      demoRun,
+      activeDemoRun,
       unresolved,
     );
-    await deleteDemoStockMovements(input.accessToken, input.businessId, demoRun, unresolved);
-    demoRun.resetLog.push(...resetLog);
-    await saveDemoRun(demoRun);
+  }
+
+  await deleteDemoStockMovements(
+    input.accessToken,
+    input.businessId,
+    activeDemoRun,
+    unresolved,
+    resetLog,
+  );
+
+  if (activeDemoRun) {
+    activeDemoRun.resetLog.push(...resetLog);
+    await saveDemoRun(activeDemoRun);
   } else if (resetLog.length) {
-    // No demo-run record, but we still deleted invoices from Sage.
-    console.info('[demo/reset] cleaned invoices without demo-run record', resetLog);
+    console.info('[demo/reset] cleaned Sage artifacts without demo-run record', resetLog);
   }
 
   let defaults: Awaited<ReturnType<typeof resolveStockItemDefaults>>;
@@ -822,27 +914,48 @@ export async function restoreDemoBaseline(input: {
     );
   }
 
-  // Optional: list leftover movements with demo run reference (idempotent info only).
-  if (demoRun) {
+  // Report leftover demo movements (baseline quantity-adjust movements ignored).
+  // Cleanup already searched; this is verification only — do not delete here or
+  // quantity/cost restore above would be invalidated.
+  const leftoverIds = new Set<string>();
+  const leftoverTerms = Array.from(
+    new Set(
+      [
+        demoRun?.demoRunReference,
+        DEMO_REFERENCE_PREFIX,
+        'DEMO-GHOACRUGOL051926',
+      ].filter((term): term is string => Boolean(term)),
+    ),
+  );
+  for (const term of leftoverTerms) {
     try {
-      const movements = await listStockMovements(
+      const leftovers = await listStockMovements(
         input.accessToken,
         input.businessId,
-        demoRun.demoRunReference,
+        term,
       );
-      if (movements.length) {
-        unresolved.push(
-          `${movements.length} Stock Movement(s) still reference ${demoRun.demoRunReference}`,
-        );
+      for (const movement of leftovers) {
+        if (isBaselineStockMovement(movement)) continue;
+        const id = String(movement.id ?? '');
+        if (id) leftoverIds.add(id);
       }
     } catch {
       // non-fatal
     }
   }
+  if (leftoverIds.size) {
+    unresolved.push(
+      `${leftoverIds.size} Stock Movement(s) still reference ${
+        demoRun?.demoRunReference ?? DEMO_REFERENCE_PREFIX
+      }`,
+    );
+  }
 
   const productsReady = unresolved.every((item) => !/create failed|productsReady/i.test(item));
   const inventoryRestored = !unresolved.some((item) => /quantity/i.test(item));
-  const costsRestored = !unresolved.some((item) => /cost_price|cost restore/i.test(item));
+  const costsRestored = !unresolved.some((item) =>
+    /cost_price|sales_price|price restore|field restore/i.test(item),
+  );
   const transactionsReconciled = !unresolved.some((item) =>
     /Purchase Invoice|Sales Invoice|Stock Movement/i.test(item),
   );

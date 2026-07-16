@@ -22,6 +22,8 @@ const {
   updateStockItem,
   getStockItem,
   createStockMovement,
+  deleteStockMovement,
+  getStockMovement,
 } = vi.hoisted(() => ({
   deletePurchaseInvoice: vi.fn(),
   deleteSalesInvoice: vi.fn(),
@@ -40,6 +42,10 @@ const {
   updateStockItem: vi.fn(),
   getStockItem: vi.fn(),
   createStockMovement: vi.fn(),
+  deleteStockMovement: vi.fn(),
+  getStockMovement: vi.fn(async () => {
+    throw new Error('404 not found');
+  }),
 }));
 
 vi.mock('../api/_lib/sage/client', async () => {
@@ -61,10 +67,8 @@ vi.mock('../api/_lib/sage/client', async () => {
     getStockItem,
     createStockMovement,
     createStockItem: vi.fn(),
-    deleteStockMovement: vi.fn(),
-    getStockMovement: vi.fn(async () => {
-      throw new Error('404 not found');
-    }),
+    deleteStockMovement,
+    getStockMovement,
   };
 });
 
@@ -84,26 +88,54 @@ describe('demo reset invoice cleanup', () => {
   beforeEach(() => {
     __resetMemoryDemoRunStore();
     vi.clearAllMocks();
-    findStockItemBySku.mockImplementation(async (_token, _biz, sku: string) => ({
-      ...stock,
-      id: `id-${sku}`,
-      sku,
-      quantityInStock: 0,
-      costPrice: 24.16,
-    }));
-    getStockItem.mockImplementation(async (_token, _biz, id: string) => ({
-      ...stock,
-      id,
-      sku: String(id).replace(/^id-/, ''),
-    }));
-    updateStockItem.mockImplementation(async (_token, _biz, id: string, patch) => ({
-      ...stock,
-      id,
-      ...patch,
-    }));
+    const priceState = new Map<string, { costPrice: number; salesPrice: number }>();
+    findStockItemBySku.mockImplementation(async (_token, _biz, sku: string) => {
+      const id = `id-${sku}`;
+      const prices = priceState.get(id) ?? { costPrice: 24.16, salesPrice: 39.45 };
+      return {
+        ...stock,
+        id,
+        sku,
+        quantityInStock: 0,
+        costPrice: prices.costPrice,
+        salesPrice: prices.salesPrice,
+      };
+    });
+    getStockItem.mockImplementation(async (_token, _biz, id: string) => {
+      const prices = priceState.get(id) ?? { costPrice: 24.16, salesPrice: 39.45 };
+      return {
+        ...stock,
+        id,
+        sku: String(id).replace(/^id-/, ''),
+        quantityInStock: 0,
+        costPrice: prices.costPrice,
+        salesPrice: prices.salesPrice,
+      };
+    });
+    updateStockItem.mockImplementation(async (_token, _biz, id: string, patch) => {
+      const prev = priceState.get(id) ?? { costPrice: 24.16, salesPrice: 39.45 };
+      const next = {
+        costPrice: patch.cost_price != null ? Number(patch.cost_price) : prev.costPrice,
+        salesPrice: patch.sales_price != null ? Number(patch.sales_price) : prev.salesPrice,
+      };
+      priceState.set(id, next);
+      return {
+        ...stock,
+        id,
+        sku: String(id).replace(/^id-/, ''),
+        quantityInStock: 0,
+        costPrice: next.costPrice,
+        salesPrice: next.salesPrice,
+        description: patch.description ?? stock.description,
+        reorderLevel: patch.reorder_level ?? stock.reorderLevel ?? 10,
+      };
+    });
     createStockMovement.mockResolvedValue({ id: 'sm-adjust' });
+    deleteStockMovement.mockResolvedValue(undefined);
+    getStockMovement.mockRejectedValue(new Error('404 not found'));
     listPurchaseInvoices.mockResolvedValue([]);
     listSalesInvoices.mockResolvedValue([]);
+    listStockMovements.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -196,5 +228,53 @@ describe('demo reset invoice cleanup', () => {
 
     expect(deletePurchaseInvoice).toHaveBeenCalledWith('token', 'biz-1', 'pi-orphan-1');
     expect(result.unresolved.filter((item) => /Purchase Invoice/i.test(item))).toEqual([]);
+  });
+
+  it('deletes orphan Stock Movements found by Sage search and restores prices to 0', async () => {
+    const orphanMovements = Array.from({ length: 6 }, (_, index) => ({
+      id: `sm-orphan-${index + 1}`,
+      details: `DEMO-GHOACRUGOL051926-3D85E449|SKU${index + 1}`,
+    }));
+    listStockMovements.mockImplementation(async (_token, _biz, term?: string) => {
+      if (!term) return [];
+      if (
+        term === 'DEMO-GHOACRUGOL051926' ||
+        term === 'DEMO-GHOACRUGOL051926-3D85E449' ||
+        String(term).startsWith('DEMO-GHOACRUGOL051926')
+      ) {
+        // After deletes are attempted, pretend Sage no longer returns them.
+        if (deleteStockMovement.mock.calls.length >= orphanMovements.length) return [];
+        return orphanMovements;
+      }
+      return [];
+    });
+
+    const record = await captureBaseline({
+      sageBusinessId: 'biz-1',
+      workflowRunId: 'wf-movements',
+      externalPoReference: 'GHOACRUGOL051926',
+      vendorInvoiceReference: 'UG26A0519',
+      customerInvoiceReference: 'GA18',
+      stockItems: [stock],
+      demoRunReference: 'DEMO-GHOACRUGOL051926-3D85E449',
+    });
+
+    const result = await restoreDemoBaseline({
+      accessToken: 'token',
+      businessId: 'biz-1',
+      confirmation: 'RESET',
+      activeDemoRunId: record.id,
+    });
+
+    expect(deleteStockMovement.mock.calls.map((call) => call[2]).sort()).toEqual(
+      orphanMovements.map((item) => item.id).sort(),
+    );
+    expect(result.unresolved.filter((item) => /Stock Movement/i.test(item))).toEqual([]);
+    expect(updateStockItem).toHaveBeenCalled();
+    const pricePatches = updateStockItem.mock.calls.map((call) => call[3]);
+    expect(pricePatches.some((patch) => patch.cost_price === 0 && patch.sales_price === 0)).toBe(
+      true,
+    );
+    expect(result.summary.costsRestored).toBe(true);
   });
 });
