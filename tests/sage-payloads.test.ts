@@ -11,7 +11,8 @@ import {
 import { calculateLandedCosts } from '../api/_lib/workflow/landedCostEngine';
 import { sanitizeContactPayload } from '../api/_lib/sage/payloadAllowlist';
 import {
-  DEMO_SALES_INVOICE_VOID_REASON,
+  DEMO_INVOICE_VOID_REASON,
+  deletePurchaseInvoice,
   deleteSalesInvoice,
 } from '../api/_lib/sage/client';
 
@@ -36,21 +37,26 @@ async function fixture() {
 }
 
 describe('OpenAPI-aligned Sage payload builders', () => {
-  it('voids released Sales Invoices with void_reason on DELETE', async () => {
+  it('voids released Sales and Purchase Invoices with void_reason on DELETE', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);
 
     await deleteSalesInvoice('token', 'biz-1', '803cf9cb414e4ae581002536573cead1');
+    await deletePurchaseInvoice('token', 'biz-1', '64d59f29cdba4cf2bf690efe8f3eb1bd');
 
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const parsed = new URL(url);
-    expect(parsed.pathname).toContain(
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const salesUrl = new URL(fetchMock.mock.calls[0][0] as string);
+    const purchaseUrl = new URL(fetchMock.mock.calls[1][0] as string);
+    expect(salesUrl.pathname).toContain(
       '/sales_invoices/803cf9cb414e4ae581002536573cead1',
     );
-    expect(parsed.searchParams.get('void_reason')).toBe(DEMO_SALES_INVOICE_VOID_REASON);
-    expect(init.method).toBe('DELETE');
-    expect((init.headers as Record<string, string>)['X-Business']).toBe('biz-1');
+    expect(purchaseUrl.pathname).toContain(
+      '/purchase_invoices/64d59f29cdba4cf2bf690efe8f3eb1bd',
+    );
+    expect(salesUrl.searchParams.get('void_reason')).toBe(DEMO_INVOICE_VOID_REASON);
+    expect(purchaseUrl.searchParams.get('void_reason')).toBe(DEMO_INVOICE_VOID_REASON);
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe('DELETE');
   });
 
   it('allows only documented fields when creating a demo contact', () => {

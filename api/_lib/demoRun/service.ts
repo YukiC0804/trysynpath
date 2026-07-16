@@ -19,6 +19,8 @@ import {
   getSalesInvoice,
   getStockItem,
   getStockMovement,
+  listPurchaseInvoices,
+  listSalesInvoices,
   listStockMovements,
   resolveStockItemDefaults,
   updateStockItem,
@@ -265,6 +267,93 @@ export async function ensureLandedCostPrice(input: {
   return { updated: true, item: updated };
 }
 
+function invoiceStatusText(invoice: Record<string, unknown> | null | undefined): string {
+  if (!invoice) return '';
+  const status = invoice.status;
+  if (typeof status === 'string') return status;
+  if (status && typeof status === 'object') {
+    const record = status as { id?: unknown; displayed_as?: unknown };
+    return String(record.id ?? record.displayed_as ?? '');
+  }
+  return String(invoice.status_id ?? '');
+}
+
+function isVoidLikeStatus(status: string): boolean {
+  return Boolean(status) && /void/i.test(status);
+}
+
+async function readInvoiceStatus(
+  kind: 'purchase' | 'sales',
+  accessToken: string,
+  businessId: string,
+  id: string,
+): Promise<{ gone: boolean; status: string }> {
+  try {
+    const readBack =
+      kind === 'purchase'
+        ? await getPurchaseInvoice(accessToken, businessId, id)
+        : await getSalesInvoice(accessToken, businessId, id);
+    return { gone: false, status: invoiceStatusText(readBack) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (/not found|404/i.test(message)) return { gone: true, status: '' };
+    throw error;
+  }
+}
+
+async function voidDemoInvoiceById(
+  kind: 'purchase' | 'sales',
+  accessToken: string,
+  businessId: string,
+  id: string,
+): Promise<{ ok: boolean; status: string; detail?: string }> {
+  const before = await readInvoiceStatus(kind, accessToken, businessId, id);
+  if (before.gone || isVoidLikeStatus(before.status)) {
+    return { ok: true, status: before.gone ? 'MISSING' : before.status };
+  }
+
+  try {
+    if (kind === 'purchase') {
+      await deletePurchaseInvoice(accessToken, businessId, id);
+    } else {
+      await deleteSalesInvoice(accessToken, businessId, id);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `${kind} invoice void failed`;
+    if (/not found|404|already/i.test(message)) {
+      return { ok: true, status: 'MISSING', detail: message };
+    }
+    // Some tenants reject void_reason on Draft purchase deletes — retry once without it.
+    if (
+      kind === 'purchase' &&
+      /void_reason|unpermitted|invalid/i.test(message)
+    ) {
+      try {
+        await deletePurchaseInvoice(accessToken, businessId, id, '');
+      } catch (retryError) {
+        const retryMessage =
+          retryError instanceof Error ? retryError.message : message;
+        if (/not found|404|already/i.test(retryMessage)) {
+          return { ok: true, status: 'MISSING', detail: retryMessage };
+        }
+        return { ok: false, status: before.status, detail: retryMessage };
+      }
+    } else {
+      return { ok: false, status: before.status, detail: message };
+    }
+  }
+
+  const after = await readInvoiceStatus(kind, accessToken, businessId, id);
+  if (after.gone || isVoidLikeStatus(after.status)) {
+    return { ok: true, status: after.gone ? 'MISSING' : after.status };
+  }
+  return {
+    ok: false,
+    status: after.status || before.status,
+    detail: `${kind} invoice still ${after.status || 'active'} after void`,
+  };
+}
+
 async function voidSalesInvoices(
   accessToken: string,
   businessId: string,
@@ -276,36 +365,21 @@ async function voidSalesInvoices(
   );
   for (const item of sales) {
     if (item.status === 'voided') continue;
-    try {
-      await deleteSalesInvoice(accessToken, businessId, item.sageTransactionId);
-      try {
-        const readBack = await getSalesInvoice(
-          accessToken,
-          businessId,
-          item.sageTransactionId,
-        );
-        const status = String(
-          (readBack.status as { id?: string; displayed_as?: string } | undefined)?.id ??
-            (readBack.status as { displayed_as?: string } | undefined)?.displayed_as ??
-            readBack.status_id ??
-            '',
-        ).toLowerCase();
-        item.readBackSummary = { status, afterDelete: true };
-      } catch {
-        item.readBackSummary = { missingAfterDelete: true };
-      }
+    const result = await voidDemoInvoiceById(
+      'sales',
+      accessToken,
+      businessId,
+      item.sageTransactionId,
+    );
+    if (result.ok) {
       item.status = 'voided';
       item.cleanedAt = new Date().toISOString();
+      item.readBackSummary = { status: result.status, afterDelete: true };
       record.resetLog.push(`Sales Invoice Voided (${item.sageTransactionId})`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Sales Invoice void failed';
-      if (/not found|404|already/i.test(message)) {
-        item.status = 'voided';
-        item.cleanedAt = new Date().toISOString();
-        record.resetLog.push(`Sales Invoice already voided (${item.sageTransactionId})`);
-      } else {
-        unresolved.push(`Sales Invoice ${item.sageTransactionId}: ${message}`);
-      }
+    } else {
+      unresolved.push(
+        `Sales Invoice ${item.sageTransactionId}: ${result.detail || 'void failed'}`,
+      );
     }
   }
 }
@@ -356,37 +430,130 @@ async function deleteDemoPurchaseInvoices(
   unresolved: string[],
 ) {
   const purchases = record.transactions.filter(
-    (tx) => tx.type === 'purchase_invoice' && ['succeeded', 'deleted'].includes(tx.status),
+    (tx) =>
+      tx.type === 'purchase_invoice' &&
+      ['succeeded', 'deleted', 'voided'].includes(tx.status),
   );
   for (const purchase of purchases) {
-    if (purchase.status === 'deleted') continue;
-    try {
-      await deletePurchaseInvoice(accessToken, businessId, purchase.sageTransactionId);
-      try {
-        await getPurchaseInvoice(accessToken, businessId, purchase.sageTransactionId);
-        unresolved.push(
-          `Purchase Invoice ${purchase.sageTransactionId} still present after delete`,
-        );
-      } catch {
-        purchase.status = 'deleted';
-        purchase.cleanedAt = new Date().toISOString();
-        purchase.readBackSummary = { missingAfterDelete: true };
-        record.resetLog.push(`Purchase Invoice deleted (${purchase.sageTransactionId})`);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Purchase Invoice delete failed';
-      if (/not found|404|already/i.test(message)) {
-        purchase.status = 'deleted';
-        purchase.cleanedAt = new Date().toISOString();
+    if (purchase.status === 'deleted' || purchase.status === 'voided') continue;
+    const result = await voidDemoInvoiceById(
+      'purchase',
+      accessToken,
+      businessId,
+      purchase.sageTransactionId,
+    );
+    if (result.ok) {
+      // Sage voids released PIs (still GET-able); Drafts may hard-delete.
+      purchase.status = result.status === 'MISSING' ? 'deleted' : 'voided';
+      purchase.cleanedAt = new Date().toISOString();
+      purchase.readBackSummary = { status: result.status, afterDelete: true };
+      record.resetLog.push(
+        `Purchase Invoice ${purchase.status} (${purchase.sageTransactionId})`,
+      );
+    } else {
+      unresolved.push(
+        `Purchase Invoice ${purchase.sageTransactionId} could not be removed: ${
+          result.detail || 'void failed'
+        }`,
+      );
+    }
+  }
+}
+
+/** Catch orphan demo invoices when the demo-run transaction log is incomplete. */
+async function voidOrphanDemoInvoicesByReference(
+  accessToken: string,
+  businessId: string,
+  record: DemoRunRecord,
+  unresolved: string[],
+) {
+  const reference = record.demoRunReference;
+  if (!reference) return;
+
+  try {
+    const purchases = await listPurchaseInvoices(accessToken, businessId, reference);
+    for (const invoice of purchases) {
+      if (!invoice.id || isVoidLikeStatus(invoice.status)) continue;
+      const tracked = record.transactions.some(
+        (tx) =>
+          tx.type === 'purchase_invoice' &&
+          tx.sageTransactionId === invoice.id &&
+          ['voided', 'deleted'].includes(tx.status),
+      );
+      if (tracked) continue;
+      const result = await voidDemoInvoiceById(
+        'purchase',
+        accessToken,
+        businessId,
+        invoice.id,
+      );
+      if (result.ok) {
         record.resetLog.push(
-          `Purchase Invoice already deleted (${purchase.sageTransactionId})`,
+          `Purchase Invoice voided by reference (${invoice.id} / ${reference})`,
         );
+        record.transactions.push({
+          type: 'purchase_invoice',
+          sageTransactionId: invoice.id,
+          externalReference: reference,
+          status: result.status === 'MISSING' ? 'deleted' : 'voided',
+          requestSummary: { foundByReference: true },
+          readBackSummary: { status: result.status },
+          readBackVerified: true,
+          createdAt: new Date().toISOString(),
+          cleanedAt: new Date().toISOString(),
+        });
       } else {
         unresolved.push(
-          `Purchase Invoice ${purchase.sageTransactionId} could not be removed: ${message}`,
+          `Purchase Invoice ${invoice.id}: ${result.detail || 'void failed'}`,
         );
       }
     }
+  } catch (error) {
+    unresolved.push(
+      `Purchase Invoice reference lookup failed: ${
+        error instanceof Error ? error.message : 'unknown error'
+      }`,
+    );
+  }
+
+  try {
+    const sales = await listSalesInvoices(accessToken, businessId, reference);
+    for (const invoice of sales) {
+      const id = String(invoice.id ?? '');
+      if (!id || isVoidLikeStatus(invoiceStatusText(invoice))) continue;
+      const tracked = record.transactions.some(
+        (tx) =>
+          tx.type === 'sales_invoice' &&
+          tx.sageTransactionId === id &&
+          tx.status === 'voided',
+      );
+      if (tracked) continue;
+      const result = await voidDemoInvoiceById('sales', accessToken, businessId, id);
+      if (result.ok) {
+        record.resetLog.push(
+          `Sales Invoice voided by reference (${id} / ${reference})`,
+        );
+        record.transactions.push({
+          type: 'sales_invoice',
+          sageTransactionId: id,
+          externalReference: reference,
+          status: 'voided',
+          requestSummary: { foundByReference: true },
+          readBackSummary: { status: result.status },
+          readBackVerified: true,
+          createdAt: new Date().toISOString(),
+          cleanedAt: new Date().toISOString(),
+        });
+      } else {
+        unresolved.push(`Sales Invoice ${id}: ${result.detail || 'void failed'}`);
+      }
+    }
+  } catch (error) {
+    unresolved.push(
+      `Sales Invoice reference lookup failed: ${
+        error instanceof Error ? error.message : 'unknown error'
+      }`,
+    );
   }
 }
 
@@ -534,6 +701,12 @@ export async function restoreDemoBaseline(input: {
     await voidSalesInvoices(input.accessToken, input.businessId, demoRun, unresolved);
     await deleteDemoStockMovements(input.accessToken, input.businessId, demoRun, unresolved);
     await deleteDemoPurchaseInvoices(input.accessToken, input.businessId, demoRun, unresolved);
+    await voidOrphanDemoInvoicesByReference(
+      input.accessToken,
+      input.businessId,
+      demoRun,
+      unresolved,
+    );
     await saveDemoRun(demoRun);
   }
 

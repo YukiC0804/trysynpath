@@ -622,10 +622,14 @@ export async function createPurchaseInvoice(
   return normalizePurchaseInvoice(entity);
 }
 
+/** Released (non-Draft) invoices often require void_reason on DELETE. */
+export const DEMO_INVOICE_VOID_REASON = 'Synpath Ghostboards demo reset';
+
 export async function deletePurchaseInvoice(
   accessToken: string,
   businessId: string,
   id: string,
+  voidReason = DEMO_INVOICE_VOID_REASON,
 ) {
   if (!id || id === 'undefined' || id === 'null') {
     throw new SageApiError('Purchase invoice id is required for delete', 400);
@@ -633,6 +637,8 @@ export async function deletePurchaseInvoice(
   await sageFetch(`/purchase_invoices/${id}`, accessToken, {
     method: 'DELETE',
     businessId,
+    // Sage UK voids released Purchase Invoices; omit only if caller passes ''.
+    ...(voidReason ? { query: { void_reason: voidReason } } : {}),
   });
 }
 
@@ -761,14 +767,11 @@ export async function getSalesInvoice(
   });
 }
 
-/** Released (non-Draft) Sales Invoices require void_reason on DELETE. */
-export const DEMO_SALES_INVOICE_VOID_REASON = 'Synpath Ghostboards demo reset';
-
 export async function deleteSalesInvoice(
   accessToken: string,
   businessId: string,
   id: string,
-  voidReason = DEMO_SALES_INVOICE_VOID_REASON,
+  voidReason = DEMO_INVOICE_VOID_REASON,
 ) {
   if (!id || id === 'undefined' || id === 'null') {
     throw new SageApiError('Sales invoice id is required for delete/void', 400);
