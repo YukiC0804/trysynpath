@@ -25,6 +25,7 @@ import {
   resolveStockItemDefaults,
   updateStockItem,
 } from '../sage/client';
+import { stockMovementAdjustDetailsMarker } from '../workflow/sageGateway';
 import { DEMO_REFERENCE_PREFIX, FIXTURE_REFERENCE } from '../workflow/fixtures';
 import {
   clearActiveDemoRunPointer,
@@ -98,11 +99,18 @@ export async function captureBaseline(input: {
   customerInvoiceReference: string;
   stockItems: NormalizedStock[];
   demoRunReference?: string;
+  /** Force a brand-new demo run + DEMO-* reference (e.g. after incomplete Reset). */
+  forceNew?: boolean;
 }): Promise<DemoRunRecord> {
   const existing = await getActiveDemoRunForBusiness(input.sageBusinessId);
+  const resetLike =
+    existing?.status === 'reset_complete' ||
+    existing?.status === 'reset_incomplete' ||
+    existing?.status === 'resetting';
   if (
+    !input.forceNew &&
     existing &&
-    existing.status !== 'reset_complete' &&
+    !resetLike &&
     existing.transactions.some((tx) => tx.status === 'succeeded')
   ) {
     return existing;
@@ -206,6 +214,83 @@ export async function recordAfterStockState(
   record.updatedAt = new Date().toISOString();
   await saveDemoRun(record);
   return record;
+}
+
+/**
+ * Ensure Sage on-hand quantity equals `targetQuantity` by posting a corrective
+ * Stock Movement when needed. Used after WF2 receipt / WF3 sale so idempotent
+ * reuse of stale DEMO-* movements cannot leave inventory stuck at 0.
+ */
+export async function reconcileStockItemQuantity(input: {
+  accessToken: string;
+  businessId: string;
+  demoRunId: string;
+  demoRunReference: string;
+  stockItemId: string;
+  sku: string;
+  targetQuantity: number;
+  costPrice: number;
+  date: string;
+}): Promise<{
+  adjusted: boolean;
+  movementId?: string;
+  before: number;
+  after: number;
+  remainingGap: number;
+}> {
+  const beforeItem = await getStockItem(
+    input.accessToken,
+    input.businessId,
+    input.stockItemId,
+  );
+  const before = beforeItem.quantityInStock;
+  const delta = Number((input.targetQuantity - before).toFixed(4));
+  if (Math.abs(delta) <= 0.01) {
+    return { adjusted: false, before, after: before, remainingGap: 0 };
+  }
+
+  const details = stockMovementAdjustDetailsMarker(
+    input.demoRunReference,
+    input.sku,
+    Date.now().toString(36),
+  );
+  const created = await createStockMovement(input.accessToken, input.businessId, {
+    stock_item_id: input.stockItemId,
+    date: input.date,
+    quantity: delta,
+    cost_price: Number(Number(input.costPrice).toFixed(2)),
+    details,
+  });
+  const movementId = String(created.id ?? '');
+  await appendDemoTransaction(input.demoRunId, {
+    type: 'stock_movement',
+    sageTransactionId: movementId,
+    externalReference: `${input.demoRunReference}:ADJ:${input.sku}`,
+    status: movementId ? 'succeeded' : 'failed',
+    requestSummary: {
+      stock_item_id: input.stockItemId,
+      quantity: delta,
+      targetQuantity: input.targetQuantity,
+      details,
+    },
+    readBackSummary: { id: movementId },
+    readBackVerified: Boolean(movementId),
+    createdAt: new Date().toISOString(),
+  });
+
+  const afterItem = await getStockItem(
+    input.accessToken,
+    input.businessId,
+    input.stockItemId,
+  );
+  const after = afterItem.quantityInStock;
+  return {
+    adjusted: true,
+    movementId,
+    before,
+    after,
+    remainingGap: Number((input.targetQuantity - after).toFixed(4)),
+  };
 }
 
 export async function ensureLandedCostPrice(input: {

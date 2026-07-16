@@ -94,6 +94,8 @@ export function postDemoPurchase(request: PreviewRequest) {
       newLandedCost: number;
     }>;
     partial?: boolean;
+    qtyMismatches?: string[];
+    error?: string;
   }>('/api/workflow/demo/purchase', request);
 }
 
@@ -109,6 +111,9 @@ export function postDemoSales(request: PreviewRequest) {
     }>;
     unitsSold?: number;
     salesTotal?: number;
+    partial?: boolean;
+    qtyMismatches?: string[];
+    error?: string;
   }>('/api/workflow/demo/sales', request);
 }
 

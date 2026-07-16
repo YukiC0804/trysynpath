@@ -416,7 +416,8 @@ export function SageIntegrationPage() {
       }
       if (result.partial) {
         setError(
-          'Partial Completion. Some inventory records need attention. Successful Sage IDs were preserved.',
+          result.error ||
+            'Partial Completion. Some inventory records need attention. Successful Sage IDs were preserved.',
         );
       } else {
         setWorkflowTab('sales');
@@ -463,6 +464,12 @@ export function SageIntegrationPage() {
       setDemoRun(result.demoRun);
       setSalesBeforeAfter(result.beforeAfter ?? []);
       setPreview((current) => (current ? { ...current, run: result.run } : current));
+      if (result.partial) {
+        setError(
+          result.error ||
+            'Sales Invoice posted, but inventory quantity was not fully updated in Sage.',
+        );
+      }
       if (resetRequested) setConfirmReset(true);
     } catch (err) {
       setError(

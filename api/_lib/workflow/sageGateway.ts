@@ -288,9 +288,13 @@ export function buildStockMovementPayloads(input: {
     });
 }
 
-/** Idempotency token stored in Stock Movement `details` (UK cannot send `reference`). */
+/**
+ * Idempotency token stored in Stock Movement `details` (UK cannot send `reference`).
+ * SKU first so distinct lines stay unique under Sage's 50-char limit; keep the
+ * DEMO-* reference so Reset can still search/delete orphans.
+ */
 export function stockMovementDetailsMarker(demoReference: string, sku: string): string {
-  return `${demoReference}|${sku}`.slice(0, 50);
+  return `${sku}|${demoReference}`.slice(0, 50);
 }
 
 /** Stock-out marker for Spandex sales quantities (negative stock movements). */
@@ -298,7 +302,16 @@ export function stockMovementSalesOutDetailsMarker(
   demoReference: string,
   sku: string,
 ): string {
-  return `${demoReference}|OUT|${sku}`.slice(0, 50);
+  return `${sku}|O|${demoReference}`.slice(0, 50);
+}
+
+/** One-shot quantity correction when on-hand still does not match the demo target. */
+export function stockMovementAdjustDetailsMarker(
+  demoReference: string,
+  sku: string,
+  token: string,
+): string {
+  return `${sku}|A|${token}|${demoReference}`.slice(0, 50);
 }
 
 export function buildSalesInvoicePayload(input: {

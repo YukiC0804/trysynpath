@@ -726,16 +726,31 @@ export class WorkflowOrchestrator {
             stockItemId,
           );
           try {
-            const result = existing
-              ? {
-                  id: String(existing.id ?? ''),
+            let result: {
+              id: string;
+              created: Record<string, unknown>;
+              readBack: Record<string, unknown>;
+              differences: Record<string, unknown>;
+              verified: boolean;
+            };
+            if (existing?.id) {
+              const live = await gateway.readAndVerifyStockMovement(
+                String(existing.id),
+                payload,
+              );
+              if (live.verified) {
+                result = {
+                  id: String(existing.id),
                   created: existing,
-                  ...(await gateway.readAndVerifyStockMovement(
-                    String(existing.id ?? ''),
-                    payload,
-                  )),
-                }
-              : await gateway.createAndReadStockMovement(payload);
+                  ...live,
+                };
+              } else {
+                // Stale marker with wrong quantity — post a fresh movement.
+                result = await gateway.createAndReadStockMovement(payload);
+              }
+            } else {
+              result = await gateway.createAndReadStockMovement(payload);
+            }
             run.postingRecords = run.postingRecords.filter(
               (record) =>
                 !(
@@ -756,8 +771,8 @@ export class WorkflowOrchestrator {
                 responseSummary: result.readBack,
                 readBackVerified: result.verified,
                 differences: 'differences' in result ? result.differences : {},
-                // Created movements count as success; soft read-back diffs are diagnostic.
-                status: result.id || result.verified ? 'succeeded' : 'failed',
+                // Require a Sage ID; quantity identity is verified when possible.
+                status: result.id ? 'succeeded' : 'failed',
               }),
             );
           } catch (error) {

@@ -3,11 +3,9 @@ import type { DemoPrepareResult } from '../../../shared/demoRun';
 import { getValidAccessToken } from '../sage/auth';
 import { json } from '../sage/http';
 import {
-  createStockMovement,
   getPurchaseInvoice,
   getSalesInvoice,
   getStockItem,
-  listStockMovements,
   updateStockItem,
 } from '../sage/client';
 import { resolveDocumentExtractor } from '../workflow/resolveExtractor';
@@ -19,7 +17,6 @@ import {
   assertReleasedInvoice,
   formatReadBackDifferences,
   SageGateway,
-  stockMovementSalesOutDetailsMarker,
 } from '../workflow/sageGateway';
 import { EncryptedCookieWorkflowStore } from '../workflow/store';
 import { DeferredWorkflowStore } from '../workflow/deferredStore';
@@ -32,6 +29,7 @@ import {
   captureBaseline,
   ensureLandedCostPrice,
   getCurrentDemoRun,
+  reconcileStockItemQuantity,
   restoreDemoBaseline,
 } from './service';
 import { bindDemoRunCookieContext, getDemoRun } from './store';
@@ -230,7 +228,14 @@ export async function handleDemoRunRequest(
     );
 
     let demoRun = await getCurrentDemoRun(businessId);
-    if (!demoRun || demoRun.status === 'reset_complete') {
+    // After any Reset (including incomplete), start a fresh DEMO-* reference so
+    // Workflow 2 cannot idempotently reuse leftover Stock Movements and skip qty.
+    const needsFreshDemoRun =
+      !demoRun ||
+      demoRun.status === 'reset_complete' ||
+      demoRun.status === 'reset_incomplete' ||
+      demoRun.status === 'resetting';
+    if (needsFreshDemoRun) {
       demoRun = await captureBaseline({
         sageBusinessId: businessId,
         workflowRunId: workflow.id,
@@ -238,6 +243,7 @@ export async function handleDemoRunRequest(
         vendorInvoiceReference: preview.bundle.shipment.vendorInvoiceNumber,
         customerInvoiceReference: preview.bundle.customerInvoice.sourceInvoiceNumber,
         stockItems: affected,
+        forceNew: true,
       });
     }
 
@@ -457,23 +463,46 @@ export async function handleDemoRunRequest(
       });
     }
 
+    // Hard-close on-hand qty gaps. Idempotent reuse of stale DEMO-* movements can
+    // leave inventory at 0 even when posting records look succeeded.
     const qtyMismatches: string[] = [];
     for (const line of preview.bundle.shipment.lines) {
       const stockId = line.matchedSageStockItemId;
       if (!stockId) continue;
-      const after = await getStockItem(sage.accessToken, businessId, stockId);
       const beforeQty = qtyBefore.get(stockId) ?? 0;
-      const expected = beforeQty + line.receivedQuantity;
-      if (Math.abs(after.quantityInStock - expected) > 0.01) {
+      const expected = Number((beforeQty + line.receivedQuantity).toFixed(4));
+      const allocation = preview.allocations.find((item) => item.sku === line.sku);
+      const costPrice = Number(
+        allocation?.landedUnitCost ?? line.vendorUnitCost,
+      );
+      try {
+        const reconciled = await reconcileStockItemQuantity({
+          accessToken: sage.accessToken,
+          businessId,
+          demoRunId: demoRun.id,
+          demoRunReference: demoRun.demoRunReference,
+          stockItemId: stockId,
+          sku: line.sku,
+          targetQuantity: expected,
+          costPrice,
+          date: preview.bundle.shipment.arrivalDate,
+        });
+        if (Math.abs(reconciled.remainingGap) > 0.01) {
+          qtyMismatches.push(
+            `${line.sku}: expected quantity ${expected}, Sage has ${reconciled.after}`,
+          );
+        }
+      } catch (error) {
+        const after = await getStockItem(sage.accessToken, businessId, stockId);
         qtyMismatches.push(
-          `${line.sku}: expected quantity ${expected}, Sage has ${after.quantityInStock}`,
+          `${line.sku}: expected quantity ${expected}, Sage has ${after.quantityInStock}${
+            error instanceof Error ? ` (${error.message})` : ''
+          }`,
         );
       }
     }
     if (qtyMismatches.length) {
-      // Movements already have Sage IDs — do not fail the whole Workflow 2.
-      // Quantity lag can happen on retries or delayed Sage stock aggregates.
-      console.warn('[demo/purchase] quantity mismatch after stock movements', qtyMismatches);
+      console.warn('[demo/purchase] quantity mismatch after stock reconcile', qtyMismatches);
     }
 
     demoRun = (await getDemoRun(demoRun.id))!;
@@ -490,31 +519,35 @@ export async function handleDemoRunRequest(
       (record) => record.transactionType === 'stock_movement' && record.status === 'failed',
     )?.error;
 
+    const inventoryPartial = failedMovements || qtyMismatches.length > 0;
+    const inventoryError = failedMovements
+      ? movementError || 'Partial Completion. Some inventory records need attention.'
+      : qtyMismatches.length
+        ? `Inventory quantity not fully updated in Sage: ${qtyMismatches.join('; ')}`
+        : undefined;
+
     // Prefer HTTP 200 when PI + at least one movement succeeded so the UI can
     // advance; surface partial via flag instead of a hard 422.
-    if (failedMovements && succeededMovements.length) {
+    if (inventoryPartial && succeededMovements.length) {
       return respond(200, {
         demoRun,
         run: inventoryResult.run,
         beforeAfter,
         purchaseInvoiceId: purchaseRecord.sageTransactionId,
         partial: true,
-        error:
-          movementError ||
-          'Partial Completion. Some inventory records need attention.',
+        qtyMismatches,
+        error: inventoryError,
       });
     }
 
-    return respond(failedMovements ? 422 : 200, {
+    return respond(inventoryPartial ? 422 : 200, {
       demoRun,
       run: inventoryResult.run,
       beforeAfter,
       purchaseInvoiceId: purchaseRecord.sageTransactionId,
-      partial: failedMovements,
-      error: failedMovements
-        ? movementError ||
-          'Partial Completion. Some inventory records need attention.'
-        : undefined,
+      partial: inventoryPartial,
+      qtyMismatches,
+      error: inventoryError,
     });
   }
 
@@ -695,6 +728,7 @@ export async function handleDemoRunRequest(
       createdAt: salesRecord.createdAt,
     });
 
+    const qtyMismatches: string[] = [];
     for (const line of preview.bundle.customerInvoice.lines) {
       if (!line.matchedSageStockItemId) continue;
       const previousQuantity =
@@ -703,58 +737,41 @@ export async function handleDemoRunRequest(
           (item) => item.itemCode.toUpperCase() === line.sku.toUpperCase(),
         )?.afterQuantityInStock ??
         0;
+      const targetQuantity = Number((previousQuantity - line.quantity).toFixed(4));
       let afterItem = await getStockItem(
         sage.accessToken,
         businessId,
         line.matchedSageStockItemId,
       );
-      let currentQuantity = afterItem.quantityInStock;
-      const targetQuantity = Number((previousQuantity - line.quantity).toFixed(4));
-      const shortfall = Number((currentQuantity - targetQuantity).toFixed(4));
-      if (shortfall > 0.01) {
-        const details = stockMovementSalesOutDetailsMarker(
-          demoRun.demoRunReference,
-          line.sku,
-        );
-        const existing = (
-          await listStockMovements(
-            sage.accessToken,
-            businessId,
-            details,
-            line.matchedSageStockItemId,
-          )
-        ).find((movement) => String(movement.details ?? '') === details);
-        let movementId = String(existing?.id ?? '');
-        if (!existing) {
-          const created = await createStockMovement(sage.accessToken, businessId, {
-            stock_item_id: line.matchedSageStockItemId,
-            date: preview.bundle.customerInvoice.invoiceDate,
-            quantity: -shortfall,
-            cost_price: afterItem.costPrice,
-            details,
-          });
-          movementId = String(created.id ?? '');
-          updated = await appendDemoTransaction(updated.id, {
-            type: 'stock_movement',
-            sageTransactionId: movementId,
-            externalReference: `${demoRun.demoRunReference}:OUT:${line.sku}`,
-            status: 'succeeded',
-            requestSummary: {
-              stock_item_id: line.matchedSageStockItemId,
-              quantity: -shortfall,
-              details,
-            },
-            readBackSummary: { id: movementId },
-            readBackVerified: Boolean(movementId),
-            createdAt: new Date().toISOString(),
-          });
-        }
+      try {
+        const reconciled = await reconcileStockItemQuantity({
+          accessToken: sage.accessToken,
+          businessId,
+          demoRunId: updated.id,
+          demoRunReference: demoRun.demoRunReference,
+          stockItemId: line.matchedSageStockItemId,
+          sku: line.sku,
+          targetQuantity,
+          costPrice: afterItem.costPrice,
+          date: preview.bundle.customerInvoice.invoiceDate,
+        });
+        updated = (await getDemoRun(updated.id)) ?? updated;
         afterItem = await getStockItem(
           sage.accessToken,
           businessId,
           line.matchedSageStockItemId,
         );
-        currentQuantity = afterItem.quantityInStock;
+        if (Math.abs(reconciled.remainingGap) > 0.01) {
+          qtyMismatches.push(
+            `${line.sku}: expected quantity ${targetQuantity}, Sage has ${afterItem.quantityInStock}`,
+          );
+        }
+      } catch (error) {
+        qtyMismatches.push(
+          `${line.sku}: inventory decrease failed${
+            error instanceof Error ? ` (${error.message})` : ''
+          }`,
+        );
       }
       // Workflow 3 establishes the catalog sales price from Spandex invoice GA18.
       await updateStockItem(
@@ -766,11 +783,14 @@ export async function handleDemoRunRequest(
       salesBeforeAfter.push({
         sku: line.sku,
         previousQuantity,
-        newQuantity: currentQuantity,
+        newQuantity: afterItem.quantityInStock,
         soldQuantity: line.quantity,
       });
     }
 
+    updated = (await getDemoRun(updated.id)) ?? updated;
+    // Sales Invoice already released — return 200 with partial so the UI keeps IDs
+    // and before/after qty even when a shortfall adjustment still needs attention.
     return respond(200, {
       demoRun: updated,
       run: salesReleaseResult.run,
@@ -782,6 +802,11 @@ export async function handleDemoRunRequest(
         0,
       ),
       salesTotal: preview.bundle.customerInvoice.total,
+      partial: qtyMismatches.length > 0,
+      qtyMismatches,
+      error: qtyMismatches.length
+        ? `Inventory quantity not fully updated in Sage: ${qtyMismatches.join('; ')}`
+        : undefined,
     });
   }
 
