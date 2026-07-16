@@ -43,9 +43,96 @@ function differences(
 ) {
   return Object.fromEntries(
     Object.entries(pairs).filter(
-      ([, value]) => String(value.expected ?? '') !== String(value.actual ?? ''),
+      ([, value]) => {
+        if (
+          typeof value.expected === 'number' ||
+          typeof value.actual === 'number'
+        ) {
+          return (
+            Math.abs(Number(value.expected ?? 0) - Number(value.actual ?? 0)) >
+            0.005
+          );
+        }
+        return String(value.expected ?? '') !== String(value.actual ?? '');
+      },
     ),
   );
+}
+
+function invoiceDifferences(
+  payload: Record<string, unknown>,
+  readBack: Record<string, unknown>,
+  kind: 'purchase' | 'sales',
+) {
+  const pairs: Record<string, { expected: unknown; actual: unknown }> = {
+    reference: { expected: payload.reference, actual: readBack.reference },
+    contactId: {
+      expected: payload.contact_id,
+      actual: (readBack.contact as { id?: string } | undefined)?.id,
+    },
+    date: { expected: payload.date, actual: readBack.date },
+    dueDate: { expected: payload.due_date, actual: readBack.due_date },
+    currencyId: {
+      expected: payload.currency_id ?? 'GBP',
+      actual: (readBack.currency as { id?: string } | undefined)?.id ?? 'GBP',
+    },
+    statusId: {
+      expected: payload.status_id,
+      actual: (readBack.status as { id?: string } | undefined)?.id,
+    },
+  };
+  const expectedLines = (payload.invoice_lines ?? []) as Array<Record<string, unknown>>;
+  const actualLines = (readBack.invoice_lines ?? []) as Array<Record<string, unknown>>;
+  pairs.lineCount = { expected: expectedLines.length, actual: actualLines.length };
+  expectedLines.forEach((line, index) => {
+    const actual = actualLines[index] ?? {};
+    pairs[`line.${index}.description`] = {
+      expected: line.description,
+      actual: actual.description,
+    };
+    pairs[`line.${index}.ledgerAccountId`] = {
+      expected: line.ledger_account_id,
+      actual: (actual.ledger_account as { id?: string } | undefined)?.id,
+    };
+    pairs[`line.${index}.quantity`] = {
+      expected: line.quantity ?? 1,
+      actual: actual.quantity ?? 1,
+    };
+    pairs[`line.${index}.unitPrice`] = {
+      expected: line.unit_price,
+      actual: actual.unit_price,
+    };
+    pairs[`line.${index}.taxRateId`] = {
+      expected: line.tax_rate_id,
+      actual: (actual.tax_rate as { id?: string } | undefined)?.id,
+    };
+    pairs[`line.${index}.taxAmount`] = {
+      expected: line.tax_amount,
+      actual: actual.tax_amount,
+    };
+    if (line.product_id) {
+      pairs[`line.${index}.productId`] = {
+        expected: line.product_id,
+        actual: (actual.product as { id?: string } | undefined)?.id,
+      };
+    }
+  });
+  if (kind === 'purchase') {
+    pairs.vendorReference = {
+      expected: payload.vendor_reference,
+      actual: readBack.vendor_reference,
+    };
+  } else {
+    pairs.shippingNetAmount = {
+      expected: payload.shipping_net_amount ?? 0,
+      actual: readBack.shipping_net_amount ?? 0,
+    };
+    pairs.shippingTaxAmount = {
+      expected: payload.shipping_tax_amount ?? 0,
+      actual: readBack.shipping_tax_amount ?? 0,
+    };
+  }
+  return differences(pairs);
 }
 
 function taxAmount(net: number, rate?: { percentage?: number | string }) {
@@ -79,7 +166,7 @@ export function buildPurchaseInvoicePayload(input: {
       : {}),
     ...(selections.purchaseStatusId ? { status_id: selections.purchaseStatusId } : {}),
     reference,
-    vendor_reference: 'NWA-INV-8841',
+    vendor_reference: bundle.shipment.vendorInvoiceNumber,
     notes: `Synpath demo shipment ${bundle.shipment.containerNumber}; source documents retained in Synpath`,
     invoice_lines: bundle.shipment.lines.map((line) => {
       const net = round(line.receivedQuantity * line.vendorUnitCost);
@@ -227,32 +314,32 @@ export class SageGateway {
       payload,
     );
     if (!created.id) throw new Error('Sage returned no Purchase Invoice ID');
-    const readBack = await getPurchaseInvoice(this.accessToken, this.businessId, created.id);
-    const diff = differences({
-      reference: { expected: payload.reference, actual: readBack.reference },
-      contactId: {
-        expected: payload.contact_id,
-        actual: (readBack.contact as { id?: string } | undefined)?.id,
-      },
-    });
-    return {
-      id: created.id,
-      created,
-      readBack,
-      differences: diff,
-      verified: Object.keys(diff).length === 0,
-    };
+    const verified = await this.readAndVerifyPurchaseInvoice(created.id, payload);
+    return { id: created.id, created, ...verified };
+  }
+
+  async readAndVerifyPurchaseInvoice(id: string, payload: Record<string, unknown>) {
+    const readBack = await getPurchaseInvoice(this.accessToken, this.businessId, id);
+    const diff = invoiceDifferences(payload, readBack, 'purchase');
+    return { readBack, differences: diff, verified: Object.keys(diff).length === 0 };
   }
 
   async findPurchaseInvoiceByReference(reference: string) {
-    return (await listPurchaseInvoices(this.accessToken, this.businessId)).find(
+    return (await listPurchaseInvoices(this.accessToken, this.businessId, reference)).find(
       (invoice) =>
         invoice.reference === reference || invoice.vendorReference === reference,
     );
   }
 
   async findStockMovement(reference: string, stockItemId: string) {
-    return (await listStockMovements(this.accessToken, this.businessId, reference)).find(
+    return (
+      await listStockMovements(
+        this.accessToken,
+        this.businessId,
+        reference,
+        stockItemId,
+      )
+    ).find(
       (movement) =>
         String(movement.reference ?? '') === reference &&
         String((movement.stock_item as { id?: string } | undefined)?.id ?? '') ===
@@ -270,59 +357,71 @@ export class SageGateway {
     const created = await createStockMovement(this.accessToken, this.businessId, payload);
     const id = String(created.id ?? '');
     if (!id) throw new Error('Sage returned no Stock Movement ID');
+    const verified = await this.readAndVerifyStockMovement(id, payload);
+    return { id, created, ...verified };
+  }
+
+  async readAndVerifyStockMovement(id: string, payload: Record<string, unknown>) {
     const readBack = await getStockMovement(this.accessToken, this.businessId, id);
     const diff = differences({
       reference: { expected: payload.reference, actual: readBack.reference },
+      stockItemId: {
+        expected: payload.stock_item_id,
+        actual: (readBack.stock_item as { id?: string } | undefined)?.id,
+      },
+      date: { expected: payload.date, actual: readBack.date },
       quantity: { expected: payload.quantity, actual: readBack.quantity },
       costPrice: { expected: payload.cost_price, actual: readBack.cost_price },
+      details: { expected: payload.details, actual: readBack.details },
     });
-    return {
-      id,
-      created,
-      readBack,
-      differences: diff,
-      verified: Object.keys(diff).length === 0,
-    };
+    return { readBack, differences: diff, verified: Object.keys(diff).length === 0 };
   }
 
   async createAndReadSalesInvoice(payload: Record<string, unknown>) {
     const created = await createSalesInvoice(this.accessToken, this.businessId, payload);
     const id = String(created.id ?? '');
     if (!id) throw new Error('Sage returned no Sales Invoice ID');
+    const verified = await this.readAndVerifySalesInvoice(id, payload);
+    return { id, created, ...verified };
+  }
+
+  async readAndVerifySalesInvoice(id: string, payload: Record<string, unknown>) {
     const readBack = await getSalesInvoice(this.accessToken, this.businessId, id);
-    const diff = differences({
-      reference: { expected: payload.reference, actual: readBack.reference },
-      contactId: {
-        expected: payload.contact_id,
-        actual: (readBack.contact as { id?: string } | undefined)?.id,
-      },
-    });
-    return {
-      id,
-      created,
-      readBack,
-      differences: diff,
-      verified: Object.keys(diff).length === 0,
-    };
+    const diff = invoiceDifferences(payload, readBack, 'sales');
+    return { readBack, differences: diff, verified: Object.keys(diff).length === 0 };
   }
 
   async releasePurchaseInvoice(id: string) {
     const released = await releasePurchaseInvoice(this.accessToken, this.businessId, id);
     const readBack = await getPurchaseInvoice(this.accessToken, this.businessId, id);
+    const releasedStatus = (released.status as { id?: string } | undefined)?.id;
+    const readBackStatus = (readBack.status as { id?: string } | undefined)?.id;
     return {
       released,
       readBack,
-      verified: String(readBack.id ?? '') === id,
+      verified:
+        String(released.id ?? '') === id &&
+        String(readBack.id ?? '') === id &&
+        Boolean(readBackStatus) &&
+        readBackStatus !== 'DRAFT' &&
+        (!releasedStatus || releasedStatus === readBackStatus),
     };
   }
 
   async releaseSalesInvoice(id: string) {
     const released = await releaseSalesInvoice(this.accessToken, this.businessId, id);
     const readBack = await getSalesInvoice(this.accessToken, this.businessId, id);
+    const releasedStatus = (released.status as { id?: string } | undefined)?.id;
+    const readBackStatus = (readBack.status as { id?: string } | undefined)?.id;
     return {
       released,
       readBack,
-      verified: String(readBack.id ?? '') === id,
+      verified:
+        String(released.id ?? '') === id &&
+        String(readBack.id ?? '') === id &&
+        Boolean(readBackStatus) &&
+        readBackStatus !== 'DRAFT' &&
+        (!releasedStatus || releasedStatus === readBackStatus),
     };
   }
 }

@@ -88,6 +88,7 @@ export function createWorkflowRun(input: {
       purchaseInvoiceRelease: 'pending',
       salesInvoiceRelease: 'pending',
     },
+    approvedPayloadHashes: {},
     inventoryPostingStrategy: 'none',
     postingRecords: [],
     errors: [],

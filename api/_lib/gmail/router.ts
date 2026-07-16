@@ -13,7 +13,7 @@ import {
 import {
   getGmailMessage,
   getGmailProfile,
-  GmailSourceAdapter,
+  listGmailMessageSummaries,
   listGmailMessageIds,
 } from './client';
 import {
@@ -21,7 +21,6 @@ import {
   DEFAULT_GMAIL_SEARCH,
   GOOGLE_REQUIRED_ENV,
 } from './types';
-import { deduplicateSourceCollection } from '../workflow/sourceAdapters';
 
 function pathSegments(req: VercelRequest): string[] {
   const raw = req.query.__gmailPath ?? req.query.__integrationPath ?? req.query.__sagePath;
@@ -148,24 +147,16 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {});
     const query = typeof body.query === 'string' ? body.query : DEFAULT_GMAIL_SEARCH;
-    const messageIds = Array.isArray(body.messageIds)
-      ? body.messageIds.map(String)
-      : undefined;
-    const collection = deduplicateSourceCollection(
-      await new GmailSourceAdapter(auth.accessToken).collect({
-        searchQuery: query,
-        messageIds,
-      }),
-    );
+    const summary = await listGmailMessageSummaries(auth.accessToken, query);
     const lastSyncAt = new Date().toISOString();
     writeGmailSession(res, { ...auth.session, lastSyncAt });
     return json(res, 200, {
       query,
       lastSyncAt,
-      messages: collection.emails,
-      documents: collection.documents.map((document) => document.metadata),
-      messageCount: collection.emails.length,
-      attachmentCount: collection.documents.length,
+      messages: summary.messages,
+      documents: summary.documents,
+      messageCount: summary.messageCount,
+      attachmentCount: summary.attachmentCount,
     });
   }
 

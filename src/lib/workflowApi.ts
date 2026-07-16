@@ -111,7 +111,8 @@ export function approveWorkflow(input: {
   confirmation: string;
   accountingMappingConfirmed: boolean;
   inventoryPostingStrategy?: InventoryPostingStrategy;
-}) {
+  approvalDigest: string;
+} & PreviewRequest) {
   return post<{ run: WorkflowRun }>('/api/workflow/approve', input);
 }
 
@@ -129,6 +130,7 @@ export function executeWorkflow(
     idempotentReplay: boolean;
     records: WorkflowRun['postingRecords'];
     preview: WorkflowPreview;
+    refreshWarning?: string;
   }>('/api/workflow/execute', { ...request, target });
 }
 

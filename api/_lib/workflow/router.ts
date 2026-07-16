@@ -17,6 +17,8 @@ import {
 import { SageGateway, type SagePayloadSelections } from './sageGateway';
 import { EncryptedCookieWorkflowStore } from './store';
 
+const activeExecutionLocks = new Set<string>();
+
 function pathSegments(req: VercelRequest): string[] {
   const raw = req.query.__workflowPath ?? req.query.__integrationPath ?? req.query.__sagePath;
   if (Array.isArray(raw)) return raw.flatMap((value) => String(value).split('/')).filter(Boolean);
@@ -117,11 +119,29 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
     ];
     if (!allowed.includes(target)) return json(res, 400, { error: 'Invalid approval target' });
     try {
+      const options = previewOptions({ ...body, mode: run.mode });
+      const { source, gateway } = await dependencies(req, res, run.mode);
+      const preview = await orchestrator.preview({
+        ...options,
+        inventoryPostingStrategy:
+          (body.inventoryPostingStrategy as InventoryPostingStrategy | undefined) ??
+          run.inventoryPostingStrategy,
+        source,
+        gateway,
+        extractor: new FixtureDocumentExtractionAdapter(),
+        existingRun: run,
+      });
+      if (body.approvalDigest !== preview.approvalDigests[target]) {
+        return json(res, 409, {
+          error: 'Preview changed before approval. Refresh and review the latest payload.',
+        });
+      }
       const updated = orchestrator.approve(
         res,
         run,
         target,
         String(body.confirmation ?? ''),
+        preview.approvalDigests[target],
         body.inventoryPostingStrategy as InventoryPostingStrategy | undefined,
       );
       return json(res, 200, { run: updated });
@@ -161,28 +181,43 @@ export async function handleWorkflowRequest(req: VercelRequest, res: VercelRespo
     if (blocking.length) {
       return json(res, 422, { error: 'Workflow validation failed', validationErrors: blocking });
     }
+    const lockKey = `${run.id}:${target}`;
+    if (activeExecutionLocks.has(lockKey)) {
+      return json(res, 409, { error: 'This workflow operation is already executing' });
+    }
+    activeExecutionLocks.add(lockKey);
     try {
       const result = await orchestrator.execute(res, run, preview, gateway, target);
-      const refreshed = await gateway.loadReferenceData();
-      preview.liveSage.stockItems = refreshed.stockItems.map((item) => ({
-        id: item.id,
-        itemCode: item.sku,
-        description: item.description,
-        quantityInStock: item.quantityInStock,
-        costPrice: item.costPrice,
-        lastCostPrice: item.lastCostPrice,
-        averageCostPrice: item.averageCostPrice,
-        purchaseLedgerAccountId: item.purchaseLedgerAccountId,
-        purchaseTaxRateId: item.purchaseTaxRateId,
-        salesLedgerAccountId: item.salesLedgerAccountId,
-        salesTaxRateId: item.salesTaxRateId,
-      }));
-      return json(res, 200, { ...result, preview });
+      let refreshWarning: string | undefined;
+      try {
+        const refreshed = await gateway.loadReferenceData();
+        preview.liveSage.stockItems = refreshed.stockItems.map((item) => ({
+          id: item.id,
+          itemCode: item.sku,
+          description: item.description,
+          quantityInStock: item.quantityInStock,
+          costPrice: item.costPrice,
+          lastCostPrice: item.lastCostPrice,
+          averageCostPrice: item.averageCostPrice,
+          purchaseLedgerAccountId: item.purchaseLedgerAccountId,
+          purchaseTaxRateId: item.purchaseTaxRateId,
+          salesLedgerAccountId: item.salesLedgerAccountId,
+          salesTaxRateId: item.salesTaxRateId,
+        }));
+      } catch (error) {
+        refreshWarning =
+          error instanceof Error
+            ? `Sage write succeeded, but Stock Item refresh failed: ${error.message}`
+            : 'Sage write succeeded, but Stock Item refresh failed';
+      }
+      return json(res, 200, { ...result, preview, refreshWarning });
     } catch (error) {
       return json(res, 422, {
         error: error instanceof Error ? error.message : 'Sage write failed',
-        run: store.get(req),
+        run,
       });
+    } finally {
+      activeExecutionLocks.delete(lockKey);
     }
   }
 

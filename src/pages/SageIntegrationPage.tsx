@@ -127,10 +127,7 @@ export function SageIntegrationPage() {
       const result = await createWorkflowPreview(request);
       setPreview(result);
       setStrategy(result.run.inventoryPostingStrategy);
-      setSelections((current) => ({
-        ...result.selections,
-        ...current,
-      }));
+      setSelections({ ...result.selections });
       setNotice(
         result.bundle.fixtureExtraction
           ? 'Fixture normalized extraction loaded. Review before approval.'
@@ -179,10 +176,12 @@ export function SageIntegrationPage() {
     setError(null);
     try {
       const result = await approveWorkflow({
+        ...request,
         target,
         confirmation,
         accountingMappingConfirmed: mappingConfirmed,
         inventoryPostingStrategy: strategy,
+        approvalDigest: preview?.approvalDigests[target] ?? '',
       });
       setPreview((current) => (current ? { ...current, run: result.run } : current));
       setNotice(`${target} approved`);
@@ -205,11 +204,16 @@ export function SageIntegrationPage() {
     setError(null);
     try {
       const result = await executeWorkflow(target, request);
-      setPreview({ ...result.preview, run: result.run });
+      const refreshed = await createWorkflowPreview(request).catch(() => ({
+        ...result.preview,
+        run: result.run,
+      }));
+      setPreview(refreshed);
       setNotice(
-        result.idempotentReplay
+        result.refreshWarning ??
+          (result.idempotentReplay
           ? 'Idempotent replay: no duplicate Sage write was made.'
-          : `${target} completed with Sage read-back`,
+          : `${target} completed with Sage read-back`),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sage write failed');

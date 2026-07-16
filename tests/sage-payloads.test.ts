@@ -166,4 +166,24 @@ describe('SageGateway read-back verification', () => {
     expect(result.verified).toBe(true);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
+
+  it('does not verify release while read-back remains Draft', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'pi-1', status: { id: 'DRAFT' } }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'pi-1', status: { id: 'DRAFT' } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    const result = await new SageGateway('token', 'business').releasePurchaseInvoice(
+      'pi-1',
+    );
+    expect(result.verified).toBe(false);
+  });
 });

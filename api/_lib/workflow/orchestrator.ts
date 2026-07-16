@@ -5,6 +5,7 @@ import type {
   SagePostingRecord,
   WorkflowPreview,
   WorkflowRun,
+  WorkflowApprovalTarget,
 } from '../../../shared/workflow';
 import { validateNormalizedBundle } from '../../../shared/workflow';
 import type { DocumentExtractionAdapter, ExtractionOverrides } from './extraction';
@@ -26,12 +27,7 @@ import {
   type SourceAdapter,
 } from './sourceAdapters';
 
-export type ApprovalTarget =
-  | 'purchaseInvoice'
-  | 'inventoryReceipt'
-  | 'customerSale'
-  | 'purchaseInvoiceRelease'
-  | 'salesInvoiceRelease';
+export type ApprovalTarget = WorkflowApprovalTarget;
 export type ExecuteTarget =
   | 'purchase_invoice'
   | 'stock_movements'
@@ -53,6 +49,8 @@ export interface PreviewInput {
 }
 
 const dateToken = () => new Date().toISOString().slice(0, 10).replace(/-/g, '');
+const digest = (value: unknown) =>
+  crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 function postingRecord(input: Omit<SagePostingRecord, 'createdAt'>): SagePostingRecord {
   return { ...input, createdAt: new Date().toISOString() };
@@ -158,7 +156,6 @@ export class WorkflowOrchestrator {
         firstStock?.salesLedgerAccountId,
       purchaseTaxRateId:
         input.selections?.purchaseTaxRateId ??
-        supplier?.defaultPurchaseTaxRateId ??
         firstStock?.purchaseTaxRateId,
       salesTaxRateId:
         input.selections?.salesTaxRateId ??
@@ -235,6 +232,46 @@ export class WorkflowOrchestrator {
       },
       taxPercentage: Number(salesTax?.percentage ?? 0),
     });
+    const purchaseRecord = [...run.postingRecords]
+      .reverse()
+      .find((record) => record.transactionType === 'purchase_invoice');
+    const salesRecord = [...run.postingRecords]
+      .reverse()
+      .find((record) => record.transactionType === 'sales_invoice');
+    const approvalDigests: WorkflowPreview['approvalDigests'] = {
+      purchaseInvoice: digest({
+        sourceDocumentIds: run.sourceDocumentIds,
+        attachmentHashes: run.attachmentHashes,
+        payload: purchaseInvoice,
+        strategy: run.inventoryPostingStrategy,
+      }),
+      inventoryReceipt: digest({
+        sourceDocumentIds: run.sourceDocumentIds,
+        attachmentHashes: run.attachmentHashes,
+        payloads: stockMovements,
+        strategy: run.inventoryPostingStrategy,
+      }),
+      customerSale: digest({
+        sourceDocumentIds: run.sourceDocumentIds,
+        attachmentHashes: run.attachmentHashes,
+        payload: salesInvoice,
+      }),
+      purchaseInvoiceRelease: digest({
+        sageTransactionId: purchaseRecord?.sageTransactionId ?? '',
+      }),
+      salesInvoiceRelease: digest({
+        sageTransactionId: salesRecord?.sageTransactionId ?? '',
+      }),
+    };
+    (Object.keys(approvalDigests) as ApprovalTarget[]).forEach((target) => {
+      if (
+        run.approvals[target] === 'approved' &&
+        run.approvedPayloadHashes[target] !== approvalDigests[target]
+      ) {
+        run.approvals[target] = 'pending';
+        delete run.approvedPayloadHashes[target];
+      }
+    });
 
     run.status = validationErrors.length ? 'draft' : 'ready';
     const preview: WorkflowPreview = {
@@ -275,17 +312,20 @@ export class WorkflowOrchestrator {
         ].map((ledger) => ({
           id: ledger.id,
           name: ledger.name ?? ledger.displayed_as ?? ledger.id,
-          nominalCode: ledger.nominal_code,
+          nominalCode:
+            ledger.nominal_code == null ? undefined : String(ledger.nominal_code),
         })),
         purchaseLedgerAccounts: (referenceData?.ledgerAccounts ?? []).map((ledger) => ({
           id: ledger.id,
           name: ledger.name ?? ledger.displayed_as ?? ledger.id,
-          nominalCode: ledger.nominal_code,
+          nominalCode:
+            ledger.nominal_code == null ? undefined : String(ledger.nominal_code),
         })),
         salesLedgerAccounts: (referenceData?.salesLedgerAccounts ?? []).map((ledger) => ({
           id: ledger.id,
           name: ledger.name ?? ledger.displayed_as ?? ledger.id,
-          nominalCode: ledger.nominal_code,
+          nominalCode:
+            ledger.nominal_code == null ? undefined : String(ledger.nominal_code),
         })),
         taxRates: (referenceData?.taxRates ?? []).map((rate) => ({
           id: rate.id,
@@ -313,6 +353,7 @@ export class WorkflowOrchestrator {
       },
       payloads: { purchaseInvoice, stockMovements, salesInvoice },
       selections,
+      approvalDigests,
       validationErrors: [...new Set(validationErrors)],
     };
     return preview;
@@ -327,6 +368,7 @@ export class WorkflowOrchestrator {
     run: WorkflowRun,
     target: ApprovalTarget,
     confirmation: string,
+    approvalDigest: string,
     strategy?: InventoryPostingStrategy,
   ) {
     if (run.mode !== 'live_sage_write') {
@@ -340,6 +382,7 @@ export class WorkflowOrchestrator {
       run.inventoryPostingStrategy = strategy;
     }
     run.approvals[target] = 'approved';
+    run.approvedPayloadHashes[target] = approvalDigest;
     run.status = 'approved';
     run.updatedAt = new Date().toISOString();
     this.store.put(response, run);
@@ -364,6 +407,19 @@ export class WorkflowOrchestrator {
     if (run.approvals[approvalMap[target]] !== 'approved') {
       throw new Error(`${approvalMap[target]} requires separate approval`);
     }
+    const approvalTarget = approvalMap[target];
+    if (
+      !run.approvedPayloadHashes[approvalTarget] ||
+      run.approvedPayloadHashes[approvalTarget] !==
+        preview.approvalDigests[approvalTarget]
+    ) {
+      run.approvals[approvalTarget] = 'pending';
+      delete run.approvedPayloadHashes[approvalTarget];
+      this.store.put(response, run);
+      throw new Error(
+        'Approved payload changed after review. Refresh the preview and approve again.',
+      );
+    }
     const successful = run.postingRecords.filter(
       (record) => record.transactionType === target.replace(/s$/, '') && record.status === 'succeeded',
     );
@@ -377,7 +433,11 @@ export class WorkflowOrchestrator {
         const payload = preview.payloads.purchaseInvoice as Record<string, unknown>;
         const existing = await gateway.findPurchaseInvoiceByReference(run.externalReference);
         const result = existing
-          ? { id: existing.id, created: existing, readBack: existing, verified: true }
+          ? {
+              id: existing.id,
+              created: existing,
+              ...(await gateway.readAndVerifyPurchaseInvoice(existing.id, payload)),
+            }
           : await gateway.createAndReadPurchaseInvoice(payload);
         run.postingRecords.push(
           postingRecord({
@@ -418,10 +478,21 @@ export class WorkflowOrchestrator {
               ? {
                   id: String(existing.id ?? ''),
                   created: existing,
-                  readBack: existing,
-                  verified: true,
+                  ...(await gateway.readAndVerifyStockMovement(
+                    String(existing.id ?? ''),
+                    payload,
+                  )),
                 }
               : await gateway.createAndReadStockMovement(payload);
+            run.postingRecords = run.postingRecords.filter(
+              (record) =>
+                !(
+                  record.transactionType === 'stock_movement' &&
+                  record.externalReference ===
+                    `${run.externalReference}:${stockItemId}` &&
+                  record.status === 'failed'
+                ),
+            );
             run.postingRecords.push(
               postingRecord({
                 workflowId: run.id,
@@ -463,8 +534,10 @@ export class WorkflowOrchestrator {
           ? {
               id: String(existing.id ?? ''),
               created: existing,
-              readBack: existing,
-              verified: true,
+              ...(await gateway.readAndVerifySalesInvoice(
+                String(existing.id ?? ''),
+                payload,
+              )),
             }
           : await gateway.createAndReadSalesInvoice(payload);
         run.postingRecords.push(

@@ -8,6 +8,9 @@ import type {
 import { decodeBase64Url, headerValue, parseGmailMime, type GmailMessagePart } from './mime';
 
 const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me';
+const MAX_SELECTED_MESSAGES = 20;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
 async function gmailFetch<T>(
   path: string,
@@ -77,6 +80,82 @@ export async function getGmailAttachment(
   return decodeBase64Url(data.data);
 }
 
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  limit: number,
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, async () => {
+      while (cursor < values.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await mapper(values[index]);
+      }
+    }),
+  );
+  return results;
+}
+
+export async function listGmailMessageSummaries(
+  accessToken: string,
+  q: string,
+  maxResults = 50,
+) {
+  const list = await listGmailMessageIds(accessToken, q, maxResults);
+  const full = await mapWithConcurrency(list.messages, 5, (message) =>
+    getGmailMessage(accessToken, message.id),
+  );
+  const emails: EmailSource[] = [];
+  const documents: SourceDocument[] = [];
+  for (const message of full) {
+    const parsed = parseGmailMime(message.payload);
+    const headers = message.payload?.headers;
+    const attachmentIds = parsed.attachments.map(
+      (attachment) =>
+        attachment.attachmentId ?? `${message.id}:${attachment.partId ?? attachment.fileName}`,
+    );
+    emails.push({
+      gmailMessageId: message.id,
+      gmailThreadId: message.threadId,
+      from: headerValue(headers, 'From'),
+      to: headerValue(headers, 'To'),
+      subject: headerValue(headers, 'Subject'),
+      receivedAt: message.internalDate
+        ? new Date(Number(message.internalDate)).toISOString()
+        : headerValue(headers, 'Date'),
+      snippet: message.snippet ?? parsed.text.slice(0, 180),
+      labelIds: message.labelIds ?? [],
+      attachmentIds,
+      processingStatus: attachmentIds.length ? 'New' : 'Needs Review',
+    });
+    parsed.attachments.forEach((attachment, index) => {
+      documents.push({
+        id: `gmail:${message.id}:${attachmentIds[index]}`,
+        emailMessageId: message.id,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        fileSize: attachment.size,
+        sha256: '',
+        documentType: classifyDocument(attachment.fileName, attachment.mimeType),
+        extractionStatus: 'New',
+        sourceType: 'gmail',
+        gmailAttachmentId: attachment.attachmentId,
+      });
+    });
+  }
+  return {
+    query: q,
+    messages: emails,
+    documents,
+    messageCount: emails.length,
+    attachmentCount: documents.length,
+    resultSizeEstimate: list.resultSizeEstimate,
+  };
+}
+
 function classifyDocument(fileName: string, mimeType: string): DocumentType {
   const value = `${fileName} ${mimeType}`.toLowerCase();
   if (/customer.*invoice|sales.*invoice/.test(value)) return 'customer_invoice';
@@ -107,8 +186,12 @@ export class GmailSourceAdapter implements SourceAdapter {
               input.searchQuery ?? 'label:"Synpath Sage Demo" has:attachment',
             )
           ).messages;
+    if (ids.length > MAX_SELECTED_MESSAGES) {
+      throw new Error(`Select at most ${MAX_SELECTED_MESSAGES} Gmail messages per import`);
+    }
     const emails: EmailSource[] = [];
     const documents: DownloadedSourceDocument[] = [];
+    let totalAttachmentBytes = 0;
 
     for (const item of ids) {
       const message = await getGmailMessage(this.accessToken, item.id);
@@ -121,6 +204,13 @@ export class GmailSourceAdapter implements SourceAdapter {
           (attachment.attachmentId
             ? await getGmailAttachment(this.accessToken, message.id, attachment.attachmentId)
             : Buffer.alloc(0));
+        if (content.byteLength > MAX_ATTACHMENT_BYTES) {
+          throw new Error(`${attachment.fileName} exceeds the 10 MB attachment limit`);
+        }
+        totalAttachmentBytes += content.byteLength;
+        if (totalAttachmentBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+          throw new Error('Selected Gmail attachments exceed the 20 MB import limit');
+        }
         const attachmentId = attachment.attachmentId ?? `${message.id}:${attachment.partId}`;
         attachmentIds.push(attachmentId);
         const sha256 = crypto.createHash('sha256').update(content).digest('hex');

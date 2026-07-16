@@ -157,6 +157,7 @@ export const FIXTURE_SHIPMENT: Shipment = {
   shipmentDate: '2026-05-19',
   arrivalDate: '2026-06-02',
   supplier: 'Nationwide Acrylics',
+  vendorInvoiceNumber: 'NWA-INV-8841',
   currency: 'GBP',
   exchangeRate: 1,
   status: 'Needs Review',

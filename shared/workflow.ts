@@ -93,6 +93,7 @@ export interface Shipment {
   shipmentDate: string;
   arrivalDate: string;
   supplier: string;
+  vendorInvoiceNumber: string;
   currency: string;
   exchangeRate: number;
   status: ProcessingStatus;
@@ -195,6 +196,13 @@ export interface WorkflowApprovals {
   salesInvoiceRelease: ApprovalStatus;
 }
 
+export type WorkflowApprovalTarget =
+  | 'purchaseInvoice'
+  | 'inventoryReceipt'
+  | 'customerSale'
+  | 'purchaseInvoiceRelease'
+  | 'salesInvoiceRelease';
+
 export interface WorkflowRun {
   id: string;
   mode: SafeMode;
@@ -211,6 +219,7 @@ export interface WorkflowRun {
     | 'completed'
     | 'failed';
   approvals: WorkflowApprovals;
+  approvedPayloadHashes: Partial<Record<WorkflowApprovalTarget, string>>;
   inventoryPostingStrategy: InventoryPostingStrategy;
   sourceMessageIds: string[];
   sourceDocumentIds: string[];
@@ -277,6 +286,7 @@ export interface WorkflowPreview {
     salesStatusId?: string;
     accountingMappingConfirmed: boolean;
   };
+  approvalDigests: Record<WorkflowApprovalTarget, string>;
   validationErrors: string[];
 }
 
@@ -284,6 +294,7 @@ export function validateNormalizedBundle(bundle: NormalizedDocumentBundle): stri
   const errors: string[] = [];
   if (!bundle.shipment.externalPoNumber) errors.push('External PO number is required');
   if (!bundle.shipment.containerNumber) errors.push('Container number is required');
+  if (!bundle.shipment.vendorInvoiceNumber) errors.push('Vendor invoice number is required');
   if (!bundle.shipment.lines.length) errors.push('At least one shipment line is required');
   if (bundle.shipment.exchangeRate <= 0) errors.push('Exchange rate must be greater than zero');
   for (const line of bundle.shipment.lines) {

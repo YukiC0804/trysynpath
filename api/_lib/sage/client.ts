@@ -76,6 +76,27 @@ function listItems<T>(data: { $items?: T[] } | T[]): T[] {
   return Array.isArray(data) ? data : data.$items ?? [];
 }
 
+async function sageListAll<T>(
+  path: string,
+  accessToken: string,
+  businessId: string,
+  query: Record<string, string> = {},
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let page = 1; page <= 50; page += 1) {
+    const data = await sageFetch<
+      { $items?: T[]; $next?: string | null } | T[]
+    >(path, accessToken, {
+      businessId,
+      query: { items_per_page: '200', ...query, page: String(page) },
+    });
+    const items = listItems(data);
+    all.push(...items);
+    if (Array.isArray(data) || !data.$next || items.length === 0) break;
+  }
+  return all;
+}
+
 export function normalizeStockItem(item: SageStockItem) {
   return {
     id: item.id,
@@ -121,11 +142,11 @@ export function pickAccountingBusiness(businesses: SageBusiness[]): SageBusiness
 }
 
 export async function listStockItems(accessToken: string, businessId: string) {
-  const data = (await sageFetch('/stock_items', accessToken, {
-    businessId,
-    query: { items_per_page: '200', attributes: 'all' },
-  })) as { $items?: SageStockItem[] } | SageStockItem[];
-  return listItems(data).map(normalizeStockItem);
+  return (
+    await sageListAll<SageStockItem>('/stock_items', accessToken, businessId, {
+      attributes: 'all',
+    })
+  ).map(normalizeStockItem);
 }
 
 export async function getStockItem(accessToken: string, businessId: string, id: string) {
@@ -151,7 +172,7 @@ export type StockItemDefaults = {
 export type LedgerLike = {
   id: string;
   displayed_as?: string;
-  nominal_code?: string;
+  nominal_code?: string | number;
   name?: string;
 };
 export type TaxRateLike = {
@@ -337,20 +358,40 @@ export async function updateStockItem(
   }
 
   const { sales_price: salesPrice, ...openApiUpdates } = updates;
+  let salesPrices:
+    | Array<{
+        price_name?: string;
+        price: number;
+        price_includes_tax?: boolean;
+        product_sales_price_type_id?: string;
+      }>
+    | undefined;
+  if (salesPrice != null) {
+    const current = await sageFetch<SageStockItem>(`/stock_items/${id}`, accessToken, {
+      businessId,
+      query: { attributes: 'all' },
+    });
+    const existing = current.sales_prices ?? [];
+    salesPrices = existing.length
+      ? existing.map((price, index) => ({
+          ...(price.price_name ? { price_name: price.price_name } : {}),
+          price: index === 0 ? salesPrice : Number(price.price ?? 0),
+          ...(price.price_includes_tax != null
+            ? { price_includes_tax: price.price_includes_tax }
+            : {}),
+          ...(price.product_sales_price_type?.id
+            ? {
+                product_sales_price_type_id:
+                  price.product_sales_price_type.id,
+              }
+            : {}),
+        }))
+      : [{ price_name: 'Sales Price', price: salesPrice, price_includes_tax: false }];
+  }
   const body = {
     stock_item: {
       ...openApiUpdates,
-      ...(salesPrice != null
-        ? {
-            sales_prices: [
-              {
-                price_name: 'Sales Price',
-                price: salesPrice,
-                price_includes_tax: false,
-              },
-            ],
-          }
-        : {}),
+      ...(salesPrices ? { sales_prices: salesPrices } : {}),
     },
   };
   const updated = (await sageFetch(`/stock_items/${id}`, accessToken, {
@@ -382,7 +423,6 @@ export type NormalizedContact = {
   typeIds: string[];
   currencyId?: string;
   defaultPurchaseLedgerAccountId?: string;
-  defaultPurchaseTaxRateId?: string;
   defaultSalesLedgerAccountId?: string;
   defaultSalesTaxRateId?: string;
   mainAddress?: Record<string, unknown>;
@@ -393,15 +433,7 @@ export async function listContacts(
   businessId: string,
   contactTypeId?: 'VENDOR' | 'CUSTOMER',
 ): Promise<NormalizedContact[]> {
-  const data = (await sageFetch('/contacts', accessToken, {
-    businessId,
-    query: {
-      ...(contactTypeId ? { contact_type_id: contactTypeId } : {}),
-      items_per_page: '200',
-      attributes: 'all',
-    },
-  })) as {
-    $items?: Array<{
+  const data = await sageListAll<{
       id: string;
       name?: string;
       displayed_as?: string;
@@ -409,32 +441,20 @@ export async function listContacts(
       contact_types?: Array<{ id?: string }>;
       currency?: { id?: string };
       default_purchase_ledger_account?: { id?: string };
-      default_purchase_tax_rate?: { id?: string };
       default_sales_ledger_account?: { id?: string };
       default_sales_tax_rate?: { id?: string };
       main_address?: Record<string, unknown>;
-    }>;
-  } | Array<{
-    id: string;
-    name?: string;
-    displayed_as?: string;
-    reference?: string;
-    contact_types?: Array<{ id?: string }>;
-    currency?: { id?: string };
-    default_purchase_ledger_account?: { id?: string };
-    default_purchase_tax_rate?: { id?: string };
-    default_sales_ledger_account?: { id?: string };
-    default_sales_tax_rate?: { id?: string };
-    main_address?: Record<string, unknown>;
-  }>;
-  return listItems(data).map((c) => ({
+    }>('/contacts', accessToken, businessId, {
+      ...(contactTypeId ? { contact_type_id: contactTypeId } : {}),
+      attributes: 'all',
+    });
+  return data.map((c) => ({
     id: c.id,
     name: c.name ?? c.displayed_as ?? '',
     reference: c.reference ?? '',
     typeIds: (c.contact_types ?? []).map((type) => type.id ?? '').filter(Boolean),
     currencyId: c.currency?.id,
     defaultPurchaseLedgerAccountId: c.default_purchase_ledger_account?.id,
-    defaultPurchaseTaxRateId: c.default_purchase_tax_rate?.id,
     defaultSalesLedgerAccountId: c.default_sales_ledger_account?.id,
     defaultSalesTaxRateId: c.default_sales_tax_rate?.id,
     mainAddress: c.main_address,
@@ -498,12 +518,19 @@ function normalizePurchaseInvoice(invoice: Record<string, unknown>): NormalizedP
   };
 }
 
-export async function listPurchaseInvoices(accessToken: string, businessId: string) {
-  const data = (await sageFetch('/purchase_invoices', accessToken, {
-    businessId,
-    query: { items_per_page: '200', attributes: 'all' },
-  })) as { $items?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
-  return listItems(data).map(normalizePurchaseInvoice);
+export async function listPurchaseInvoices(
+  accessToken: string,
+  businessId: string,
+  reference?: string,
+) {
+  return (
+    await sageListAll<Record<string, unknown>>(
+      '/purchase_invoices',
+      accessToken,
+      businessId,
+      { attributes: 'all', ...(reference ? { search: reference } : {}) },
+    )
+  ).map(normalizePurchaseInvoice);
 }
 
 export async function createPurchaseInvoice(
@@ -572,18 +599,18 @@ export async function listStockMovements(
   accessToken: string,
   businessId: string,
   reference?: string,
+  stockItemId?: string,
 ) {
-  const data = await sageFetch<
-    { $items?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>
-  >('/stock_movements', accessToken, {
+  return sageListAll<Record<string, unknown>>(
+    '/stock_movements',
+    accessToken,
     businessId,
-    query: {
-      items_per_page: '200',
+    {
       attributes: 'all',
       ...(reference ? { search: reference } : {}),
+      ...(stockItemId ? { stock_item_id: stockItemId } : {}),
     },
-  });
-  return listItems(data);
+  );
 }
 
 export async function getStockMovement(
@@ -614,17 +641,15 @@ export async function listSalesInvoices(
   businessId: string,
   reference?: string,
 ) {
-  const data = await sageFetch<
-    { $items?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>
-  >('/sales_invoices', accessToken, {
+  return sageListAll<Record<string, unknown>>(
+    '/sales_invoices',
+    accessToken,
     businessId,
-    query: {
-      items_per_page: '200',
+    {
       attributes: 'all',
       ...(reference ? { search: reference } : {}),
     },
-  });
-  return listItems(data);
+  );
 }
 
 export async function getSalesInvoice(
@@ -684,9 +709,29 @@ export async function listSalesLedgerAccounts(accessToken: string, businessId: s
 export function discoverCapabilities() {
   return {
     stockItems: { list: true, get: true, create: true, update: true, delete: true },
-    purchaseInvoices: { list: true, create: true, delete: true },
-    stockMovements: { list: true, create: true, get: true },
-    salesInvoices: { list: true, create: true, get: true, release: true },
+    purchaseInvoices: {
+      list: true,
+      get: true,
+      create: true,
+      update: true,
+      delete: true,
+      release: true,
+    },
+    stockMovements: {
+      list: true,
+      get: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
+    salesInvoices: {
+      list: true,
+      get: true,
+      create: true,
+      update: true,
+      delete: true,
+      release: true,
+    },
     purchaseOrders: {
       available: false,
       reason:

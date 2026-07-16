@@ -4,7 +4,10 @@ import type { WorkflowPreview, WorkflowRun } from '../shared/workflow';
 import { FIXTURE_SHIPMENT } from '../api/_lib/workflow/fixtures';
 import { matchShipmentLines } from '../api/_lib/workflow/matcher';
 import { WorkflowOrchestrator } from '../api/_lib/workflow/orchestrator';
-import type { WorkflowStore } from '../api/_lib/workflow/store';
+import {
+  EncryptedCookieWorkflowStore,
+  type WorkflowStore,
+} from '../api/_lib/workflow/store';
 import type { SageGateway } from '../api/_lib/workflow/sageGateway';
 
 class MemoryStore implements WorkflowStore {
@@ -35,6 +38,10 @@ function run(): WorkflowRun {
       customerSale: 'pending',
       purchaseInvoiceRelease: 'pending',
       salesInvoiceRelease: 'pending',
+    },
+    approvedPayloadHashes: {
+      purchaseInvoice: 'digest',
+      inventoryReceipt: 'digest',
     },
     inventoryPostingStrategy: 'stock_movement',
     sourceMessageIds: [],
@@ -106,6 +113,13 @@ function preview(current: WorkflowRun): WorkflowPreview {
       salesInvoice: {},
     },
     selections: { accountingMappingConfirmed: true },
+    approvalDigests: {
+      purchaseInvoice: 'digest',
+      inventoryReceipt: 'digest',
+      customerSale: 'digest',
+      purchaseInvoiceRelease: 'digest',
+      salesInvoiceRelease: 'digest',
+    },
     validationErrors: [],
   };
 }
@@ -191,6 +205,7 @@ describe('WorkflowOrchestrator write safety', () => {
     expect(
       retry.run.postingRecords.filter((record) => record.status === 'succeeded'),
     ).toHaveLength(2);
+    expect(retry.run.status).toBe('completed');
   });
 
   it('returns an idempotent replay for an already-created Purchase Invoice', async () => {
@@ -218,5 +233,60 @@ describe('WorkflowOrchestrator write safety', () => {
     );
     expect(result.idempotentReplay).toBe(true);
     expect(result.records).toHaveLength(1);
+  });
+
+  it('invalidates approval when the approved payload digest changes', async () => {
+    const store = new MemoryStore();
+    const orchestrator = new WorkflowOrchestrator(store);
+    const current = run();
+    const changed = preview(current);
+    changed.approvalDigests.purchaseInvoice = 'changed-digest';
+    await expect(
+      orchestrator.execute(
+        {} as VercelResponse,
+        current,
+        changed,
+        {} as SageGateway,
+        'purchase_invoice',
+      ),
+    ).rejects.toThrow('Approved payload changed');
+    expect(current.approvals.purchaseInvoice).toBe('pending');
+  });
+});
+
+describe('Encrypted WorkflowStore', () => {
+  it('round-trips compact critical state across encrypted cookie chunks', () => {
+    process.env.TOKEN_ENCRYPTION_KEY = 'workflow-test-key';
+    const headers = new Map<string, string | string[] | number>();
+    const response = {
+      getHeader: (name: string) => headers.get(name),
+      setHeader: (name: string, value: string | string[] | number) =>
+        headers.set(name, value),
+    } as unknown as VercelResponse;
+    const store = new EncryptedCookieWorkflowStore();
+    const current = run();
+    current.postingRecords.push({
+      workflowId: current.id,
+      transactionType: 'purchase_invoice',
+      sageBusinessId: 'business',
+      sageTransactionId: 'pi-1',
+      externalReference: current.externalReference,
+      requestPayload: { invoice_lines: Array.from({ length: 30 }, (_, i) => ({ i })) },
+      responseSummary: { status: 'DRAFT' },
+      createdAt: new Date().toISOString(),
+      readBackVerified: true,
+      status: 'succeeded',
+    });
+    store.put(response, current);
+    const setCookies = headers.get('Set-Cookie') as string[];
+    const cookieHeader = setCookies
+      .filter((line) => !line.includes('Max-Age=0'))
+      .map((line) => line.split(';')[0])
+      .join('; ');
+    const restored = store.get({
+      headers: { cookie: cookieHeader },
+    } as never);
+    expect(restored?.postingRecords[0].sageTransactionId).toBe('pi-1');
+    expect(restored?.approvedPayloadHashes.purchaseInvoice).toBe('digest');
   });
 });
