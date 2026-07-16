@@ -283,6 +283,37 @@ export async function resolveStockItemDefaults(
   };
 }
 
+type ProductSalesPriceType = {
+  id?: string;
+  displayed_as?: string;
+  name?: string;
+};
+
+/** Resolve a valid UK/US product sales price type for stock_item.sales_prices. */
+export async function resolveProductSalesPriceTypeId(
+  accessToken: string,
+  businessId: string,
+): Promise<string | undefined> {
+  const types = await sageListAll<ProductSalesPriceType>(
+    '/product_sales_price_types',
+    accessToken,
+    businessId,
+  );
+  if (!types.length) return undefined;
+  const scored = types
+    .map((type) => {
+      const label = String(type.displayed_as ?? type.name ?? '').toLowerCase();
+      let score = 1;
+      if (/sales price|selling price|^sales$/.test(label)) score += 50;
+      if (/retail/.test(label)) score += 30;
+      if (/trade|wholesale/.test(label)) score += 10;
+      return { id: type.id, score };
+    })
+    .filter((row) => row.id)
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.id;
+}
+
 export async function createStockItem(
   accessToken: string,
   businessId: string,
@@ -308,22 +339,40 @@ export async function createStockItem(
     purchaseTaxRateId: payload.purchase_tax_rate_id,
   });
 
+  // Sage rejects sales_prices without a valid product_sales_price_type_id
+  // (error text often mislabels the field as service_rate_type_id).
+  let salesPrices:
+    | Array<{
+        price_name: string;
+        price: number;
+        price_includes_tax: boolean;
+        product_sales_price_type_id?: string;
+      }>
+    | undefined;
+  if (payload.sales_price != null && Number(payload.sales_price) > 0) {
+    const priceTypeId = await resolveProductSalesPriceTypeId(accessToken, businessId);
+    if (!priceTypeId) {
+      throw new SageApiError(
+        'Could not resolve product_sales_price_type_id required to create a Sage stock item sales price. Create one stock item in Sage first, then retry.',
+        422,
+      );
+    }
+    salesPrices = [
+      {
+        price_name: 'Sales Price',
+        price: Number(payload.sales_price),
+        price_includes_tax: false,
+        product_sales_price_type_id: priceTypeId,
+      },
+    ];
+  }
+
   const body = {
     stock_item: {
       item_code: payload.item_code,
       description: payload.description,
       cost_price: payload.cost_price,
-      ...(payload.sales_price != null
-        ? {
-            sales_prices: [
-              {
-                price_name: 'Sales Price',
-                price: payload.sales_price,
-                price_includes_tax: false,
-              },
-            ],
-          }
-        : {}),
+      ...(salesPrices ? { sales_prices: salesPrices } : {}),
       reorder_level: payload.reorder_level ?? 0,
       reorder_quantity: payload.reorder_quantity ?? 0,
       supplier_part_number: payload.supplier_part_number ?? '',
@@ -392,7 +441,20 @@ export async function updateStockItem(
               }
             : {}),
         }))
-      : [{ price_name: 'Sales Price', price: salesPrice, price_includes_tax: false }];
+      : await (async () => {
+          const priceTypeId = await resolveProductSalesPriceTypeId(
+            accessToken,
+            businessId,
+          );
+          return [
+            {
+              price_name: 'Sales Price',
+              price: salesPrice,
+              price_includes_tax: false,
+              ...(priceTypeId ? { product_sales_price_type_id: priceTypeId } : {}),
+            },
+          ];
+        })();
   }
   const body = {
     stock_item: {

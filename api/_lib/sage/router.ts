@@ -517,11 +517,19 @@ export async function handleSageRequest(req: VercelRequest, res: VercelResponse)
             item: existing,
           });
         }
+        const rawSalesPrice = body.sales_price ?? body.salesPrice;
+        const salesPrice =
+          rawSalesPrice == null || rawSalesPrice === ''
+            ? undefined
+            : Number(rawSalesPrice);
         const created = await createStockItem(auth.accessToken, businessId, {
           item_code: sku,
           description: String(body.description ?? ''),
           cost_price: Number(body.cost_price ?? body.costPrice ?? 0),
-          sales_price: Number(body.sales_price ?? body.salesPrice ?? 0),
+          sales_price:
+            salesPrice != null && Number.isFinite(salesPrice) && salesPrice > 0
+              ? salesPrice
+              : undefined,
           reorder_level: Number(body.reorder_level ?? body.reorderLevel ?? 0),
           reorder_quantity: Number(body.reorder_quantity ?? body.reorderQuantity ?? 0),
           supplier_part_number: body.supplier_part_number
