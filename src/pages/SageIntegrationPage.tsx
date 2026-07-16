@@ -275,7 +275,7 @@ export function SageIntegrationPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            Synpath Document → Sage
+            Ghostboards Demo
           </h1>
           <p className="mt-2 max-w-3xl text-sm text-neutral-400">
             Gmail and fixture documents → normalized review → landed cost → approved Sage
