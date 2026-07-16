@@ -20,6 +20,7 @@ export function DocumentsLandedCostStep({
   onSyncGmail,
   onToggleMessage,
   onLineChange,
+  onShipmentFieldChange,
   onChargeChange,
   onChargeMethodChange,
   onChargeClassificationChange,
@@ -40,6 +41,7 @@ export function DocumentsLandedCostStep({
     field: 'receivedQuantity' | 'vendorUnitCost' | 'weight' | 'volume',
     value: number,
   ) => void;
+  onShipmentFieldChange: (field: string, value: string | number) => void;
   onChargeChange: (id: string, value: number) => void;
   onChargeMethodChange: (id: string, value: AllocationMethod) => void;
   onChargeClassificationChange: (id: string, value: ChargeClassification) => void;
@@ -174,6 +176,60 @@ export function DocumentsLandedCostStep({
               >
                 Recalculate preview
               </button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <TextInput
+                label="External PO reference"
+                value={preview.bundle.shipment.externalPoNumber}
+                onChange={(value) => onShipmentFieldChange('externalPoNumber', value)}
+              />
+              <TextInput
+                label="Container"
+                value={preview.bundle.shipment.containerNumber}
+                onChange={(value) => onShipmentFieldChange('containerNumber', value)}
+              />
+              <TextInput
+                label="Supplier"
+                value={preview.bundle.shipment.supplier}
+                onChange={(value) => onShipmentFieldChange('supplier', value)}
+              />
+              <TextInput
+                label="Vendor invoice"
+                value={preview.bundle.shipment.vendorInvoiceNumber}
+                onChange={(value) => onShipmentFieldChange('vendorInvoiceNumber', value)}
+              />
+              <TextInput
+                label="Shipment date"
+                value={preview.bundle.shipment.shipmentDate}
+                onChange={(value) => onShipmentFieldChange('shipmentDate', value)}
+                type="date"
+              />
+              <TextInput
+                label="Arrival date"
+                value={preview.bundle.shipment.arrivalDate}
+                onChange={(value) => onShipmentFieldChange('arrivalDate', value)}
+                type="date"
+              />
+              <NumberInputField
+                label="Vendor subtotal"
+                value={preview.bundle.shipment.vendorInvoiceSubtotal}
+                onChange={(value) => onShipmentFieldChange('vendorInvoiceSubtotal', value)}
+              />
+              <NumberInputField
+                label="Vendor tax"
+                value={preview.bundle.shipment.vendorInvoiceTax}
+                onChange={(value) => onShipmentFieldChange('vendorInvoiceTax', value)}
+              />
+              <NumberInputField
+                label="Vendor total"
+                value={preview.bundle.shipment.vendorInvoiceTotal}
+                onChange={(value) => onShipmentFieldChange('vendorInvoiceTotal', value)}
+              />
+              <NumberInputField
+                label="Exchange rate"
+                value={preview.bundle.shipment.exchangeRate}
+                onChange={(value) => onShipmentFieldChange('exchangeRate', value)}
+              />
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[1000px] text-left text-xs">
@@ -369,6 +425,53 @@ function NumberInput({ value, onChange }: { value: number; onChange: (value: num
       onChange={(event) => onChange(Number(event.target.value))}
       className="w-24 rounded border border-neutral-700 bg-black px-2 py-1 text-white"
     />
+  );
+}
+
+function TextInput({
+  label,
+  value,
+  onChange,
+  type = 'text',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
+  return (
+    <label className="text-xs text-neutral-400">
+      {label}
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded border border-neutral-700 bg-black px-2 py-1.5 text-white"
+      />
+    </label>
+  );
+}
+
+function NumberInputField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="text-xs text-neutral-400">
+      {label}
+      <input
+        type="number"
+        step="0.01"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-1 w-full rounded border border-neutral-700 bg-black px-2 py-1.5 text-white"
+      />
+    </label>
   );
 }
 

@@ -11,6 +11,40 @@ import {
 import type { SourceCollection } from './sourceAdapters';
 
 export interface ExtractionOverrides {
+  shipment?: Partial<
+    Pick<
+      import('../../../shared/workflow').Shipment,
+      | 'externalPoNumber'
+      | 'containerNumber'
+      | 'shipmentDate'
+      | 'arrivalDate'
+      | 'supplier'
+      | 'vendorInvoiceNumber'
+      | 'vendorInvoiceSubtotal'
+      | 'vendorInvoiceTax'
+      | 'vendorInvoiceTotal'
+      | 'currency'
+    >
+  >;
+  customerInvoice?: Partial<
+    Pick<
+      import('../../../shared/workflow').CustomerInvoice,
+      | 'sourceInvoiceNumber'
+      | 'customer'
+      | 'invoiceDate'
+      | 'dueDate'
+      | 'currency'
+      | 'reference'
+      | 'shipping'
+    >
+  >;
+  customerInvoiceLines?: Array<{
+    sku: string;
+    quantity?: number;
+    salesUnitPrice?: number;
+    discount?: number;
+    tax?: number;
+  }>;
   exchangeRate?: number;
   shipmentLines?: Array<{
     sku: string;
@@ -62,6 +96,44 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
     const shipment = structuredClone(FIXTURE_SHIPMENT);
     const landedCostComponents = structuredClone(FIXTURE_LANDED_COST_COMPONENTS);
     const customerInvoice = structuredClone(FIXTURE_CUSTOMER_INVOICE);
+    Object.assign(shipment, overrides.shipment ?? {});
+    Object.assign(customerInvoice, overrides.customerInvoice ?? {});
+    for (const override of overrides.customerInvoiceLines ?? []) {
+      const line = customerInvoice.lines.find((item) => item.sku === override.sku);
+      if (!line) continue;
+      if (override.quantity != null) line.quantity = override.quantity;
+      if (override.salesUnitPrice != null) line.salesUnitPrice = override.salesUnitPrice;
+      if (override.discount != null) line.discount = override.discount;
+      if (override.tax != null) line.tax = override.tax;
+      line.total = Number(
+        (
+          line.quantity * line.salesUnitPrice -
+          line.discount +
+          line.tax
+        ).toFixed(2),
+      );
+    }
+    if (overrides.customerInvoiceLines?.length || overrides.customerInvoice?.shipping != null) {
+      customerInvoice.subtotal = Number(
+        customerInvoice.lines
+          .reduce(
+            (sum, line) =>
+              sum + line.quantity * line.salesUnitPrice - line.discount,
+            0,
+          )
+          .toFixed(2),
+      );
+      customerInvoice.tax = Number(
+        customerInvoice.lines.reduce((sum, line) => sum + line.tax, 0).toFixed(2),
+      );
+      customerInvoice.total = Number(
+        (
+          customerInvoice.subtotal +
+          customerInvoice.tax +
+          customerInvoice.shipping
+        ).toFixed(2),
+      );
+    }
     if (overrides.exchangeRate != null) shipment.exchangeRate = overrides.exchangeRate;
     for (const override of overrides.shipmentLines ?? []) {
       const line = shipment.lines.find((item) => item.sku === override.sku);
@@ -128,9 +200,22 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
         'fixture-po',
         0.99,
         'Fixture extraction result — not live AI extraction',
+        overrides.shipment?.externalPoNumber != null,
       ),
-      containerNumber: fixtureField(shipment.containerNumber, 'fixture-bol', 0.98),
-      supplier: fixtureField(shipment.supplier, 'fixture-vendor-invoice', 0.97),
+      containerNumber: fixtureField(
+        shipment.containerNumber,
+        'fixture-bol',
+        0.98,
+        undefined,
+        overrides.shipment?.containerNumber != null,
+      ),
+      supplier: fixtureField(
+        shipment.supplier,
+        'fixture-vendor-invoice',
+        0.97,
+        undefined,
+        overrides.shipment?.supplier != null,
+      ),
       exchangeRate: fixtureField(
         shipment.exchangeRate,
         'fixture-vendor-invoice',
@@ -138,11 +223,33 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
         undefined,
         overrides.exchangeRate != null,
       ),
-      vendorInvoiceNumber: fixtureField('NWA-INV-8841', 'fixture-vendor-invoice', 0.99),
+      vendorInvoiceNumber: fixtureField(
+        shipment.vendorInvoiceNumber,
+        'fixture-vendor-invoice',
+        0.99,
+        undefined,
+        overrides.shipment?.vendorInvoiceNumber != null,
+      ),
       customerInvoiceNumber: fixtureField(
         customerInvoice.sourceInvoiceNumber,
         'fixture-customer-invoice',
         0.99,
+        undefined,
+        overrides.customerInvoice?.sourceInvoiceNumber != null,
+      ),
+      customer: fixtureField(
+        customerInvoice.customer,
+        'fixture-customer-invoice',
+        0.97,
+        undefined,
+        overrides.customerInvoice?.customer != null,
+      ),
+      customerInvoiceDate: fixtureField(
+        customerInvoice.invoiceDate,
+        'fixture-customer-invoice',
+        0.98,
+        undefined,
+        overrides.customerInvoice?.invoiceDate != null,
       ),
     };
     for (const line of shipment.lines) {
@@ -159,6 +266,32 @@ export class FixtureDocumentExtractionAdapter implements DocumentExtractionAdapt
         0.98,
         undefined,
         Boolean(overrides.shipmentLines?.find((item) => item.sku === line.sku)),
+      );
+    }
+    for (const line of customerInvoice.lines) {
+      const manuallyEdited = Boolean(
+        overrides.customerInvoiceLines?.find((item) => item.sku === line.sku),
+      );
+      fields[`customerLine.${line.sku}.quantity`] = fixtureField(
+        line.quantity,
+        'fixture-customer-invoice',
+        0.98,
+        undefined,
+        manuallyEdited,
+      );
+      fields[`customerLine.${line.sku}.unitPrice`] = fixtureField(
+        line.salesUnitPrice,
+        'fixture-customer-invoice',
+        0.98,
+        undefined,
+        manuallyEdited,
+      );
+      fields[`customerLine.${line.sku}.tax`] = fixtureField(
+        line.tax,
+        'fixture-customer-invoice',
+        0.95,
+        undefined,
+        manuallyEdited,
       );
     }
 

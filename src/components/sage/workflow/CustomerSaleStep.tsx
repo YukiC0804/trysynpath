@@ -10,6 +10,8 @@ export function CustomerSaleStep({
   onConfirmationChange,
   onMappingConfirmedChange,
   onSelectionChange,
+  onCustomerFieldChange,
+  onCustomerLineChange,
   onApprove,
   onExecute,
 }: {
@@ -20,6 +22,12 @@ export function CustomerSaleStep({
   onConfirmationChange: (value: string) => void;
   onMappingConfirmedChange: (value: boolean) => void;
   onSelectionChange: (key: string, value: string) => void;
+  onCustomerFieldChange: (key: string, value: string | number) => void;
+  onCustomerLineChange: (
+    sku: string,
+    key: 'quantity' | 'salesUnitPrice' | 'discount' | 'tax',
+    value: number,
+  ) => void;
   onApprove: (target: 'customerSale' | 'salesInvoiceRelease') => void;
   onExecute: (target: 'sales_invoice' | 'sales_invoice_release') => void;
 }) {
@@ -76,10 +84,32 @@ export function CustomerSaleStep({
                 return (
                   <tr key={line.sku} className="border-t border-neutral-800">
                     <td className="py-3 font-medium text-white">{line.sku}</td>
-                    <td>{line.quantity}</td>
-                    <td>£{line.salesUnitPrice.toFixed(2)}</td>
-                    <td>£{line.discount.toFixed(2)}</td>
-                    <td>£{line.tax.toFixed(2)}</td>
+                    <td>
+                      <InlineNumber
+                        value={line.quantity}
+                        onChange={(value) => onCustomerLineChange(line.sku, 'quantity', value)}
+                      />
+                    </td>
+                    <td>
+                      <InlineNumber
+                        value={line.salesUnitPrice}
+                        onChange={(value) =>
+                          onCustomerLineChange(line.sku, 'salesUnitPrice', value)
+                        }
+                      />
+                    </td>
+                    <td>
+                      <InlineNumber
+                        value={line.discount}
+                        onChange={(value) => onCustomerLineChange(line.sku, 'discount', value)}
+                      />
+                    </td>
+                    <td>
+                      <InlineNumber
+                        value={line.tax}
+                        onChange={(value) => onCustomerLineChange(line.sku, 'tax', value)}
+                      />
+                    </td>
                     <td>{stock?.itemCode ?? 'Missing'}</td>
                     <td>{stock ? stock.quantityInStock + incoming : '—'}</td>
                   </tr>
@@ -87,6 +117,41 @@ export function CustomerSaleStep({
               })}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Editable
+            label="Source invoice number"
+            value={invoice.sourceInvoiceNumber}
+            onChange={(value) => onCustomerFieldChange('sourceInvoiceNumber', value)}
+          />
+          <Editable
+            label="Customer"
+            value={invoice.customer}
+            onChange={(value) => onCustomerFieldChange('customer', value)}
+          />
+          <Editable
+            label="Invoice date"
+            value={invoice.invoiceDate}
+            type="date"
+            onChange={(value) => onCustomerFieldChange('invoiceDate', value)}
+          />
+          <Editable
+            label="Due date"
+            value={invoice.dueDate}
+            type="date"
+            onChange={(value) => onCustomerFieldChange('dueDate', value)}
+          />
+          <Editable
+            label="Reference"
+            value={invoice.reference}
+            onChange={(value) => onCustomerFieldChange('reference', value)}
+          />
+          <Editable
+            label="Shipping"
+            value={invoice.shipping}
+            type="number"
+            onChange={(value) => onCustomerFieldChange('shipping', Number(value))}
+          />
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <Select
@@ -240,6 +305,49 @@ function Metric({ label, value }: { label: string; value: number }) {
       <p className="text-[10px] uppercase text-neutral-500">{label}</p>
       <p className="mt-1 text-sm text-white">£{value.toFixed(2)}</p>
     </div>
+  );
+}
+
+function Editable({
+  label,
+  value,
+  type = 'text',
+  onChange,
+}: {
+  label: string;
+  value: string | number;
+  type?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="text-xs text-neutral-400">
+      {label}
+      <input
+        type={type}
+        step={type === 'number' ? '0.01' : undefined}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded border border-neutral-700 bg-black px-2 py-1.5 text-white"
+      />
+    </label>
+  );
+}
+
+function InlineNumber({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <input
+      type="number"
+      step="0.01"
+      value={value}
+      onChange={(event) => onChange(Number(event.target.value))}
+      className="w-20 rounded border border-neutral-700 bg-black px-1.5 py-1 text-white"
+    />
   );
 }
 

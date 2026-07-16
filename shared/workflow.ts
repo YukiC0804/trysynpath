@@ -317,5 +317,15 @@ export function validateNormalizedBundle(bundle: NormalizedDocumentBundle): stri
   if (!bundle.customerInvoice.sourceInvoiceNumber) {
     errors.push('Customer invoice number is required');
   }
+  if (
+    Math.abs(
+      bundle.customerInvoice.subtotal +
+        bundle.customerInvoice.shipping +
+        bundle.customerInvoice.tax -
+        bundle.customerInvoice.total,
+    ) > 0.01
+  ) {
+    errors.push('Customer Invoice subtotal, shipping, tax and total do not reconcile');
+  }
   return errors;
 }

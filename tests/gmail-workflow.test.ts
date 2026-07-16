@@ -93,10 +93,24 @@ describe('source adapters and normalization', () => {
     const source = await new FixtureSourceAdapter().collect();
     const result = await new FixtureDocumentExtractionAdapter().extract(source, {
       exchangeRate: 1.25,
+      shipment: { vendorInvoiceNumber: 'EDITED-INV' },
       shipmentLines: [{ sku: 'ACR-MIR-SLV-3MM', receivedQuantity: 48 }],
+      customerInvoice: { customer: 'Edited Customer', shipping: 90 },
+      customerInvoiceLines: [
+        { sku: 'ACR-MIR-SLV-3MM', quantity: 9, salesUnitPrice: 105 },
+      ],
     });
     expect(result.bundle.shipment.exchangeRate).toBe(1.25);
     expect(result.bundle.shipment.lines[0].receivedQuantity).toBe(48);
     expect(result.fields.exchangeRate.manuallyEdited).toBe(true);
+    expect(result.bundle.shipment.vendorInvoiceNumber).toBe('EDITED-INV');
+    expect(result.bundle.customerInvoice.customer).toBe('Edited Customer');
+    expect(result.bundle.customerInvoice.lines[0]).toMatchObject({
+      quantity: 9,
+      salesUnitPrice: 105,
+    });
+    expect(result.fields['customerLine.ACR-MIR-SLV-3MM.quantity'].manuallyEdited).toBe(
+      true,
+    );
   });
 });

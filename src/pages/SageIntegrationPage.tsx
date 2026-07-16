@@ -39,6 +39,15 @@ const STEPS: Array<{ id: Step; label: string }> = [
 ];
 
 type Overrides = {
+  shipment?: Record<string, string | number>;
+  customerInvoice?: Record<string, string | number>;
+  customerInvoiceLines?: Array<{
+    sku: string;
+    quantity?: number;
+    salesUnitPrice?: number;
+    discount?: number;
+    tax?: number;
+  }>;
   exchangeRate?: number;
   shipmentLines?: Array<{
     sku: string;
@@ -415,6 +424,16 @@ export function SageIntegrationPage() {
             )
           }
           onLineChange={updateLine}
+          onShipmentFieldChange={(field, value) =>
+            setOverrides((current) =>
+              field === 'exchangeRate'
+                ? { ...current, exchangeRate: Number(value) }
+                : {
+                    ...current,
+                    shipment: { ...current.shipment, [field]: value },
+                  },
+            )
+          }
           onChargeChange={(id, value) =>
             setOverrides((current) => ({
               ...current,
@@ -484,6 +503,28 @@ export function SageIntegrationPage() {
           onConfirmationChange={setConfirmation}
           onMappingConfirmedChange={setMappingConfirmed}
           onSelectionChange={updateSelection}
+          onCustomerFieldChange={(field, value) =>
+            setOverrides((current) => ({
+              ...current,
+              customerInvoice: {
+                ...current.customerInvoice,
+                [field]: value,
+              },
+            }))
+          }
+          onCustomerLineChange={(sku, field, value) =>
+            setOverrides((current) => {
+              const lines = [...(current.customerInvoiceLines ?? [])];
+              const index = lines.findIndex((line) => line.sku === sku);
+              const next =
+                index >= 0
+                  ? { ...lines[index], [field]: value }
+                  : { sku, [field]: value };
+              if (index >= 0) lines[index] = next;
+              else lines.push(next);
+              return { ...current, customerInvoiceLines: lines };
+            })
+          }
           onApprove={(target) => void handleApproval(target)}
           onExecute={(target) => void handleExecute(target)}
         />
