@@ -84,7 +84,9 @@ Reference: ${FIXTURE_REFERENCE}
 ACR-MIR-SLV-3MM,50,68.00,3400.00
 ACR-CLR-3MM-48X96,40,42.50,1700.00
 ACR-CLR-6MM-48X96,20,76.00,1520.00
-Subtotal GBP 6620.00`,
+Subtotal GBP 6620.00
+Tax GBP 0.00
+Total GBP 6620.00`,
   },
   {
     id: 'fixture-bol',
@@ -158,6 +160,9 @@ export const FIXTURE_SHIPMENT: Shipment = {
   arrivalDate: '2026-06-02',
   supplier: 'Nationwide Acrylics',
   vendorInvoiceNumber: 'NWA-INV-8841',
+  vendorInvoiceSubtotal: 6620,
+  vendorInvoiceTax: 0,
+  vendorInvoiceTotal: 6620,
   currency: 'GBP',
   exchangeRate: 1,
   status: 'Needs Review',

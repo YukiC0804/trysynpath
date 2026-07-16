@@ -168,9 +168,17 @@ export function PurchaseInventoryStep({
             label="Approve Inventory Receipt"
           />
           <Action
-            disabled={busy || run.approvals.inventoryReceipt !== 'approved'}
+            disabled={
+              busy ||
+              run.approvals.inventoryReceipt !== 'approved' ||
+              run.inventoryPostingStrategy !== 'stock_movement'
+            }
             onClick={() => onExecute('stock_movements')}
-            label="Record Inventory Receipt"
+            label={
+              run.inventoryPostingStrategy === 'purchase_invoice_product_lines'
+                ? 'No separate Stock Movement'
+                : 'Record Inventory Receipt'
+            }
             primary
           />
           <Action

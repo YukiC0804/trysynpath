@@ -221,6 +221,33 @@ export class WorkflowOrchestrator {
       reference: run.externalReference,
       strategy: run.inventoryPostingStrategy,
     });
+    const purchaseLines = purchaseInvoice.invoice_lines as Array<{
+      quantity: number;
+      unit_price: number;
+      tax_amount: number;
+    }>;
+    const purchaseInvoiceTotal = Number(
+      purchaseLines
+        .reduce(
+          (sum, line) =>
+            sum + line.quantity * line.unit_price + Number(line.tax_amount ?? 0),
+          0,
+        )
+        .toFixed(2),
+    );
+    if (
+      Math.abs(
+        purchaseInvoiceTotal - extraction.bundle.shipment.vendorInvoiceTotal,
+      ) > 0.01
+    ) {
+      validationErrors.push(
+        `Purchase Invoice payload total ${purchaseInvoiceTotal.toFixed(
+          2,
+        )} does not equal source vendor invoice total ${extraction.bundle.shipment.vendorInvoiceTotal.toFixed(
+          2,
+        )}`,
+      );
+    }
     const salesInvoice = buildSalesInvoicePayload({
       bundle: extraction.bundle,
       reference: run.externalReference,
@@ -248,7 +275,10 @@ export class WorkflowOrchestrator {
       inventoryReceipt: digest({
         sourceDocumentIds: run.sourceDocumentIds,
         attachmentHashes: run.attachmentHashes,
-        payloads: stockMovements,
+        payloads:
+          run.inventoryPostingStrategy === 'purchase_invoice_product_lines'
+            ? purchaseInvoice.invoice_lines
+            : stockMovements,
         strategy: run.inventoryPostingStrategy,
       }),
       customerSale: digest({
@@ -376,6 +406,23 @@ export class WorkflowOrchestrator {
     }
     if (confirmation !== run.externalReference) {
       throw new Error(`Type the exact transaction reference: ${run.externalReference}`);
+    }
+    if (
+      target === 'purchaseInvoice' &&
+      (!strategy || strategy === 'none')
+    ) {
+      throw new Error(
+        'Choose the inventory posting strategy before approving the Purchase Invoice',
+      );
+    }
+    if (
+      target === 'purchaseInvoice' &&
+      strategy === 'purchase_invoice_product_lines' &&
+      run.approvals.inventoryReceipt !== 'approved'
+    ) {
+      throw new Error(
+        'Approve Inventory Receipt before a product-linked Purchase Invoice',
+      );
     }
     if (target === 'inventoryReceipt') {
       if (!strategy || strategy === 'none') throw new Error('Choose an inventory posting strategy');
