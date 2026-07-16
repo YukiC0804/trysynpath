@@ -9,11 +9,11 @@ export class SageApiError extends Error {
   }
 }
 
-async function sageFetch(
+export async function sageFetch<T = unknown>(
   path: string,
   accessToken: string,
   options: { method?: string; businessId?: string; body?: unknown; query?: Record<string, string> } = {},
-) {
+): Promise<T> {
   const base = (getEnv('SAGE_API_BASE_URL') ?? 'https://api.accounting.sage.com/v3.1').replace(/\/$/, '');
   const url = new URL(`${base}${path.startsWith('/') ? path : `/${path}`}`);
   if (options.query) {
@@ -52,8 +52,8 @@ async function sageFetch(
     );
   }
 
-  if (response.status === 204) return null;
-  return response.json();
+  if (response.status === 204) return null as T;
+  return response.json() as Promise<T>;
 }
 
 function salesPriceFromItem(item: SageStockItem): number {
@@ -72,6 +72,10 @@ function refId(value: unknown): string | undefined {
   return undefined;
 }
 
+function listItems<T>(data: { $items?: T[] } | T[]): T[] {
+  return Array.isArray(data) ? data : data.$items ?? [];
+}
+
 export function normalizeStockItem(item: SageStockItem) {
   return {
     id: item.id,
@@ -80,6 +84,8 @@ export function normalizeStockItem(item: SageStockItem) {
     costPrice: Number(item.cost_price ?? 0),
     salesPrice: salesPriceFromItem(item),
     quantityInStock: Number(item.quantity_in_stock ?? 0),
+    lastCostPrice: Number(item.last_cost_price ?? 0),
+    averageCostPrice: Number(item.average_cost_price ?? 0),
     reorderLevel: Number(item.reorder_level ?? 0),
     reorderQuantity: Number(item.reorder_quantity ?? 0),
     supplier: item.usual_supplier?.displayed_as ?? '',
@@ -97,8 +103,7 @@ export function normalizeStockItem(item: SageStockItem) {
 
 export async function listBusinesses(accessToken: string): Promise<SageBusiness[]> {
   const data = (await sageFetch('/businesses', accessToken)) as { $items?: SageBusiness[] } | SageBusiness[];
-  if (Array.isArray(data)) return data;
-  return data.$items ?? [];
+  return listItems(data);
 }
 
 export function pickAccountingBusiness(businesses: SageBusiness[]): SageBusiness | undefined {
@@ -119,8 +124,8 @@ export async function listStockItems(accessToken: string, businessId: string) {
   const data = (await sageFetch('/stock_items', accessToken, {
     businessId,
     query: { items_per_page: '200', attributes: 'all' },
-  })) as { $items?: SageStockItem[] };
-  return (data.$items ?? []).map(normalizeStockItem);
+  })) as { $items?: SageStockItem[] } | SageStockItem[];
+  return listItems(data).map(normalizeStockItem);
 }
 
 export async function getStockItem(accessToken: string, businessId: string, id: string) {
@@ -143,8 +148,18 @@ export type StockItemDefaults = {
   purchase_tax_rate_id?: string;
 };
 
-type LedgerLike = { id: string; displayed_as?: string; nominal_code?: string; name?: string };
-type TaxRateLike = { id: string; displayed_as?: string };
+export type LedgerLike = {
+  id: string;
+  displayed_as?: string;
+  nominal_code?: string;
+  name?: string;
+};
+export type TaxRateLike = {
+  id: string;
+  displayed_as?: string;
+  name?: string;
+  percentage?: string | number;
+};
 
 export function pickLedgerAccount(
   ledgers: LedgerLike[],
@@ -334,33 +349,82 @@ export async function deleteStockItem(
   });
 }
 
-export async function listSuppliers(accessToken: string, businessId: string) {
+export type NormalizedContact = {
+  id: string;
+  name: string;
+  reference: string;
+  typeIds: string[];
+  currencyId?: string;
+  defaultPurchaseLedgerAccountId?: string;
+  defaultPurchaseTaxRateId?: string;
+  defaultSalesLedgerAccountId?: string;
+  defaultSalesTaxRateId?: string;
+  mainAddress?: Record<string, unknown>;
+};
+
+export async function listContacts(
+  accessToken: string,
+  businessId: string,
+  contactTypeId?: 'VENDOR' | 'CUSTOMER',
+): Promise<NormalizedContact[]> {
   const data = (await sageFetch('/contacts', accessToken, {
     businessId,
-    query: { contact_type: 'VENDOR', items_per_page: '200', attributes: 'all' },
+    query: {
+      ...(contactTypeId ? { contact_type_id: contactTypeId } : {}),
+      items_per_page: '200',
+      attributes: 'all',
+    },
   })) as {
     $items?: Array<{
       id: string;
       name?: string;
       displayed_as?: string;
       reference?: string;
+      contact_types?: Array<{ id?: string }>;
+      currency?: { id?: string };
+      default_purchase_ledger_account?: { id?: string };
+      default_purchase_tax_rate?: { id?: string };
+      default_sales_ledger_account?: { id?: string };
+      default_sales_tax_rate?: { id?: string };
       main_address?: Record<string, unknown>;
     }>;
-  };
-  return (data.$items ?? []).map((c) => ({
+  } | Array<{
+    id: string;
+    name?: string;
+    displayed_as?: string;
+    reference?: string;
+    contact_types?: Array<{ id?: string }>;
+    currency?: { id?: string };
+    default_purchase_ledger_account?: { id?: string };
+    default_purchase_tax_rate?: { id?: string };
+    default_sales_ledger_account?: { id?: string };
+    default_sales_tax_rate?: { id?: string };
+    main_address?: Record<string, unknown>;
+  }>;
+  return listItems(data).map((c) => ({
     id: c.id,
     name: c.name ?? c.displayed_as ?? '',
     reference: c.reference ?? '',
+    typeIds: (c.contact_types ?? []).map((type) => type.id ?? '').filter(Boolean),
+    currencyId: c.currency?.id,
+    defaultPurchaseLedgerAccountId: c.default_purchase_ledger_account?.id,
+    defaultPurchaseTaxRateId: c.default_purchase_tax_rate?.id,
+    defaultSalesLedgerAccountId: c.default_sales_ledger_account?.id,
+    defaultSalesTaxRateId: c.default_sales_tax_rate?.id,
     mainAddress: c.main_address,
   }));
+}
+
+export function listSuppliers(accessToken: string, businessId: string) {
+  return listContacts(accessToken, businessId, 'VENDOR');
 }
 
 export async function listLedgerAccounts(accessToken: string, businessId: string) {
   const data = (await sageFetch('/ledger_accounts', accessToken, {
     businessId,
     query: { items_per_page: '200' },
-  })) as { $items?: LedgerLike[] };
-  return data.$items ?? [];
+  })) as { $items?: LedgerLike[] } | LedgerLike[];
+  return listItems(data);
 }
 
 export const SAGE_PURCHASE_LEDGER_VISIBLE_IN = 'expenses';
@@ -371,16 +435,16 @@ export async function listPurchaseLedgerAccounts(accessToken: string, businessId
     // Sage exposes invoice expense accounts under "expenses"; "purchases" is
     // not a valid visible_in value and returns 422.
     query: { items_per_page: '200', visible_in: SAGE_PURCHASE_LEDGER_VISIBLE_IN },
-  })) as { $items?: LedgerLike[] };
-  return data.$items ?? [];
+  })) as { $items?: LedgerLike[] } | LedgerLike[];
+  return listItems(data);
 }
 
 export async function listTaxRates(accessToken: string, businessId: string) {
   const data = (await sageFetch('/tax_rates', accessToken, {
     businessId,
     query: { items_per_page: '50' },
-  })) as { $items?: TaxRateLike[] };
-  return data.$items ?? [];
+  })) as { $items?: TaxRateLike[] } | TaxRateLike[];
+  return listItems(data);
 }
 
 export type NormalizedPurchaseInvoice = {
@@ -408,8 +472,8 @@ export async function listPurchaseInvoices(accessToken: string, businessId: stri
   const data = (await sageFetch('/purchase_invoices', accessToken, {
     businessId,
     query: { items_per_page: '200', attributes: 'all' },
-  })) as { $items?: Array<Record<string, unknown>> };
-  return (data.$items ?? []).map(normalizePurchaseInvoice);
+  })) as { $items?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+  return listItems(data).map(normalizePurchaseInvoice);
 }
 
 export async function createPurchaseInvoice(
@@ -439,10 +503,160 @@ export async function deletePurchaseInvoice(
   });
 }
 
+export async function getPurchaseInvoice(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  return sageFetch<Record<string, unknown>>(`/purchase_invoices/${id}`, accessToken, {
+    businessId,
+    query: { attributes: 'all' },
+  });
+}
+
+export async function releasePurchaseInvoice(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  return sageFetch<Record<string, unknown>>(
+    `/purchase_invoices/${id}/release`,
+    accessToken,
+    { method: 'POST', businessId },
+  );
+}
+
+export async function createStockMovement(
+  accessToken: string,
+  businessId: string,
+  stockMovement: Record<string, unknown>,
+) {
+  return sageFetch<Record<string, unknown>>('/stock_movements', accessToken, {
+    method: 'POST',
+    businessId,
+    body: { stock_movement: stockMovement },
+  });
+}
+
+export async function listStockMovements(
+  accessToken: string,
+  businessId: string,
+  reference?: string,
+) {
+  const data = await sageFetch<
+    { $items?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>
+  >('/stock_movements', accessToken, {
+    businessId,
+    query: {
+      items_per_page: '200',
+      attributes: 'all',
+      ...(reference ? { search: reference } : {}),
+    },
+  });
+  return listItems(data);
+}
+
+export async function getStockMovement(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  return sageFetch<Record<string, unknown>>(`/stock_movements/${id}`, accessToken, {
+    businessId,
+    query: { attributes: 'all' },
+  });
+}
+
+export async function createSalesInvoice(
+  accessToken: string,
+  businessId: string,
+  salesInvoice: Record<string, unknown>,
+) {
+  return sageFetch<Record<string, unknown>>('/sales_invoices', accessToken, {
+    method: 'POST',
+    businessId,
+    body: { sales_invoice: salesInvoice },
+  });
+}
+
+export async function listSalesInvoices(
+  accessToken: string,
+  businessId: string,
+  reference?: string,
+) {
+  const data = await sageFetch<
+    { $items?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>
+  >('/sales_invoices', accessToken, {
+    businessId,
+    query: {
+      items_per_page: '200',
+      attributes: 'all',
+      ...(reference ? { search: reference } : {}),
+    },
+  });
+  return listItems(data);
+}
+
+export async function getSalesInvoice(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  return sageFetch<Record<string, unknown>>(`/sales_invoices/${id}`, accessToken, {
+    businessId,
+    query: { attributes: 'all' },
+  });
+}
+
+export async function releaseSalesInvoice(
+  accessToken: string,
+  businessId: string,
+  id: string,
+) {
+  return sageFetch<Record<string, unknown>>(
+    `/sales_invoices/${id}/release`,
+    accessToken,
+    { method: 'POST', businessId },
+  );
+}
+
+export async function listCurrencies(accessToken: string, businessId: string) {
+  const data = await sageFetch<
+    { $items?: Array<{ id: string; displayed_as?: string }> } |
+      Array<{ id: string; displayed_as?: string }>
+  >('/currencies', accessToken, { businessId, query: { items_per_page: '200' } });
+  return listItems(data);
+}
+
+export async function listArtefactStatuses(accessToken: string, businessId: string) {
+  const data = await sageFetch<
+    { $items?: Array<{ id: string; displayed_as?: string }> } |
+      Array<{ id: string; displayed_as?: string }>
+  >('/artefact_statuses', accessToken, {
+    businessId,
+    query: { items_per_page: '200' },
+  });
+  return listItems(data);
+}
+
+export async function listSalesLedgerAccounts(accessToken: string, businessId: string) {
+  const data = await sageFetch<{ $items?: LedgerLike[] } | LedgerLike[]>(
+    '/ledger_accounts',
+    accessToken,
+    {
+      businessId,
+      query: { items_per_page: '200', visible_in: 'sales' },
+    },
+  );
+  return listItems(data);
+}
+
 export function discoverCapabilities() {
   return {
     stockItems: { list: true, get: true, create: true, update: true, delete: true },
     purchaseInvoices: { list: true, create: true, delete: true },
+    stockMovements: { list: true, create: true, get: true },
+    salesInvoices: { list: true, create: true, get: true, release: true },
     purchaseOrders: {
       available: false,
       reason:

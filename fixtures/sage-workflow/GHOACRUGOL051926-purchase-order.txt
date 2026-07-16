@@ -1,0 +1,11 @@
+SYNTHETIC TEST DOCUMENT — NOT CUSTOMER DATA
+External PO: GHOACRUGOL051926
+Container: TLLU4819203
+Supplier: Nationwide Acrylics
+Currency: GBP
+Shipment date: 2026-05-19
+Arrival date: 2026-06-02
+
+ACR-MIR-SLV-3MM,50 sheets
+ACR-CLR-3MM-48X96,40 sheets
+ACR-CLR-6MM-48X96,20 sheets

@@ -13,6 +13,22 @@
       "destination": "/api/sage?__sagePath=:path*"
     },
     {
+      "source": "/api/gmail",
+      "destination": "/api/sage?__integration=gmail"
+    },
+    {
+      "source": "/api/gmail/:path*",
+      "destination": "/api/sage?__integration=gmail&__gmailPath=:path*"
+    },
+    {
+      "source": "/api/workflow",
+      "destination": "/api/sage?__integration=workflow"
+    },
+    {
+      "source": "/api/workflow/:path*",
+      "destination": "/api/sage?__integration=workflow&__workflowPath=:path*"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
