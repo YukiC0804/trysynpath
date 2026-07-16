@@ -530,7 +530,7 @@ export class SageGateway {
       description: string;
       vendorUnitCost: number;
     }>,
-    salesLines: Array<{ sku: string; salesUnitPrice: number }>,
+    _salesLines: Array<{ sku: string; salesUnitPrice: number }>,
   ) {
     const created: string[] = [];
     for (const line of shipmentLines) {
@@ -540,14 +540,11 @@ export class SageGateway {
         line.sku,
       );
       if (existing) continue;
-      const salesPrice =
-        salesLines.find((item) => item.sku.toUpperCase() === line.sku.toUpperCase())
-          ?.salesUnitPrice ?? 0;
       await createStockItem(this.accessToken, this.businessId, {
         item_code: line.sku,
         description: line.description,
-        cost_price: line.vendorUnitCost,
-        ...(salesPrice > 0 ? { sales_price: salesPrice } : {}),
+        // Workflow 1 creates only the product shell. WF2/WF3 write prices.
+        cost_price: 0,
         reorder_level: 10,
         reorder_quantity: 0,
       });

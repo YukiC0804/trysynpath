@@ -612,7 +612,6 @@ async function ensureBaselineStockItem(
         item_code: baseline.sku,
         description: baseline.description,
         cost_price: baseline.costPrice,
-        sales_price: baseline.salesPrice || undefined,
         reorder_level: baseline.reorderLevel,
         reorder_quantity: baseline.reorderQuantity,
         sales_ledger_account_id: defaults.sales_ledger_account_id,
@@ -636,13 +635,14 @@ async function ensureBaselineStockItem(
     const needsUpdate =
       item.description !== baseline.description ||
       !nearlyEqual(item.costPrice, baseline.costPrice) ||
+      !nearlyEqual(item.salesPrice, baseline.salesPrice) ||
       item.reorderLevel !== baseline.reorderLevel;
     if (needsUpdate) {
       item = await updateStockItem(accessToken, businessId, item.id, {
         description: baseline.description,
         cost_price: baseline.costPrice,
+        sales_price: baseline.salesPrice,
         reorder_level: baseline.reorderLevel,
-        ...(baseline.salesPrice > 0 ? { sales_price: baseline.salesPrice } : {}),
       });
       log.push(`Restored Stock Item fields for ${baseline.sku}`);
     }
@@ -700,6 +700,20 @@ async function ensureBaselineStockItem(
       );
     }
   }
+  if (!nearlyEqual(item.salesPrice, baseline.salesPrice)) {
+    try {
+      item = await updateStockItem(accessToken, businessId, item.id, {
+        sales_price: baseline.salesPrice,
+      });
+      item = await getStockItem(accessToken, businessId, item.id);
+    } catch (error) {
+      unresolved.push(
+        `${baseline.sku}: sales price restore failed — ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
+  }
 
   if (!nearlyEqual(item.quantityInStock, baseline.quantityInStock, QTY_TOLERANCE)) {
     unresolved.push(
@@ -709,6 +723,11 @@ async function ensureBaselineStockItem(
   if (!nearlyEqual(item.costPrice, baseline.costPrice)) {
     unresolved.push(
       `${baseline.sku}: cost_price expected ${baseline.costPrice}, got ${item.costPrice}`,
+    );
+  }
+  if (!nearlyEqual(item.salesPrice, baseline.salesPrice)) {
+    unresolved.push(
+      `${baseline.sku}: sales_price expected ${baseline.salesPrice}, got ${item.salesPrice}`,
     );
   }
 

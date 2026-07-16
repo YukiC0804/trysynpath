@@ -8,6 +8,7 @@ import {
   getSalesInvoice,
   getStockItem,
   listStockMovements,
+  updateStockItem,
 } from '../sage/client';
 import { resolveDocumentExtractor } from '../workflow/resolveExtractor';
 import {
@@ -755,6 +756,13 @@ export async function handleDemoRunRequest(
         );
         currentQuantity = afterItem.quantityInStock;
       }
+      // Workflow 3 establishes the catalog sales price from Spandex invoice GA18.
+      await updateStockItem(
+        sage.accessToken,
+        businessId,
+        line.matchedSageStockItemId,
+        { sales_price: line.salesUnitPrice },
+      );
       salesBeforeAfter.push({
         sku: line.sku,
         previousQuantity,

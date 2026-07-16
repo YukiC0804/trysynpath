@@ -22,8 +22,10 @@ describe('Gmail PO pack hardcode demo', () => {
     const sales = fallbackSpandexParse();
     expect(vendor.totalPieces).toBe(718);
     expect(vendor.totalDdpAmount).toBe(46845.34);
+    expect(vendor.lines[0].vendorUnitCost).toBe(24.16);
     expect(sales.lines.reduce((sum, line) => sum + line.quantity, 0)).toBe(282);
     expect(sales.total).toBe(32296);
+    expect(sales.lines[0].salesUnitPrice).toBe(39.45);
     const bundle = buildGhoacrugolBundle([], demoInvoiceDates(), {
       vendor,
       sales,

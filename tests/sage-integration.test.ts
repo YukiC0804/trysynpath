@@ -18,7 +18,14 @@ describe('Sage demo reset baseline', () => {
       'ACR-CLR-4MM-48X96',
       'ACR-PC-CLR-9P5MM-48X96',
     ]);
-    expect(GHOSTBOARDS_BASELINE_SKUS.every((item) => item.quantityInStock === 0)).toBe(true);
+    expect(
+      GHOSTBOARDS_BASELINE_SKUS.every(
+        (item) =>
+          item.quantityInStock === 0 &&
+          item.costPrice === 0 &&
+          item.salesPrice === 0,
+      ),
+    ).toBe(true);
     expect(SAGE_DEMO_CREATED_SKUS).toEqual([]);
     expect(GHOSTBOARDS_PRESERVED_SKUS).toEqual([
       'ACR-MIR-SLV-3MM',
@@ -28,7 +35,8 @@ describe('Sage demo reset baseline', () => {
     ]);
     expect(SAGE_DEMO_BASELINE.find((item) => item.sku === 'ACR-WHT-3MM-48X96')).toMatchObject({
       description: 'White Acrylic Sheet 3mm 48 × 96',
-      costPrice: 24.16,
+      costPrice: 0,
+      salesPrice: 0,
       reorderLevel: 10,
     });
     expect(SAGE_DEMO_PURCHASE_INVOICE_REFERENCE).toBe('SYN-PO-2026-0714-001');

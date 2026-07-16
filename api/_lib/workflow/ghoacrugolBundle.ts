@@ -33,6 +33,23 @@ function round2(value: number) {
   return Number(value.toFixed(2));
 }
 
+const VENDOR_UNIT_COSTS: Record<string, number> = {
+  'ACR-WHT-3MM-48X96': 24.16,
+  'ACR-WHT-18MM-48X96': 144.9,
+  'ACR-WHT-25MM-48X96': 214.1,
+  'ACR-WHT-4P8MM-60X120': 57.43,
+  'ACR-CLR-4MM-48X96': 34.3,
+  'ACR-PC-CLR-9P5MM-48X96': 89,
+};
+
+const SALES_UNIT_PRICES: Record<string, number> = {
+  'ACR-WHT-3MM-48X96': 39.45,
+  'ACR-WHT-18MM-48X96': 227.26,
+  'ACR-WHT-25MM-48X96': 331.97,
+  'ACR-WHT-4P8MM-60X120': 98.06,
+  'ACR-PC-CLR-9P5MM-48X96': 144.84,
+};
+
 /** Canonical fallback when PDF bytes are unavailable (fixture dry-run). */
 export function fallbackUgoldenParse(): ParsedUgoldenProforma {
   return {
@@ -81,8 +98,8 @@ export function fallbackUgoldenParse(): ParsedUgoldenProforma {
         sku: item.sku,
         description: item.description,
         quantity,
-        vendorUnitCost: item.costPrice,
-        vendorLineTotal: round2(quantity * item.costPrice),
+        vendorUnitCost: VENDOR_UNIT_COSTS[item.sku] ?? 0,
+        vendorLineTotal: round2(quantity * (VENDOR_UNIT_COSTS[item.sku] ?? 0)),
         weight,
         volume,
         color: item.sku.includes('WHT') ? 'WHITE' : 'CLEAR',
@@ -103,8 +120,7 @@ export function fallbackSpandexParse(): ParsedSpandexInvoice {
   const lines = vendor.lines
     .filter((line) => line.sku !== 'ACR-CLR-4MM-48X96')
     .map((line) => {
-      const salesUnitPrice =
-        GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === line.sku)?.salesPrice ?? 0;
+      const salesUnitPrice = SALES_UNIT_PRICES[line.sku] ?? 0;
       return {
         sku: line.sku,
         description: line.description,

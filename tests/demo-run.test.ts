@@ -41,8 +41,8 @@ describe('ghostboards baseline configuration', () => {
       GHOSTBOARDS_BASELINE_SKUS.every((item) => item.quantityInStock === 0),
     ).toBe(true);
     expect(GHOSTBOARDS_BASELINE_SKUS.find((item) => item.sku === 'ACR-WHT-3MM-48X96')).toMatchObject({
-      costPrice: 24.16,
-      salesPrice: 39.45,
+      costPrice: 0,
+      salesPrice: 0,
       quantityInStock: 0,
     });
     expect(GHOSTBOARDS_DEMO_WORKFLOW_SKUS).toEqual([
