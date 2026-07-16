@@ -460,8 +460,8 @@ async function ensureBaselineStockItem(
           date: new Date().toISOString().slice(0, 10),
           quantity: adjustment,
           cost_price: baseline.costPrice,
-          details: 'Ghostboards demo baseline reset',
-          reference: GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE,
+          // UK rejects `reference` on stock_movements — keep token in details only.
+          details: GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE.slice(0, 50),
         });
         const movementId = String(movement.id ?? '');
         log.push(

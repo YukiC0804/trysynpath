@@ -224,15 +224,79 @@ describe('WorkflowOrchestrator write safety', () => {
       readBackVerified: true,
       status: 'succeeded',
     });
+    const gateway = {
+      businessId: 'business',
+      async readAndVerifyPurchaseInvoice(id: string) {
+        return {
+          readBack: { id },
+          differences: {},
+          verified: true,
+        };
+      },
+    } as unknown as SageGateway;
     const result = await orchestrator.execute(
       {} as VercelResponse,
       current,
       preview(current),
-      {} as SageGateway,
+      gateway,
       'purchase_invoice',
     );
     expect(result.idempotentReplay).toBe(true);
     expect(result.records).toHaveLength(1);
+  });
+
+  it('recreates Purchase Invoice when cookie id no longer exists in Sage', async () => {
+    const store = new MemoryStore();
+    const orchestrator = new WorkflowOrchestrator(store);
+    const current = run();
+    current.postingRecords.push({
+      workflowId: current.id,
+      transactionType: 'purchase_invoice',
+      sageBusinessId: 'business',
+      sageTransactionId: 'pi-stale',
+      externalReference: current.externalReference,
+      requestPayload: {},
+      responseSummary: {},
+      createdAt: new Date().toISOString(),
+      readBackVerified: true,
+      status: 'succeeded',
+    });
+    let created = false;
+    const gateway = {
+      businessId: 'business',
+      async readAndVerifyPurchaseInvoice() {
+        throw new Error('Sage API GET /purchase_invoices/pi-stale failed (404)');
+      },
+      async findPurchaseInvoiceByReference() {
+        return undefined;
+      },
+      async createAndReadPurchaseInvoice() {
+        created = true;
+        return {
+          id: 'pi-new',
+          created: { id: 'pi-new' },
+          readBack: { id: 'pi-new' },
+          differences: {},
+          verified: true,
+        };
+      },
+    } as unknown as SageGateway;
+    const result = await orchestrator.execute(
+      {} as VercelResponse,
+      current,
+      preview(current),
+      gateway,
+      'purchase_invoice',
+    );
+    expect(created).toBe(true);
+    expect(result.idempotentReplay).toBe(false);
+    expect(
+      result.run.postingRecords.some(
+        (record) =>
+          record.transactionType === 'purchase_invoice' &&
+          record.sageTransactionId === 'pi-new',
+      ),
+    ).toBe(true);
   });
 
   it('does not idempotently replay a Purchase Invoice from a different demo reference', async () => {

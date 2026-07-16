@@ -841,9 +841,9 @@ export function SageIntegrationPage() {
             <div className="space-y-3">
               <p className="text-base font-medium text-amber-200">Partial Completion</p>
               <p className="max-w-xl text-sm text-neutral-400">
-                Purchase Invoice was created in Sage, but one or more Stock Movements failed so
-                inventory may be incomplete. Retry inventory, or use Reset Demo before starting
-                again.
+                Inventory Stock Movements did not fully complete. If a Purchase Invoice ID is shown
+                below, look under <span className="text-neutral-200">Draft</span> purchase invoices
+                in Sage. Otherwise use Reset Demo and retry Workflow 2.
               </p>
               <button
                 type="button"

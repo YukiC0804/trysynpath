@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { DemoPrepareResult } from '../../../shared/demoRun';
 import { getValidAccessToken } from '../sage/auth';
 import { json } from '../sage/http';
-import { getStockItem } from '../sage/client';
+import { getPurchaseInvoice, getStockItem } from '../sage/client';
 import { FixtureDocumentExtractionAdapter } from '../workflow/extraction';
 import {
   type ExecuteTarget,
@@ -332,6 +332,23 @@ export async function handleDemoRunRequest(
     if (!purchaseRecord.sageTransactionId || purchaseRecord.sageTransactionId.startsWith('DRY-')) {
       return json(res, 422, {
         error: 'Purchase Invoice was not written to live Sage. Reconnect Sage and retry Workflow 2.',
+        demoRun,
+        run: purchaseResult.run,
+      });
+    }
+    try {
+      const livePi = await getPurchaseInvoice(
+        sage.accessToken,
+        businessId,
+        purchaseRecord.sageTransactionId,
+      );
+      if (!String(livePi?.id ?? '')) {
+        throw new Error('Purchase Invoice read-back returned no id');
+      }
+    } catch {
+      return json(res, 422, {
+        error:
+          'Purchase Invoice could not be found in Sage after posting. Check Draft purchase invoices, or use Reset Demo and retry Workflow 2.',
         demoRun,
         run: purchaseResult.run,
       });
