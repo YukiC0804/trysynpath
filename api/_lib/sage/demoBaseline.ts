@@ -16,7 +16,7 @@ export type GhostboardsBaselineSku = {
 export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   {
     sku: 'ACR-WHT-3MM-48X96',
-    description: 'White Acrylic Sheet 3mm 48 × 96',
+    description: 'COLORED ACRYLIC SHEET 3mm x 48" x 96" WHITE',
     costPrice: 0,
     salesPrice: 0,
     quantityInStock: 0,
@@ -24,7 +24,7 @@ export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   },
   {
     sku: 'ACR-WHT-18MM-48X96',
-    description: 'White Acrylic Sheet 18mm 48 × 96',
+    description: 'COLORED ACRYLIC SHEET 18mm x 48" x 96" WHITE',
     costPrice: 0,
     salesPrice: 0,
     quantityInStock: 0,
@@ -32,7 +32,7 @@ export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   },
   {
     sku: 'ACR-WHT-25MM-48X96',
-    description: 'White Acrylic Sheet 25mm 48 × 96',
+    description: 'COLORED ACRYLIC SHEET 25mm x 48" x 96" WHITE',
     costPrice: 0,
     salesPrice: 0,
     quantityInStock: 0,
@@ -40,7 +40,7 @@ export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   },
   {
     sku: 'ACR-WHT-4P8MM-60X120',
-    description: 'White Acrylic Sheet 4.8mm 60 × 120',
+    description: 'COLORED ACRYLIC SHEET 4.8mm x 60" x 120" WHITE',
     costPrice: 0,
     salesPrice: 0,
     quantityInStock: 0,
@@ -48,7 +48,7 @@ export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   },
   {
     sku: 'ACR-CLR-4MM-48X96',
-    description: 'Clear Acrylic Sheet 4mm 48 × 96',
+    description: 'CLEAR ACRYLIC SHEET 4mm x 48" x 96"',
     costPrice: 0,
     salesPrice: 0,
     quantityInStock: 0,
@@ -56,7 +56,7 @@ export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   },
   {
     sku: 'ACR-PC-CLR-9P5MM-48X96',
-    description: 'Clear Polycarbonate Sheet 9.5mm 48 × 96',
+    description: 'CLEAR ACRYLIC SHEET 9.5mm x 48" x 96" CLEAR POLY CARB',
     costPrice: 0,
     salesPrice: 0,
     quantityInStock: 0,

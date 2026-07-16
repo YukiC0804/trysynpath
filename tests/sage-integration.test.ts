@@ -34,7 +34,7 @@ describe('Sage demo reset baseline', () => {
       'ACR-CLR-3MM-48X96',
     ]);
     expect(SAGE_DEMO_BASELINE.find((item) => item.sku === 'ACR-WHT-3MM-48X96')).toMatchObject({
-      description: 'White Acrylic Sheet 3mm 48 × 96',
+      description: 'COLORED ACRYLIC SHEET 3mm x 48" x 96" WHITE',
       costPrice: 0,
       salesPrice: 0,
       reorderLevel: 10,

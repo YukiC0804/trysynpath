@@ -333,7 +333,8 @@ export function WorkflowOneWorkspace({
                       </span>
                     </div>
                     <p className="pt-1 text-[11px] leading-4 text-neutral-600">
-                      Inventory cost per sheet = unit cost + pallet share + DDP share by weight.
+                      Inventory cost per sheet = (UGolden unit + DDP by weight) × cut size
+                      (48″×96″ / 1220×2440) + pallet share.
                     </p>
                   </div>
                 </div>

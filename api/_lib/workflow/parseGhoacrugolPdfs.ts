@@ -91,11 +91,23 @@ export function describeSku(input: {
   widthMm: number;
   lengthMm: number;
   polycarbonate?: boolean;
+  salesStyle?: boolean;
 }): string {
-  const size = sizeCode(input.widthMm, input.lengthMm).replace('X', ' × ');
-  const material = input.polycarbonate ? 'Polycarbonate' : 'Acrylic';
-  const color = input.color.replace(/poly\s*carb/i, '').trim();
-  return `${color.charAt(0).toUpperCase()}${color.slice(1).toLowerCase()} ${material} Sheet ${input.thicknessMm}mm ${size}`;
+  const sizeCodeValue = sizeCode(input.widthMm, input.lengthMm);
+  const color = input.color.replace(/poly\s*carb/i, '').trim().toUpperCase();
+  if (input.salesStyle) {
+    // Match Spandex GA18 wording: COLORED/CLEAR ACRYLIC SHEET 3mm x 48" x 96" WHITE
+    const [w, l] = sizeCodeValue.split('X');
+    const prefix =
+      color === 'WHITE' ? 'COLORED ACRYLIC SHEET' : 'CLEAR ACRYLIC SHEET';
+    const suffix = input.polycarbonate ? ' CLEAR POLY CARB' : color === 'WHITE' ? ` ${color}` : '';
+    return `${prefix} ${input.thicknessMm}mm x ${w}" x ${l}"${suffix}`;
+  }
+  const size = sizeCodeValue.replace('X', '×');
+  if (input.polycarbonate) {
+    return `POLY CARBONATE ${color} ${input.thicknessMm}mm ${size}`;
+  }
+  return `ACRYLIC SHEET ${color} ${input.thicknessMm}mm ${size}`;
 }
 
 export function parseUgoldenProforma(text: string): ParsedUgoldenProforma | null {
@@ -198,6 +210,7 @@ export function parseSpandexInvoice(text: string): ParsedSpandexInvoice | null {
         widthMm: widthIn,
         lengthMm: lengthIn,
         polycarbonate,
+        salesStyle: true,
       }),
       quantity,
       salesUnitPrice,

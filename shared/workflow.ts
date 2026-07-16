@@ -80,6 +80,12 @@ export interface ShipmentLine {
   vendorLineTotal: number;
   weight: number;
   volume: number;
+  /** UGolden purchase sheet size (mm) — used for cut-to-size cost scaling. */
+  purchaseWidthMm?: number;
+  purchaseLengthMm?: number;
+  /** Spandex / Sage sell sheet size (inches). */
+  saleWidthIn?: number;
+  saleLengthIn?: number;
   matchedSageStockItemId?: string;
   matchedSageItemCode?: string;
   matchingStatus: 'unmatched' | 'exact' | 'ambiguous' | 'confirmed';

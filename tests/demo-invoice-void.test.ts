@@ -75,7 +75,7 @@ vi.mock('../api/_lib/sage/client', async () => {
 const stock = {
   id: 'stock-clr',
   sku: 'ACR-WHT-3MM-48X96',
-  description: 'White Acrylic Sheet 3mm 48 × 96',
+  description: 'COLORED ACRYLIC SHEET 3mm x 48" x 96" WHITE',
   quantityInStock: 0,
   costPrice: 24.16,
   lastCostPrice: 24.16,

@@ -23,6 +23,27 @@ export interface LandedCostResult {
 
 const money = (value: number) => Number(value.toFixed(2));
 const precise = (value: number) => Number(value.toFixed(6));
+const MM_PER_INCH = 25.4;
+
+/**
+ * Cut-to-size area ratio: Spandex/Sage sell size (inches) vs UGolden purchase size (mm).
+ * Example: 3mm WHITE 1220×2440 → 48"×96"
+ *   ratio = (48×25.4 × 96×25.4) / (1220 × 2440)
+ */
+export function sheetCutAreaRatio(line: Pick<
+  ShipmentLine,
+  'purchaseWidthMm' | 'purchaseLengthMm' | 'saleWidthIn' | 'saleLengthIn'
+>): number {
+  const purchaseW = Number(line.purchaseWidthMm ?? 0);
+  const purchaseL = Number(line.purchaseLengthMm ?? 0);
+  const saleWIn = Number(line.saleWidthIn ?? 0);
+  const saleLIn = Number(line.saleLengthIn ?? 0);
+  if (purchaseW <= 0 || purchaseL <= 0 || saleWIn <= 0 || saleLIn <= 0) return 1;
+  const saleAreaMm2 = saleWIn * MM_PER_INCH * saleLIn * MM_PER_INCH;
+  const purchaseAreaMm2 = purchaseW * purchaseL;
+  if (purchaseAreaMm2 <= 0) return 1;
+  return saleAreaMm2 / purchaseAreaMm2;
+}
 
 function basisFor(line: ShipmentLine, method: AllocationMethod): number {
   if (method === 'product_value') return line.vendorLineTotal;
@@ -149,9 +170,29 @@ export function calculateLandedCosts(
       allocation.allocatedInsurance +
       allocation.allocatedTax +
       allocation.allocatedOther;
+    // Keep line total for Purchase Invoice / DDP reconciliation (full UGolden amount).
     allocation.landedCostTotal = money(allocation.goodsCost + charges);
-    const quantity = lines.find((line) => line.sku === allocation.sku)?.receivedQuantity ?? 0;
-    allocation.landedUnitCost = quantity > 0 ? precise(allocation.landedCostTotal / quantity) : 0;
+    const line = lines.find((item) => item.sku === allocation.sku);
+    const quantity = line?.receivedQuantity ?? 0;
+    if (!line || quantity <= 0) {
+      allocation.landedUnitCost = 0;
+      continue;
+    }
+    // Inventory cost per cut sheet (Sage stock item size):
+    // (UGolden unit price + DDP-by-weight per piece) × saleArea/purchaseArea
+    // + pallet share per piece.
+    const ddpPerPiece = allocation.allocatedDuty / quantity;
+    const palletPerPiece = allocation.allocatedFreight / quantity;
+    const otherPerPiece =
+      (allocation.allocatedBrokerage +
+        allocation.allocatedInsurance +
+        allocation.allocatedTax +
+        allocation.allocatedOther) /
+      quantity;
+    const ratio = sheetCutAreaRatio(line);
+    allocation.landedUnitCost = precise(
+      (line.vendorUnitCost + ddpPerPiece) * ratio + palletPerPiece + otherPerPiece,
+    );
   }
 
   const sourceGoodsTotal = money(lines.reduce((sum, line) => sum + line.vendorLineTotal, 0));
