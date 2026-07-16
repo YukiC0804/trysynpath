@@ -13,9 +13,9 @@ export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   {
     sku: 'ACR-MIR-SLV-3MM',
     description: 'Silver Mirror Acrylic Sheet 3mm',
-    costPrice: 68,
+    costPrice: 77.62,
     salesPrice: 0,
-    quantityInStock: 16,
+    quantityInStock: 66,
     reorderLevel: 10,
   },
   {
@@ -29,17 +29,17 @@ export const GHOSTBOARDS_BASELINE_SKUS: readonly GhostboardsBaselineSku[] = [
   {
     sku: 'ACR-CLR-6MM-48X96',
     description: 'Clear Acrylic Sheet 6mm 48 × 96',
-    costPrice: 76,
+    costPrice: 86.62,
     salesPrice: 0,
-    quantityInStock: 38,
+    quantityInStock: 58,
     reorderLevel: 20,
   },
   {
     sku: 'ACR-CLR-3MM-48X96',
     description: 'Clear Acrylic Sheet 3mm 48 × 96',
-    costPrice: 42.5,
+    costPrice: 48.94,
     salesPrice: 0,
-    quantityInStock: 82,
+    quantityInStock: 122,
     reorderLevel: 40,
   },
 ] as const;
@@ -49,9 +49,7 @@ export const GHOSTBOARDS_BASELINE_MOVEMENT_REFERENCE = 'GHOSTBOARDS-DEMO-BASELIN
 
 /** SKUs used by the synthetic PO workflow (subset of baseline). */
 export const GHOSTBOARDS_DEMO_WORKFLOW_SKUS = [
-  'ACR-MIR-SLV-3MM',
   'ACR-CLR-3MM-48X96',
-  'ACR-CLR-6MM-48X96',
 ] as const;
 
 /** @deprecated Prefer GHOSTBOARDS_BASELINE_SKUS */

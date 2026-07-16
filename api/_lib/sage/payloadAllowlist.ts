@@ -80,6 +80,18 @@ const ADDRESS_KEYS = [
   'country_group_id',
 ] as const;
 
+const CONTACT_KEYS = [
+  'name',
+  'contact_type_ids',
+  'reference',
+  'default_sales_ledger_account_id',
+  'default_sales_tax_rate_id',
+  'default_purchase_ledger_account_id',
+  'notes',
+  'currency_id',
+  'main_address',
+] as const;
+
 function pick(
   source: Record<string, unknown>,
   keys: readonly string[],
@@ -139,5 +151,15 @@ export function sanitizeSalesInvoicePayload(
   if (address) sanitized.main_address = address;
   else delete sanitized.main_address;
   sanitized.invoice_lines = sanitizeLines(payload.invoice_lines, SALES_INVOICE_LINE_KEYS);
+  return sanitized;
+}
+
+export function sanitizeContactPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const sanitized = pick(payload, CONTACT_KEYS);
+  const address = sanitizeAddress(payload.main_address);
+  if (address) sanitized.main_address = address;
+  else delete sanitized.main_address;
   return sanitized;
 }

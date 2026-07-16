@@ -8,6 +8,7 @@ import type {
   WorkflowApprovalTarget,
 } from '../../../shared/workflow';
 import type { DocumentExtractionAdapter, ExtractionOverrides } from './extraction';
+import { FIXTURE_REFERENCE } from './fixtures';
 import { calculateLandedCosts } from './landedCostEngine';
 import { matchShipmentLines } from './matcher';
 import {
@@ -164,6 +165,24 @@ export class WorkflowOrchestrator {
       ...validateNormalizedBundle(extraction.bundle),
       ...landed.errors,
     ];
+
+    // The Ghostboards demo is deterministic: provision its two contacts when
+    // the connected Sage business does not have them yet. Never auto-create
+    // contacts for arbitrary Gmail/live customer data.
+    if (
+      input.gateway &&
+      input.mode === 'live_sage_write' &&
+      extraction.bundle.shipment.externalPoNumber === FIXTURE_REFERENCE
+    ) {
+      await input.gateway.ensureContact(
+        'VENDOR',
+        extraction.bundle.shipment.supplier,
+      );
+      await input.gateway.ensureContact(
+        'CUSTOMER',
+        extraction.bundle.customerInvoice.customer,
+      );
+    }
 
     const referenceData = input.gateway ? await input.gateway.loadReferenceData() : null;
     if (referenceData) {

@@ -1,6 +1,6 @@
 SYNTHETIC BOL / PACKING LIST — NOT CUSTOMER DATA
 External PO: GHOACRUGOL051926
 Container: TLLU4819203
-Gross weight: 2450 KG
-Volume: 18.4 CBM
-Packages: 110
+Gross weight: 1825 KG
+Volume: 12.9 CBM
+Packages: 100

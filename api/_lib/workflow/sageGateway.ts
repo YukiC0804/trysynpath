@@ -4,6 +4,7 @@ import type {
   NormalizedDocumentBundle,
 } from '../../../shared/workflow';
 import {
+  createContact,
   createPurchaseInvoice,
   createSalesInvoice,
   createStockMovement,
@@ -344,6 +345,23 @@ export class SageGateway {
       contacts.find((contact) => contact.name.toLowerCase() === lower) ??
       contacts.find((contact) => contact.name.toLowerCase().includes(lower))
     );
+  }
+
+  async ensureContact(type: 'VENDOR' | 'CUSTOMER', name: string) {
+    const contacts = await listContacts(this.accessToken, this.businessId);
+    const existing = this.findContact(contacts, type, name);
+    const hasRequestedType = existing?.typeIds.some((typeId) =>
+      typeId.toUpperCase().includes(type),
+    );
+    if (existing && hasRequestedType) return existing;
+    return createContact(this.accessToken, this.businessId, {
+      name,
+      contact_type_ids: [type],
+      reference: type === 'CUSTOMER' ? 'SYN-DEMO-CUSTOMER' : 'SYN-DEMO-SUPPLIER',
+      notes: 'Created by the Synpath Ghostboards demo',
+      currency_id: 'GBP',
+      main_address: { address_line_1: name },
+    });
   }
 
   async createAndReadPurchaseInvoice(payload: Record<string, unknown>) {

@@ -2,4 +2,4 @@ SYNTHETIC CUSTOMS / DUTY DOCUMENT — NOT CUSTOMER DATA
 External PO: GHOACRUGOL051926
 Customs duty GBP 331.00
 Brokerage GBP 125.00
-Import VAT GBP 1499.20 (recoverable)
+Import VAT GBP 1240.20 (recoverable)

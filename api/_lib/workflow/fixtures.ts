@@ -26,7 +26,7 @@ export const FIXTURE_EMAILS: EmailSource[] = [
     to: 'operations@ghostboards.example',
     subject: `PO confirmation ${FIXTURE_REFERENCE}`,
     receivedAt: '2026-05-19T09:15:00.000Z',
-    snippet: 'Purchase order and vendor invoice for the acrylic container.',
+    snippet: 'Purchase order for 100 clear acrylic sheets and the matching vendor invoice.',
     labelIds: ['Synpath Sage Demo'],
     attachmentIds: ['fixture-po', 'fixture-vendor-invoice'],
     processingStatus: 'Ready',
@@ -70,7 +70,8 @@ Container: TLLU4819203
 Supplier: Nationwide Acrylics
 Currency: GBP
 Shipment date: 2026-05-19
-Expected arrival: 2026-06-02`,
+Expected arrival: 2026-06-02
+ACR-CLR-3MM-48X96,100,52.50,5250.00`,
   },
   {
     id: 'fixture-vendor-invoice',
@@ -81,12 +82,10 @@ Expected arrival: 2026-06-02`,
     content: `SYNTHETIC VENDOR INVOICE
 Invoice: NWA-INV-8841
 Reference: ${FIXTURE_REFERENCE}
-ACR-MIR-SLV-3MM,50,68.00,3400.00
-ACR-CLR-3MM-48X96,40,42.50,1700.00
-ACR-CLR-6MM-48X96,20,76.00,1520.00
-Subtotal GBP 6620.00
+ACR-CLR-3MM-48X96,100,52.50,5250.00
+Subtotal GBP 5250.00
 Tax GBP 0.00
-Total GBP 6620.00`,
+Total GBP 5250.00`,
   },
   {
     id: 'fixture-bol',
@@ -97,9 +96,9 @@ Total GBP 6620.00`,
     content: `SYNTHETIC BOL / PACKING LIST
 Container TLLU4819203
 Reference ${FIXTURE_REFERENCE}
-Gross weight 2,450 KG
-Volume 18.4 CBM
-Packages 110`,
+Gross weight 1,825 KG
+Volume 12.9 CBM
+Packages 100`,
   },
   {
     id: 'fixture-freight',
@@ -122,7 +121,7 @@ Insurance GBP 75.00`,
 Reference ${FIXTURE_REFERENCE}
 Customs duty GBP 331.00
 Brokerage GBP 125.00
-Import VAT GBP 1499.20 (recoverable)`,
+Import VAT GBP 1240.20 (recoverable)`,
   },
   {
     id: 'fixture-customer-invoice',
@@ -134,11 +133,10 @@ Import VAT GBP 1499.20 (recoverable)`,
 Invoice GB-CUST-1042
 Customer Acrylic Display Studio
 Reference ${FIXTURE_REFERENCE}
-ACR-MIR-SLV-3MM,10,102.00
-ACR-CLR-3MM-48X96,8,69.00
-Shipping GBP 85.00
-VAT GBP 331.40
-Total GBP 1988.40`,
+ACR-CLR-3MM-48X96,100,79.00
+Shipping GBP 0.00
+VAT GBP 1580.00
+Total GBP 9480.00`,
   },
   {
     id: 'fixture-pricing-csv',
@@ -147,8 +145,7 @@ Total GBP 1988.40`,
     mimeType: 'text/csv',
     documentType: 'pricing_csv',
     content: `sku,description,sales_unit_price
-ACR-MIR-SLV-3MM,Silver Mirror Acrylic Sheet 3mm,102.00
-ACR-CLR-3MM-48X96,Clear Acrylic Sheet 3mm 48 x 96,69.00`,
+ACR-CLR-3MM-48X96,Clear Acrylic Sheet 3mm 48 x 96,79.00`,
   },
 ];
 
@@ -160,9 +157,9 @@ export const FIXTURE_SHIPMENT: Shipment = {
   arrivalDate: '2026-06-02',
   supplier: 'Nationwide Acrylics',
   vendorInvoiceNumber: 'NWA-INV-8841',
-  vendorInvoiceSubtotal: 6620,
+  vendorInvoiceSubtotal: 5250,
   vendorInvoiceTax: 0,
-  vendorInvoiceTotal: 6620,
+  vendorInvoiceTotal: 5250,
   currency: 'GBP',
   exchangeRate: 1,
   status: 'Needs Review',
@@ -170,41 +167,15 @@ export const FIXTURE_SHIPMENT: Shipment = {
   approvalStatus: 'pending',
   lines: [
     {
-      sku: 'ACR-MIR-SLV-3MM',
-      description: 'Silver Mirror Acrylic Sheet 3mm',
-      quantity: 50,
-      receivedQuantity: 50,
-      unitOfMeasure: 'sheet',
-      vendorUnitCost: 68,
-      vendorLineTotal: 3400,
-      weight: 1125,
-      volume: 7.8,
-      matchingStatus: 'unmatched',
-      matchingConfidence: 0,
-    },
-    {
       sku: 'ACR-CLR-3MM-48X96',
       description: 'Clear Acrylic Sheet 3mm 48 × 96',
-      quantity: 40,
-      receivedQuantity: 40,
+      quantity: 100,
+      receivedQuantity: 100,
       unitOfMeasure: 'sheet',
-      vendorUnitCost: 42.5,
-      vendorLineTotal: 1700,
-      weight: 725,
-      volume: 5.1,
-      matchingStatus: 'unmatched',
-      matchingConfidence: 0,
-    },
-    {
-      sku: 'ACR-CLR-6MM-48X96',
-      description: 'Clear Acrylic Sheet 6mm 48 × 96',
-      quantity: 20,
-      receivedQuantity: 20,
-      unitOfMeasure: 'sheet',
-      vendorUnitCost: 76,
-      vendorLineTotal: 1520,
-      weight: 600,
-      volume: 5.5,
+      vendorUnitCost: 52.5,
+      vendorLineTotal: 5250,
+      weight: 1825,
+      volume: 12.9,
       matchingStatus: 'unmatched',
       matchingConfidence: 0,
     },
@@ -269,9 +240,9 @@ export const FIXTURE_LANDED_COST_COMPONENTS: LandedCostComponent[] = [
     type: 'tax',
     supplier: 'HMRC',
     sourceDocumentId: 'fixture-duty',
-    amount: 1499.2,
+    amount: 1240.2,
     currency: 'GBP',
-    baseCurrencyAmount: 1499.2,
+    baseCurrencyAmount: 1240.2,
     allocationMethod: 'product_value',
     classification: 'recoverable_tax',
     capitalizable: false,
@@ -288,27 +259,18 @@ export const FIXTURE_CUSTOMER_INVOICE: CustomerInvoice = {
   reference: FIXTURE_REFERENCE,
   lines: [
     {
-      sku: 'ACR-MIR-SLV-3MM',
-      description: 'Silver Mirror Acrylic Sheet 3mm',
-      quantity: 10,
-      salesUnitPrice: 102,
-      discount: 0,
-      tax: 204,
-      total: 1224,
-    },
-    {
       sku: 'ACR-CLR-3MM-48X96',
       description: 'Clear Acrylic Sheet 3mm 48 × 96',
-      quantity: 8,
-      salesUnitPrice: 69,
+      quantity: 100,
+      salesUnitPrice: 79,
       discount: 0,
-      tax: 110.4,
-      total: 662.4,
+      tax: 1580,
+      total: 9480,
     },
   ],
-  subtotal: 1572,
-  tax: 331.4,
-  shipping: 85,
-  total: 1988.4,
+  subtotal: 7900,
+  tax: 1580,
+  shipping: 0,
+  total: 9480,
   approvalStatus: 'pending',
 };

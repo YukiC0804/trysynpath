@@ -1,6 +1,7 @@
 import { getEnv } from './config';
 import type { SageBusiness, SageStockItem } from './types';
 import {
+  sanitizeContactPayload,
   sanitizePurchaseInvoicePayload,
   sanitizeSalesInvoicePayload,
   sanitizeStockMovementPayload,
@@ -464,6 +465,71 @@ export async function listContacts(
     defaultSalesTaxRateId: c.default_sales_tax_rate?.id,
     mainAddress: c.main_address,
   }));
+}
+
+export async function createContact(
+  accessToken: string,
+  businessId: string,
+  payload: {
+    name: string;
+    contact_type_ids: Array<'VENDOR' | 'CUSTOMER'>;
+    reference?: string;
+    default_sales_ledger_account_id?: string;
+    default_sales_tax_rate_id?: string;
+    default_purchase_ledger_account_id?: string;
+    notes?: string;
+    currency_id?: string;
+    main_address?: Record<string, unknown>;
+  },
+): Promise<NormalizedContact> {
+  const safe = sanitizeContactPayload(payload);
+  const created = await sageFetch<Record<string, unknown>>('/contacts', accessToken, {
+    method: 'POST',
+    businessId,
+    body: { contact: safe },
+  });
+  const entity =
+    created.contact && typeof created.contact === 'object'
+      ? (created.contact as Record<string, unknown>)
+      : created;
+  return {
+    id: String(entity.id ?? ''),
+    name: String(entity.name ?? entity.displayed_as ?? payload.name),
+    reference: String(entity.reference ?? payload.reference ?? ''),
+    typeIds: Array.isArray(entity.contact_types)
+      ? (entity.contact_types as Array<{ id?: unknown }>)
+          .map((type) => String(type.id ?? ''))
+          .filter(Boolean)
+      : payload.contact_type_ids,
+    currencyId:
+      entity.currency && typeof entity.currency === 'object'
+        ? String((entity.currency as { id?: unknown }).id ?? '') || undefined
+        : payload.currency_id,
+    defaultPurchaseLedgerAccountId:
+      entity.default_purchase_ledger_account &&
+      typeof entity.default_purchase_ledger_account === 'object'
+        ? String(
+            (entity.default_purchase_ledger_account as { id?: unknown }).id ?? '',
+          ) || undefined
+        : payload.default_purchase_ledger_account_id,
+    defaultSalesLedgerAccountId:
+      entity.default_sales_ledger_account &&
+      typeof entity.default_sales_ledger_account === 'object'
+        ? String(
+            (entity.default_sales_ledger_account as { id?: unknown }).id ?? '',
+          ) || undefined
+        : payload.default_sales_ledger_account_id,
+    defaultSalesTaxRateId:
+      entity.default_sales_tax_rate &&
+      typeof entity.default_sales_tax_rate === 'object'
+        ? String((entity.default_sales_tax_rate as { id?: unknown }).id ?? '') ||
+          undefined
+        : payload.default_sales_tax_rate_id,
+    mainAddress:
+      entity.main_address && typeof entity.main_address === 'object'
+        ? (entity.main_address as Record<string, unknown>)
+        : payload.main_address,
+  };
 }
 
 export function listSuppliers(accessToken: string, businessId: string) {
