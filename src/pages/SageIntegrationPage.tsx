@@ -550,9 +550,19 @@ export function SageIntegrationPage() {
     preview !== null &&
     matchedSkuCount(preview) === preview.bundle.shipment.lines.length &&
     preview.reconciliation.withinTolerance &&
+    Boolean(preview.selections.supplierContactId) &&
     !purchaseDone &&
     !busy &&
     !workflowActionsDisabled;
+
+  const purchaseBlockReason =
+    scanDone && !purchaseDone && !canPurchase && preview
+      ? !sageConnected
+        ? 'Connect Sage before creating the Purchase Invoice.'
+        : !preview.selections.supplierContactId
+          ? `Supplier "${preview.bundle.shipment.supplier}" was not matched in Sage.`
+          : null
+      : null;
 
   const canSales =
     sageConnected &&
@@ -830,14 +840,19 @@ export function SageIntegrationPage() {
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              disabled={!canPurchase}
-              onClick={() => setConfirmPurchase(true)}
-              className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Create Purchase &amp; Inventory Records in Sage
-            </button>
+            <div className="space-y-3">
+              <button
+                type="button"
+                disabled={!canPurchase}
+                onClick={() => setConfirmPurchase(true)}
+                className="rounded-lg bg-white px-5 py-3 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Create Purchase &amp; Inventory Records in Sage
+              </button>
+              {purchaseBlockReason && (
+                <p className="max-w-xl text-sm text-amber-200">{purchaseBlockReason}</p>
+              )}
+            </div>
           )}
         </WorkflowCard>
 

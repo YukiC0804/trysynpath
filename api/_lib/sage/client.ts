@@ -543,7 +543,11 @@ export async function createPurchaseInvoice(
     businessId,
     body: { purchase_invoice: purchaseInvoice },
   })) as Record<string, unknown>;
-  return normalizePurchaseInvoice(created);
+  const entity =
+    created.purchase_invoice && typeof created.purchase_invoice === 'object'
+      ? (created.purchase_invoice as Record<string, unknown>)
+      : created;
+  return normalizePurchaseInvoice(entity);
 }
 
 export async function deletePurchaseInvoice(
@@ -588,11 +592,14 @@ export async function createStockMovement(
   businessId: string,
   stockMovement: Record<string, unknown>,
 ) {
-  return sageFetch<Record<string, unknown>>('/stock_movements', accessToken, {
+  const created = await sageFetch<Record<string, unknown>>('/stock_movements', accessToken, {
     method: 'POST',
     businessId,
     body: { stock_movement: stockMovement },
   });
+  return created.stock_movement && typeof created.stock_movement === 'object'
+    ? (created.stock_movement as Record<string, unknown>)
+    : created;
 }
 
 export async function listStockMovements(
@@ -643,11 +650,14 @@ export async function createSalesInvoice(
   businessId: string,
   salesInvoice: Record<string, unknown>,
 ) {
-  return sageFetch<Record<string, unknown>>('/sales_invoices', accessToken, {
+  const created = await sageFetch<Record<string, unknown>>('/sales_invoices', accessToken, {
     method: 'POST',
     businessId,
     body: { sales_invoice: salesInvoice },
   });
+  return created.sales_invoice && typeof created.sales_invoice === 'object'
+    ? (created.sales_invoice as Record<string, unknown>)
+    : created;
 }
 
 export async function listSalesInvoices(

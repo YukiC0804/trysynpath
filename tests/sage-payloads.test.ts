@@ -44,6 +44,7 @@ describe('OpenAPI-aligned Sage payload builders', () => {
       contact_id: 'supplier-1',
       reference: 'DEMO-GHOACRUGOL051926-20260716',
       vendor_reference: 'NWA-INV-8841',
+      main_address: { address_line_1: 'Nationwide Acrylics' },
     });
     expect(payload.invoice_lines).toHaveLength(3);
     expect(payload.invoice_lines.reduce((sum, line) => sum + line.quantity * line.unit_price, 0)).toBe(
@@ -165,6 +166,53 @@ describe('SageGateway read-back verification', () => {
     expect(result.id).toBe('pi-1');
     expect(result.verified).toBe(true);
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores Sage-recalculated tax and status when verifying Purchase Invoice', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'pi-2', reference: 'DEMO-REF' }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: 'pi-2',
+            reference: 'DEMO-REF',
+            contact: { id: 'supplier-1' },
+            status: { id: 'DRAFT' },
+            vendor_reference: 'NWA-INV-8841',
+            date: '2026-05-19',
+            invoice_lines: [
+              {
+                quantity: 50,
+                unit_price: 68,
+                tax_amount: 999,
+                ledger_account: { id: 'ledger-1' },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    const result = await new SageGateway('token', 'business').createAndReadPurchaseInvoice({
+      contact_id: 'supplier-1',
+      reference: 'DEMO-REF',
+      vendor_reference: 'NWA-INV-8841',
+      date: '2026-05-19',
+      status_id: 'DRAFT',
+      invoice_lines: [
+        {
+          quantity: 50,
+          unit_price: 68,
+          tax_amount: 0,
+          ledger_account_id: 'ledger-1',
+        },
+      ],
+    });
+    expect(result.verified).toBe(true);
   });
 
   it('does not verify release while read-back remains Draft', async () => {
