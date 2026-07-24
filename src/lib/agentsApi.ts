@@ -19,6 +19,7 @@ export async function fetchAgentsStatus() {
   const res = await fetch('/api/agents/status');
   return parseJson<{
     documentAi: { configured: boolean; connected: boolean; detail: string };
+    acrylicLlmEnrich?: { configured: boolean; model: string; detail: string };
     sage: { connected: boolean; detail: string };
   }>(res);
 }

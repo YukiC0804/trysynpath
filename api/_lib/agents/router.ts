@@ -2,7 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { json } from '../sage/http';
 import { errorMessage } from '../sage/config';
 import { documentAiConfigured, pingDocumentAi } from '../ghost/documentAi';
-import { parseWithDocumentAi } from '../ghost/mapToExtract';
+import { llmEnrichConfigured, resolveParseModel } from '../ghost/enrichAcrylic';
+import { parsePdf, resolveParseBackend } from '../ghost/parsePdf';
 import { buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
 import { reapplyLandedCost } from '../ghost/landedCost';
 import { buildSalesOrderPlan } from '../ghost/salesOrder';
@@ -56,6 +57,18 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         connected: docAi.ok,
         detail: docAi.detail,
       },
+      acrylicLlmEnrich: {
+        configured: llmEnrichConfigured(),
+        model: resolveParseModel(),
+        detail: llmEnrichConfigured()
+          ? `OpenAI enrich/parse ready (${resolveParseModel()}) — ai_erp text+LLM path`
+          : 'Set OPENAI_API_KEY on Vercel (ai_erp used text+LLM for qty/unit price; Document AI alone is weak on multi-column sheets)',
+      },
+      parseBackend: {
+        configured: resolveParseBackend(),
+        detail:
+          'auto = PDF text+LLM when rich, else Document AI OCR text+LLM (same as ai_erp default; documentai line-items optional)',
+      },
       sage: { connected: false, detail: 'Sage write disabled — preview only' },
     });
   }
@@ -63,17 +76,16 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
   if (method === 'POST' && path[0] === 'supply' && path[1] === 'process') {
     try {
       const body = bodyOf(req);
-      const purchase = await parseWithDocumentAi(
-        decodePdf(body.purchasePdfBase64),
-        'purchase_invoice',
-      );
+      const purchase = await parsePdf(decodePdf(body.purchasePdfBase64), {
+        hintRole: 'purchase_invoice',
+      });
       if (purchase.document_role === 'unknown') purchase.document_role = 'purchase_invoice';
 
       const freight = body.freightPdfBase64
-        ? await parseWithDocumentAi(decodePdf(body.freightPdfBase64), 'freight')
+        ? await parsePdf(decodePdf(body.freightPdfBase64), { hintRole: 'freight' })
         : null;
       const duty = body.dutyPdfBase64
-        ? await parseWithDocumentAi(decodePdf(body.dutyPdfBase64), 'duty')
+        ? await parsePdf(decodePdf(body.dutyPdfBase64), { hintRole: 'duty' })
         : null;
 
       try {
@@ -189,7 +201,9 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
   if (method === 'POST' && path[0] === 'sales' && path[1] === 'process') {
     try {
       const body = bodyOf(req);
-      const doc = await parseWithDocumentAi(decodePdf(body.pdfBase64), 'purchase_invoice');
+      const doc = await parsePdf(decodePdf(body.pdfBase64), {
+        hintRole: 'purchase_invoice',
+      });
       // Sales PDFs often look like invoices; keep extracted customer/lines.
       const recentKeys = Array.isArray(body.recentKeys)
         ? body.recentKeys.map(String)
