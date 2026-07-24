@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-export type DemoNavTab = 'operations' | 'sage';
+export type DemoNavTab = 'operations' | 'agents' | 'sage';
 
 interface DemoNavTabsProps {
   active: DemoNavTab;
@@ -10,6 +10,7 @@ interface DemoNavTabsProps {
 
 const TABS: { id: DemoNavTab; label: string; shortLabel: string; to: string }[] = [
   { id: 'operations', label: 'Operations', shortLabel: 'Ops', to: '/' },
+  { id: 'agents', label: 'Agent Workforce', shortLabel: 'Agents', to: '/agents' },
   { id: 'sage', label: 'Ghost Boards · Sage', shortLabel: 'Ghost Boards', to: '/sage-integration' },
 ];
 

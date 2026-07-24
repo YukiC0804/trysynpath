@@ -9,10 +9,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<AgentWorkforcePage />} />
-        <Route path="/agents" element={<AgentWorkforcePage />} />
+        <Route path="/" element={<OperationsDemoPage />} />
         <Route path="/demo" element={<OperationsDemoPage />} />
-        <Route path="/ops" element={<OperationsDemoPage />} />
+        <Route path="/agents" element={<AgentWorkforcePage />} />
         <Route path="/sage-integration" element={<SageIntegrationPage />} />
         <Route path="/sage-integration/admin" element={<SageAdminPage />} />
         <Route path="/sage-integration/prepare" element={<DemoPrepPage />} />

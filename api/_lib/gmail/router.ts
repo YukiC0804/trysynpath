@@ -80,7 +80,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
     const oauthError = typeof req.query.error === 'string' ? req.query.error : undefined;
     if (oauthError || !code) {
       res.writeHead(302, {
-        Location: `${appBase}/?gmail=failed&agent=outreach`,
+        Location: `${appBase}/agents?gmail=failed&agent=outreach`,
       });
       return res.end();
     }
@@ -102,13 +102,13 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
       });
       clearCookie(res, COOKIE_GMAIL_OAUTH_STATE);
       res.writeHead(302, {
-        Location: `${appBase}/?gmail=connected&agent=outreach`,
+        Location: `${appBase}/agents?gmail=connected&agent=outreach`,
       });
       return res.end();
     } catch (error) {
       clearGmailSession(res);
       res.writeHead(302, {
-        Location: `${appBase}/?gmail=failed&agent=outreach&reason=${encodeURIComponent(
+        Location: `${appBase}/agents?gmail=failed&agent=outreach&reason=${encodeURIComponent(
           errorMessage(error),
         )}`,
       });

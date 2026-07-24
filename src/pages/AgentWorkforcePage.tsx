@@ -317,21 +317,37 @@ export function AgentWorkforcePage() {
     <div className="min-h-screen bg-[#f3f4f6] text-neutral-900">
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white">
-              <Zap size={18} />
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white">
+                <Zap size={18} />
+              </div>
+              <div>
+                <p className="font-display text-base font-semibold tracking-tight">Synpath</p>
+                <p className="text-[11px] text-neutral-500">Agent workforce demo</p>
+              </div>
+              <nav className="ml-2 hidden items-center rounded-lg border border-neutral-200 bg-neutral-50 p-0.5 text-xs sm:inline-flex">
+                <a href="/" className="rounded-md px-2.5 py-1 text-neutral-600 hover:text-neutral-900">
+                  Operations
+                </a>
+                <span className="rounded-md bg-neutral-900 px-2.5 py-1 font-medium text-white">
+                  Agents
+                </span>
+                <a
+                  href="/sage-integration"
+                  className="rounded-md px-2.5 py-1 text-neutral-600 hover:text-neutral-900"
+                >
+                  Sage
+                </a>
+              </nav>
             </div>
-            <div>
-              <p className="font-display text-base font-semibold tracking-tight">Synpath</p>
-              <p className="text-[11px] text-neutral-500">Agent workforce demo</p>
+            <div className="flex items-center gap-3 text-xs text-neutral-500 sm:hidden">
+              <a href="/" className="underline-offset-2 hover:underline">
+                Ops
+              </a>
+              <a href="/sage-integration" className="underline-offset-2 hover:underline">
+                Sage
+              </a>
             </div>
-          </div>
-          <a
-            href="/sage-integration"
-            className="text-xs text-neutral-500 underline-offset-2 hover:underline"
-          >
-            Legacy Sage demo
-          </a>
         </div>
       </header>
 
