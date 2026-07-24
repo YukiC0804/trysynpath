@@ -337,16 +337,30 @@ export async function pingDocumentAi(): Promise<{ ok: boolean; detail: string }>
   try {
     const settings = documentAiSettings();
     const client = buildClient(settings.location);
+    const processorId = settings.processorId;
+    // Prefer getProcessor when ID is known — does not require processors.list.
+    if (processorId) {
+      const name = `projects/${settings.projectId}/locations/${settings.location}/processors/${processorId}`;
+      await client.getProcessor({ name });
+      return {
+        ok: true,
+        detail: `${settings.projectId}/${settings.location}/${processorId}`,
+      };
+    }
     const parent = `projects/${settings.projectId}/locations/${settings.location}`;
     await client.listProcessors({ parent, pageSize: 1 });
     return {
       ok: true,
-      detail: `${settings.projectId}/${settings.location}/${settings.processorId || settings.processorDisplayName}`,
+      detail: `${settings.projectId}/${settings.location}/${settings.processorDisplayName}`,
     };
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const hint = message.includes('PERMISSION_DENIED')
+      ? ' — grant the Vercel SA roles/documentai.apiUser (and preferably roles/documentai.viewer) on GCP project synpath / 642075982640'
+      : '';
     return {
       ok: false,
-      detail: error instanceof Error ? error.message : String(error),
+      detail: `${message}${hint}`,
     };
   }
 }
