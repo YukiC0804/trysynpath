@@ -305,8 +305,34 @@ export function AgentWorkforcePage() {
 
   const updateLine = (index: number, patch: Partial<AcrylicSkuLine>) => {
     if (!supplyPlan) return;
-    const lines = supplyPlan.lines.map((ln, i) => (i === index ? { ...ln, ...patch } : ln));
-    setSupplyPlan({ ...supplyPlan, lines });
+    const pool = Number(poolEdit || supplyPlan.landed.import_pool || 0);
+    const patched = supplyPlan.lines.map((ln, i) => (i === index ? { ...ln, ...patch } : ln));
+    const totalWeight = patched.reduce((sum, ln) => sum + ln.sheet_weight_kg * ln.quantity, 0);
+    const perKg = totalWeight > 0 ? pool / totalWeight : 0;
+    const lines = patched.map((ln) => {
+      const land = ln.sheet_weight_kg * perKg;
+      const landed = ln.raw_unit_price + land;
+      return {
+        ...ln,
+        land_cost_per_sheet: land,
+        landed_unit_cost: landed,
+        amount: ln.quantity * landed,
+      };
+    });
+    setSupplyPlan({
+      ...supplyPlan,
+      lines,
+      landed: {
+        ...supplyPlan.landed,
+        import_pool: pool,
+        total_weight_kg: totalWeight,
+        import_cost_per_kg: perKg,
+        total_acrylic_product_cost: lines.reduce(
+          (sum, ln) => sum + ln.raw_unit_price * ln.quantity,
+          0,
+        ),
+      },
+    });
   };
 
   const cfoApprove = async () => {
