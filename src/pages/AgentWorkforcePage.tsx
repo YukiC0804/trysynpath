@@ -951,7 +951,7 @@ export function AgentWorkforcePage() {
                           />
                         </label>
                         <label>
-                          raw unit
+                          raw unit price
                           <input
                             type="number"
                             value={ln.raw_unit_price}
@@ -961,10 +961,27 @@ export function AgentWorkforcePage() {
                             className="w-full rounded border px-1"
                           />
                         </label>
+                        <label>
+                          land unit price
+                          <input
+                            type="number"
+                            readOnly
+                            value={Number(ln.landed_unit_cost.toFixed(4))}
+                            className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
+                          />
+                        </label>
+                        <label>
+                          land / sheet
+                          <input
+                            type="number"
+                            readOnly
+                            value={Number(ln.land_cost_per_sheet.toFixed(4))}
+                            className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
+                          />
+                        </label>
                       </div>
-                      <p className="mt-1">
-                        land {money(ln.land_cost_per_sheet)} → landed{' '}
-                        {money(ln.landed_unit_cost)} · amt {money(ln.amount)}
+                      <p className="mt-1 text-neutral-500">
+                        amt {money(ln.amount)} · weight {ln.sheet_weight_kg.toFixed(2)} kg
                       </p>
                     </li>
                   ))}
@@ -984,7 +1001,8 @@ export function AgentWorkforcePage() {
                       lines: supplyPlan.lines.map((l) => ({
                         sku: l.sku_id,
                         qty: l.quantity,
-                        unit: Number(l.landed_unit_cost.toFixed(4)),
+                        raw_unit_price: Number(l.raw_unit_price.toFixed(4)),
+                        land_unit_price: Number(l.landed_unit_cost.toFixed(4)),
                         amount: Number(l.amount.toFixed(2)),
                       })),
                       sageWrite: 'preview_only',
