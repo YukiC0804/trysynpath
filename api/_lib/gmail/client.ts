@@ -80,6 +80,51 @@ export async function getGmailAttachment(
   return decodeBase64Url(data.data);
 }
 
+function toBase64Url(value: string): string {
+  return Buffer.from(value, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+/** Send a plain-text email via Gmail API (requires gmail.send scope). */
+export async function sendGmailEmail(
+  accessToken: string,
+  input: { to: string; subject: string; body: string; from?: string },
+): Promise<{ id: string; threadId: string; labelIds?: string[] }> {
+  const to = input.to.trim();
+  if (!to || !to.includes('@')) throw new Error('A valid recipient email is required');
+  const subject = input.subject.trim() || '(no subject)';
+  const body = input.body ?? '';
+  const headers = [
+    input.from ? `From: ${input.from}` : null,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset="UTF-8"',
+  ]
+    .filter(Boolean)
+    .join('\r\n');
+  const raw = toBase64Url(`${headers}\r\n\r\n${body}`);
+  const response = await fetch(`${GMAIL_API}/messages/send`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ raw }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(
+      `Gmail send failed (${response.status})${detail ? `: ${detail.slice(0, 300)}` : ''}`,
+    );
+  }
+  return response.json() as Promise<{ id: string; threadId: string; labelIds?: string[] }>;
+}
+
 async function mapWithConcurrency<T, R>(
   values: T[],
   limit: number,

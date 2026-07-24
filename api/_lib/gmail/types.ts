@@ -15,7 +15,8 @@ export interface GmailSession {
 
 export const COOKIE_GMAIL_SESSION = 'gmail_session';
 export const COOKIE_GMAIL_OAUTH_STATE = 'gmail_oauth_state';
-export const DEFAULT_GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const DEFAULT_GMAIL_SCOPE =
+  'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
 /** Exact Ghostboards demo mail: one message under the Synpath label. */
 export const DEFAULT_GMAIL_SEARCH =
   'label:synpath-sage-demo subject:"PO#GHOACRUGOL051926" has:attachment';

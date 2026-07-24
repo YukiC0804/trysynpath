@@ -23,6 +23,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (integration === 'workflow') {
       const { handleWorkflowRequest } = await import('./_lib/workflow/router');
       await handleWorkflowRequest(req, res);
+    } else if (integration === 'agents') {
+      const { handleAgentsRequest } = await import('./_lib/agents/router');
+      await handleAgentsRequest(req, res);
     } else {
       await handleSageRequest(req, res);
     }

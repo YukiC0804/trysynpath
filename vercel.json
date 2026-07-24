@@ -29,6 +29,14 @@
       "destination": "/api/sage?__integration=workflow&__workflowPath=:path*"
     },
     {
+      "source": "/api/agents",
+      "destination": "/api/sage?__integration=agents"
+    },
+    {
+      "source": "/api/agents/:path*",
+      "destination": "/api/sage?__integration=agents&__agentsPath=:path*"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

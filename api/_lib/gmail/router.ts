@@ -15,6 +15,7 @@ import {
   getGmailProfile,
   listGmailMessageSummaries,
   listGmailMessageIds,
+  sendGmailEmail,
 } from './client';
 import {
   COOKIE_GMAIL_OAUTH_STATE,
@@ -79,7 +80,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
     const oauthError = typeof req.query.error === 'string' ? req.query.error : undefined;
     if (oauthError || !code) {
       res.writeHead(302, {
-        Location: `${appBase}/sage-integration?gmail=failed`,
+        Location: `${appBase}/?gmail=failed&agent=outreach`,
       });
       return res.end();
     }
@@ -101,13 +102,13 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
       });
       clearCookie(res, COOKIE_GMAIL_OAUTH_STATE);
       res.writeHead(302, {
-        Location: `${appBase}/sage-integration?gmail=connected`,
+        Location: `${appBase}/?gmail=connected&agent=outreach`,
       });
       return res.end();
     } catch (error) {
       clearGmailSession(res);
       res.writeHead(302, {
-        Location: `${appBase}/sage-integration?gmail=failed&reason=${encodeURIComponent(
+        Location: `${appBase}/?gmail=failed&agent=outreach&reason=${encodeURIComponent(
           errorMessage(error),
         )}`,
       });
@@ -158,6 +159,22 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
       messageCount: summary.messageCount,
       attachmentCount: summary.attachmentCount,
     });
+  }
+
+  if (method === 'POST' && path[0] === 'send') {
+    try {
+      const body =
+        typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {});
+      const sent = await sendGmailEmail(auth.accessToken, {
+        to: typeof body.to === 'string' ? body.to : '',
+        subject: typeof body.subject === 'string' ? body.subject : '',
+        body: typeof body.body === 'string' ? body.body : '',
+        from: auth.session.emailAddress,
+      });
+      return json(res, 200, { ok: true, message: sent });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
   }
 
   return json(res, 404, { error: 'Unknown Gmail integration route', path });
