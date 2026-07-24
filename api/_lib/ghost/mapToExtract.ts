@@ -7,6 +7,11 @@ import type {
 } from '../../../shared/ghost';
 import type { DocAiLineItem, InvoiceData } from './documentAi';
 import { parseInvoiceBytes } from './documentAi';
+import {
+  enrichAcrylicAttrsWithLlm,
+  llmEnrichConfigured,
+  needsAcrylicEnrichment,
+} from './enrichAcrylic';
 import { sanitizeExtract } from './sanitize';
 
 const THICKNESS_RE = /(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mm(?![A-Za-z])/i;
@@ -16,7 +21,9 @@ const SIZE_RE =
 const CUT_TO_SIZE_RE =
   /cut\s*to\s*[:\s]*(\d+(?:\.\d+)?)\s*['"]?\s*[x×]\s*(\d+(?:\.\d+)?)\s*['"]?/i;
 const SKU_SIZE_RE = /(\d+(?:\.\d+)?)mm(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)/i;
-const ACRYLIC_HINT_RE = /acrylic|plexiglass|perspex|sheet|gokai|\bacr\b|\bgho\b|kraft\s*paper|virgin/i;
+/** Match ai_erp map_to_extract._ACRYLIC_HINT_RE (+ GK product codes common on JM invoices). */
+const ACRYLIC_HINT_RE =
+  /acrylic|plexiglass|perspex|sheet|gokai|\bacr\b|\bgho\b|\bGK[-_A-Z0-9]/i;
 const PACKING_RE = /pack(?:ing|age)?|pallet|crate|misc|handling|sundry|wood\s*frame/i;
 const DDP_RE = /\bDDP\b|delivered\s+duty\s+paid|landed\s+cost/i;
 const FREIGHT_RE = /freight|shipping|courier|carrier|logistics/i;
@@ -98,15 +105,13 @@ function enrichLineFromDescription(desc: string, item: DocAiLineItem): InvoiceLi
   const isDdp = DDP_RE.test(text);
   const isFreight = FREIGHT_RE.test(text);
   const isDuty = DUTY_RE.test(text);
-  const looksProduct =
-    ACRYLIC_HINT_RE.test(text) ||
-    Boolean(item.product_code) ||
-    /\bGK[-_]/i.test(text) ||
-    /\bclear\b|\bblack\b/i.test(text);
+  // Prefer explicit sheet dims; else treat acrylic-looking product rows as
+  // acrylic candidates (LLM enrichment may fill thickness/size later) — same as ai_erp.
+  const looksProduct = ACRYLIC_HINT_RE.test(text) || Boolean(item.product_code);
   const isAcrylic =
     !(isPacking || isDdp || isFreight || isDuty) &&
     (Boolean(thickness && size) ||
-      (looksProduct && (qty > 0 || (amount ?? 0) > 2.5 || unit > 2.5 || /acrylic|sheet|kraft/i.test(text))));
+      (looksProduct && qty > 0 && (unit > 2.5 || (amount ?? 0) > 2.5)));
 
   let kind: LineKind = 'other';
   if (isDdp) kind = 'ddp';
@@ -302,6 +307,28 @@ export async function parseWithDocumentAi(
   hintRole?: string | null,
 ): Promise<DocumentExtract> {
   const invoice = await parseInvoiceBytes(content);
-  const doc = documentAiToExtract(invoice, hintRole);
+  let doc = documentAiToExtract(invoice, hintRole);
+  // ai_erp: if acrylic rows lack thickness/size (or none detected), LLM fills attrs.
+  if (needsAcrylicEnrichment(doc)) {
+    if (llmEnrichConfigured()) {
+      try {
+        doc = await enrichAcrylicAttrsWithLlm(doc, {
+          rawText: invoice.raw_text || '',
+        });
+        doc = propagateAcrylicDims(doc, invoice.raw_text || '');
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        doc = {
+          ...doc,
+          notes: `${doc.notes || ''} [LLM acrylic enrich failed: ${msg}]`.trim(),
+        };
+      }
+    } else {
+      doc = {
+        ...doc,
+        notes: `${doc.notes || ''} [LLM acrylic enrich skipped: OPENAI_API_KEY not set]`.trim(),
+      };
+    }
+  }
   return sanitizeExtract(doc);
 }

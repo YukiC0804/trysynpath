@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { json } from '../sage/http';
 import { errorMessage } from '../sage/config';
 import { documentAiConfigured, pingDocumentAi } from '../ghost/documentAi';
+import { llmEnrichConfigured, resolveParseModel } from '../ghost/enrichAcrylic';
 import { parseWithDocumentAi } from '../ghost/mapToExtract';
 import { buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
 import { reapplyLandedCost } from '../ghost/landedCost';
@@ -55,6 +56,13 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         configured: documentAiConfigured(),
         connected: docAi.ok,
         detail: docAi.detail,
+      },
+      acrylicLlmEnrich: {
+        configured: llmEnrichConfigured(),
+        model: resolveParseModel(),
+        detail: llmEnrichConfigured()
+          ? `OpenAI enrich ready (${resolveParseModel()}) — same step as ai_erp enrich_acrylic_attrs_with_llm`
+          : 'Set OPENAI_API_KEY on Vercel (ai_erp used this to fill thickness_mm/size after Document AI)',
       },
       sage: { connected: false, detail: 'Sage write disabled — preview only' },
     });

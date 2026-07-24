@@ -112,6 +112,7 @@ export function AgentWorkforcePage() {
   const [chat, setChat] = useState('');
   const activity = useSessionActivity();
   const [docAi, setDocAi] = useState({ connected: false, detail: '' });
+  const [llmEnrich, setLlmEnrich] = useState({ connected: false, detail: '' });
   const [gmail, setGmail] = useState({ connected: false, email: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,6 +154,10 @@ export function AgentWorkforcePage() {
       setDocAi({
         connected: agentsStatus.documentAi.connected,
         detail: agentsStatus.documentAi.detail,
+      });
+      setLlmEnrich({
+        connected: Boolean(agentsStatus.acrylicLlmEnrich?.configured),
+        detail: agentsStatus.acrylicLlmEnrich?.detail || '',
       });
       setGmail({
         connected: gmailStatus.connected,
@@ -214,7 +219,7 @@ export function AgentWorkforcePage() {
         setDimEdits(edits);
         setDimsModal(true);
         setError(
-          'Document AI found acrylic rows but missing thickness/size (same as ai_erp before LLM enrich). Fill dims to continue.',
+          'Set OPENAI_API_KEY (ai_erp LLM enrich) or fill thickness/size manually to continue.',
         );
         return;
       }
@@ -735,12 +740,15 @@ export function AgentWorkforcePage() {
               <StatusDot connected={false} label="Sage 50" />
               <StatusDot connected={gmail.connected} label="Gmail" />
               <StatusDot connected={docAi.connected} label="Document AI" />
+              <StatusDot connected={llmEnrich.connected} label="Acrylic LLM" />
               <StatusDot connected={false} label="HubSpot" />
               <StatusDot connected={false} label="ZoomInfo" />
-              <StatusDot connected={false} label="Websites" />
             </div>
             {docAi.detail ? (
               <p className="mt-2 text-[11px] text-neutral-400">Document AI: {docAi.detail}</p>
+            ) : null}
+            {llmEnrich.detail ? (
+              <p className="mt-1 text-[11px] text-neutral-400">Acrylic LLM: {llmEnrich.detail}</p>
             ) : null}
           </section>
         </div>
@@ -802,9 +810,9 @@ export function AgentWorkforcePage() {
             wide
           >
             <p className="mb-3 text-sm text-neutral-600">
-              Document AI returned acrylic rows, but landed-cost needs{' '}
-              <strong>thickness_mm</strong> and <strong>size</strong> (e.g. 3 and 18x24). Your
-              ai_erp flow fills these via LLM enrich; here you can enter them manually.
+              Document AI returned acrylic rows without thickness/size. ai_erp fills these via{' '}
+              <code className="text-xs">enrich_acrylic_attrs_with_llm</code> (needs{' '}
+              <code className="text-xs">OPENAI_API_KEY</code>). Enter them manually to continue.
             </p>
             <ul className="max-h-[50vh] space-y-3 overflow-auto">
               {Object.keys(dimEdits).map((key) => {
