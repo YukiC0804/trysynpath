@@ -10,10 +10,13 @@ import { parseInvoiceBytes } from './documentAi';
 import { sanitizeExtract } from './sanitize';
 
 const THICKNESS_RE = /(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mm(?![A-Za-z])/i;
+const THICKNESS_COL_RE = /(?:thick(?:ness)?|thk)[:\s]*(\d+(?:\.\d+)?)\s*(?:mm)?/i;
 const SIZE_RE =
   /(?<![A-Za-z])(\d+(?:\.\d+)?)\s*['"]?\s*[x×]\s*(\d+(?:\.\d+)?)\s*['"]?(?![A-Za-z])/i;
+const CUT_TO_SIZE_RE =
+  /cut\s*to\s*[:\s]*(\d+(?:\.\d+)?)\s*['"]?\s*[x×]\s*(\d+(?:\.\d+)?)\s*['"]?/i;
 const SKU_SIZE_RE = /(\d+(?:\.\d+)?)mm(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)/i;
-const ACRYLIC_HINT_RE = /acrylic|plexiglass|perspex|sheet|gokai|\bacr\b|\bgho\b/i;
+const ACRYLIC_HINT_RE = /acrylic|plexiglass|perspex|sheet|gokai|\bacr\b|\bgho\b|kraft\s*paper|virgin/i;
 const PACKING_RE = /pack(?:ing|age)?|pallet|crate|misc|handling|sundry|wood\s*frame/i;
 const DDP_RE = /\bDDP\b|delivered\s+duty\s+paid|landed\s+cost/i;
 const FREIGHT_RE = /freight|shipping|courier|carrier|logistics/i;
@@ -54,30 +57,38 @@ function parseInvoiceDate(raw: string): string | null {
   return null;
 }
 
-function parseThicknessSize(text: string): { thickness: number | null; size: string | null } {
-  const sku = SKU_SIZE_RE.exec(text.replace(/ /g, ''));
+export function parseThicknessSize(text: string): {
+  thickness: number | null;
+  size: string | null;
+} {
+  const compact = text.replace(/\s+/g, ' ');
+  const sku = SKU_SIZE_RE.exec(compact.replace(/ /g, ''));
   if (sku) return { thickness: Number(sku[1]), size: `${sku[2]}x${sku[3]}` };
-  const thickM = THICKNESS_RE.exec(text);
-  const sizeM = SIZE_RE.exec(text);
+
+  const cut = CUT_TO_SIZE_RE.exec(compact);
+  const sizeM = cut ?? SIZE_RE.exec(compact);
+  const thickM = THICKNESS_RE.exec(compact) ?? THICKNESS_COL_RE.exec(compact);
+
   return {
     thickness: thickM ? Number(thickM[1]) : null,
     size: sizeM ? `${sizeM[1]}x${sizeM[2]}` : null,
   };
 }
 
-function enrichLineFromDescription(desc: string, item: DocAiLineItem): InvoiceLineExtract {
-  const text = (desc || item.description || '').trim();
-  const { thickness, size } = parseThicknessSize(text);
-  let colorCode = 'CLR';
-  let colorName = 'Clear';
+function colorFromText(text: string): { colorCode: string; colorName: string } {
   const lower = text.toLowerCase();
   for (const [key, [code, name]] of Object.entries(COLOR_MAP)) {
     if (new RegExp(`\\b${key}\\b`, 'i').test(lower)) {
-      colorCode = code;
-      colorName = name;
-      break;
+      return { colorCode: code, colorName: name };
     }
   }
+  return { colorCode: 'CLR', colorName: 'Clear' };
+}
+
+function enrichLineFromDescription(desc: string, item: DocAiLineItem): InvoiceLineExtract {
+  const text = (desc || item.description || '').trim();
+  const { thickness, size } = parseThicknessSize(text);
+  const { colorCode, colorName } = colorFromText(text);
   const qty = Number(item.quantity || 0);
   let unit = Number(item.unit_price || 0);
   const amount = item.amount != null ? Number(item.amount) : null;
@@ -87,11 +98,15 @@ function enrichLineFromDescription(desc: string, item: DocAiLineItem): InvoiceLi
   const isDdp = DDP_RE.test(text);
   const isFreight = FREIGHT_RE.test(text);
   const isDuty = DUTY_RE.test(text);
-  const looksProduct = ACRYLIC_HINT_RE.test(text) || Boolean(item.product_code);
+  const looksProduct =
+    ACRYLIC_HINT_RE.test(text) ||
+    Boolean(item.product_code) ||
+    /\bGK[-_]/i.test(text) ||
+    /\bclear\b|\bblack\b/i.test(text);
   const isAcrylic =
     !(isPacking || isDdp || isFreight || isDuty) &&
     (Boolean(thickness && size) ||
-      (looksProduct && qty > 0 && (unit > 2.5 || (amount ?? 0) > 2.5)));
+      (looksProduct && (qty > 0 || (amount ?? 0) > 2.5 || unit > 2.5 || /acrylic|sheet|kraft/i.test(text))));
 
   let kind: LineKind = 'other';
   if (isDdp) kind = 'ddp';
@@ -114,6 +129,88 @@ function enrichLineFromDescription(desc: string, item: DocAiLineItem): InvoiceLi
     amount,
     line_kind: kind,
   };
+}
+
+/** Pull size/thickness from full OCR blob onto acrylic lines that lack them. */
+export function propagateAcrylicDims(
+  doc: DocumentExtract,
+  rawText = '',
+): DocumentExtract {
+  const corpus = [rawText, doc.notes ?? '', ...doc.lines.map((l) => l.raw_description)].join(
+    '\n',
+  );
+  const global = parseThicknessSize(corpus);
+  const sizes = [
+    ...corpus.matchAll(
+      /cut\s*to\s*[:\s]*(\d+(?:\.\d+)?)\s*['"]?\s*[x×]\s*(\d+(?:\.\d+)?)\s*['"]?/gi,
+    ),
+  ].map((m) => `${m[1]}x${m[2]}`);
+  const thicks = [
+    ...corpus.matchAll(/(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mm(?![A-Za-z])/gi),
+  ].map((m) => Number(m[1]));
+
+  const sizesFromLines = doc.lines
+    .map((l) => l.size)
+    .filter((s): s is string => Boolean(s));
+  const thicksFromLines = doc.lines
+    .map((l) => l.thickness_mm)
+    .filter((t): t is number => t != null && Number.isFinite(t));
+
+  const fallbackSize = global.size || sizes[0] || sizesFromLines[0] || null;
+  const fallbackThick =
+    global.thickness ??
+    (thicks.length === 1 ? thicks[0]! : null) ??
+    (thicksFromLines.length ? thicksFromLines[0]! : null);
+
+  const lines = doc.lines.map((ln) => {
+    if (!ln.is_acrylic || ln.line_kind !== 'acrylic') return ln;
+    return {
+      ...ln,
+      thickness_mm: ln.thickness_mm ?? fallbackThick,
+      size: ln.size ?? fallbackSize,
+    };
+  });
+
+  // Drop empty noise rows Document AI sometimes emits.
+  const cleaned = lines.filter(
+    (ln) =>
+      !(
+        (!ln.raw_description || ln.raw_description === '(no description)') &&
+        !ln.quantity &&
+        !ln.amount &&
+        ln.line_kind === 'other'
+      ),
+  );
+
+  const note =
+    fallbackSize || fallbackThick
+      ? ` [dims propagated size=${fallbackSize ?? '—'} thick=${fallbackThick ?? '—'}]`
+      : '';
+  return {
+    ...doc,
+    lines: cleaned,
+    notes: `${doc.notes || ''}${note}`.trim() || null,
+  };
+}
+
+export function acrylicLinesNeedingDims(doc: DocumentExtract): InvoiceLineExtract[] {
+  return doc.lines.filter(
+    (ln) =>
+      ln.is_acrylic &&
+      ln.line_kind === 'acrylic' &&
+      (ln.thickness_mm == null || !ln.size),
+  );
+}
+
+export function completeAcrylicLines(doc: DocumentExtract): InvoiceLineExtract[] {
+  return doc.lines.filter(
+    (ln) =>
+      ln.is_acrylic &&
+      !ln.is_packing_or_misc &&
+      ln.line_kind === 'acrylic' &&
+      ln.thickness_mm != null &&
+      Boolean(ln.size),
+  );
 }
 
 export function documentAiToExtract(
@@ -143,9 +240,7 @@ export function documentAiToExtract(
 
   if (role === 'freight') {
     freightAmount = freightAmount ?? total;
-    lines =
-      lines.map((ln) => ({ ...ln, is_acrylic: false, line_kind: 'freight' as const })) ||
-      [];
+    lines = lines.map((ln) => ({ ...ln, is_acrylic: false, line_kind: 'freight' as const }));
     if (!lines.length) {
       lines = [
         {
@@ -185,7 +280,7 @@ export function documentAiToExtract(
     if (invoice.freight_amount && !includesDdp) freightAmount = invoice.freight_amount;
   }
 
-  return {
+  const base: DocumentExtract = {
     document_role: role,
     vendor,
     invoice_number: invoice.invoice_id || null,
@@ -199,6 +294,7 @@ export function documentAiToExtract(
     lines,
     notes: `[parsed via Document AI invoice_id=${JSON.stringify(invoice.invoice_id)} lines=${lines.length}]`,
   };
+  return propagateAcrylicDims(base, invoice.raw_text || '');
 }
 
 export async function parseWithDocumentAi(

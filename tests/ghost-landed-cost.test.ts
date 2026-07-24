@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { allocateLandedCost, resolveImportPool, sheetWeightKg } from '../api/_lib/ghost/landedCost';
 import type { DocumentExtract } from '../shared/ghost';
 import { buildSkuId, normalizeSheetSize } from '../api/_lib/ghost/sku';
-import { documentAiToExtract } from '../api/_lib/ghost/mapToExtract';
+import { documentAiToExtract, parseThicknessSize, propagateAcrylicDims } from '../api/_lib/ghost/mapToExtract';
 import type { InvoiceData } from '../api/_lib/ghost/documentAi';
 
 function purchase(partial: Partial<DocumentExtract> = {}): DocumentExtract {
@@ -164,5 +164,40 @@ describe('document AI map', () => {
     expect(doc.vendor?.id).toBe('GOK');
     expect(doc.lines.some((l) => l.line_kind === 'acrylic')).toBe(true);
     expect(doc.lines.some((l) => l.line_kind === 'packing')).toBe(true);
+  });
+
+  it('parses cut-to inch sizes and propagates dims across acrylic rows', () => {
+    expect(parseThicknessSize('(cut to 18" x 24")').size).toBe('18x24');
+    const doc = propagateAcrylicDims({
+      document_role: 'purchase_invoice',
+      includes_ddp: false,
+      lines: [
+        {
+          raw_description: 'Acrylic Sheet 100% virgin',
+          is_acrylic: true,
+          is_packing_or_misc: false,
+          quantity: 10,
+          unit_price: 12,
+          amount: 120,
+          line_kind: 'acrylic',
+          thickness_mm: null,
+          size: null,
+        },
+        {
+          raw_description: 'clear,GK-000 (cut to 18" x 24")',
+          is_acrylic: true,
+          is_packing_or_misc: false,
+          quantity: 0,
+          unit_price: 0,
+          amount: null,
+          line_kind: 'acrylic',
+          thickness_mm: 3,
+          size: '18x24',
+        },
+      ],
+      notes: null,
+    });
+    expect(doc.lines[0]!.size).toBe('18x24');
+    expect(doc.lines[0]!.thickness_mm).toBe(3);
   });
 });

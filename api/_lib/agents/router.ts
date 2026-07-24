@@ -3,10 +3,17 @@ import { json } from '../sage/http';
 import { errorMessage } from '../sage/config';
 import { documentAiConfigured, pingDocumentAi } from '../ghost/documentAi';
 import { parseWithDocumentAi } from '../ghost/mapToExtract';
-import { buildWritePlan } from '../ghost/orchestrator';
+import { buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
 import { reapplyLandedCost } from '../ghost/landedCost';
 import { buildSalesOrderPlan } from '../ghost/salesOrder';
-import type { AcrylicSkuLine, CfoAuditRecord, ImportCostMethod } from '../../../shared/ghost';
+import { propagateAcrylicDims } from '../ghost/mapToExtract';
+import type {
+  AcrylicSkuLine,
+  CfoAuditRecord,
+  DocumentExtract,
+  ImportCostMethod,
+  InvoiceLineExtract,
+} from '../../../shared/ghost';
 
 function pathSegments(req: VercelRequest): string[] {
   const raw = req.query.__agentsPath ?? req.query.__integrationPath;
@@ -69,15 +76,70 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         ? await parseWithDocumentAi(decodePdf(body.dutyPdfBase64), 'duty')
         : null;
 
-      const plan = buildWritePlan(purchase, { freight, duty });
-      return json(res, 200, {
-        ok: true,
-        purchase,
-        freight,
-        duty,
-        plan,
-      });
+      try {
+        const plan = buildWritePlan(purchase, { freight, duty });
+        return json(res, 200, {
+          ok: true,
+          purchase,
+          freight,
+          duty,
+          plan,
+        });
+      } catch (error) {
+        if (error instanceof MissingAcrylicDimsError) {
+          return json(res, 422, {
+            ok: false,
+            code: error.code,
+            error: error.message,
+            purchase,
+            freight,
+            duty,
+            incompleteAcrylicLines: error.incomplete,
+          });
+        }
+        throw error;
+      }
     } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'POST' && path[0] === 'supply' && path[1] === 'allocate') {
+    try {
+      const body = bodyOf(req);
+      let purchase = body.purchase as DocumentExtract;
+      if (!purchase?.lines) throw new Error('purchase extract required');
+      const linePatches = body.linePatches as
+        | Array<{ index: number; thickness_mm?: number; size?: string; quantity?: number }>
+        | undefined;
+      if (Array.isArray(linePatches)) {
+        const lines = purchase.lines.map((ln, i) => {
+          const patch = linePatches.find((p) => p.index === i);
+          if (!patch) return ln;
+          return {
+            ...ln,
+            thickness_mm: patch.thickness_mm ?? ln.thickness_mm,
+            size: patch.size ?? ln.size,
+            quantity: patch.quantity ?? ln.quantity,
+            is_acrylic: true,
+            line_kind: 'acrylic' as const,
+          } satisfies InvoiceLineExtract;
+        });
+        purchase = propagateAcrylicDims({ ...purchase, lines });
+      }
+      const freight = (body.freight as DocumentExtract | null) ?? null;
+      const duty = (body.duty as DocumentExtract | null) ?? null;
+      const plan = buildWritePlan(purchase, { freight, duty });
+      return json(res, 200, { ok: true, purchase, freight, duty, plan });
+    } catch (error) {
+      if (error instanceof MissingAcrylicDimsError) {
+        return json(res, 422, {
+          ok: false,
+          code: error.code,
+          error: error.message,
+          incompleteAcrylicLines: error.incomplete,
+        });
+      }
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }
   }

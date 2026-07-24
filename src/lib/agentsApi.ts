@@ -73,6 +73,41 @@ export async function processSupply(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+  const data = (await res.json()) as {
+    ok: boolean;
+    error?: string;
+    code?: string;
+    purchase?: DocumentExtract;
+    freight?: DocumentExtract | null;
+    duty?: DocumentExtract | null;
+    plan?: PurchaseWritePlan;
+    incompleteAcrylicLines?: DocumentExtract['lines'];
+  };
+  if (res.status === 422 && data.code === 'MISSING_ACRYLIC_DIMS') {
+    return data;
+  }
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
+export async function allocateSupply(input: {
+  purchase: DocumentExtract;
+  freight?: DocumentExtract | null;
+  duty?: DocumentExtract | null;
+  linePatches?: Array<{
+    index: number;
+    thickness_mm?: number;
+    size?: string;
+    quantity?: number;
+  }>;
+}) {
+  const res = await fetch('/api/agents/supply/allocate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
   return parseJson<{
     ok: boolean;
     purchase: DocumentExtract;

@@ -30,6 +30,7 @@ import {
 import { useSessionActivity } from '../hooks/useSessionActivity';
 import {
   approveSupply,
+  allocateSupply,
   disconnectGmail,
   fetchAgentsStatus,
   fetchGmailStatus,
@@ -121,7 +122,13 @@ export function AgentWorkforcePage() {
   const [dutyFile, setDutyFile] = useState<File | null>(null);
   const [supplyPlan, setSupplyPlan] = useState<PurchaseWritePlan | null>(null);
   const [supplyPurchase, setSupplyPurchase] = useState<DocumentExtract | null>(null);
+  const [supplyFreight, setSupplyFreight] = useState<DocumentExtract | null>(null);
+  const [supplyDuty, setSupplyDuty] = useState<DocumentExtract | null>(null);
   const [supplyModal, setSupplyModal] = useState(false);
+  const [dimsModal, setDimsModal] = useState(false);
+  const [dimEdits, setDimEdits] = useState<
+    Record<number, { thickness_mm: string; size: string; quantity: string }>
+  >({});
   const [poolEdit, setPoolEdit] = useState('');
   const [audit, setAudit] = useState<CfoAuditRecord | null>(null);
 
@@ -189,7 +196,30 @@ export function AgentWorkforcePage() {
         freightPdfBase64,
         dutyPdfBase64,
       });
-      setSupplyPurchase(result.purchase);
+      setSupplyPurchase(result.purchase ?? null);
+      setSupplyFreight(result.freight ?? null);
+      setSupplyDuty(result.duty ?? null);
+
+      if (result.code === 'MISSING_ACRYLIC_DIMS' && result.purchase) {
+        const edits: Record<number, { thickness_mm: string; size: string; quantity: string }> =
+          {};
+        result.purchase.lines.forEach((ln, index) => {
+          if (!ln.is_acrylic || ln.line_kind !== 'acrylic') return;
+          edits[index] = {
+            thickness_mm: ln.thickness_mm != null ? String(ln.thickness_mm) : '',
+            size: ln.size ?? '',
+            quantity: String(ln.quantity || ''),
+          };
+        });
+        setDimEdits(edits);
+        setDimsModal(true);
+        setError(
+          'Document AI found acrylic rows but missing thickness/size (same as ai_erp before LLM enrich). Fill dims to continue.',
+        );
+        return;
+      }
+
+      if (!result.plan) throw new Error(result.error || 'No plan returned');
       setSupplyPlan(result.plan);
       setPoolEdit(String(result.plan.landed.import_pool.toFixed(2)));
       setSupplyModal(true);
@@ -199,6 +229,43 @@ export function AgentWorkforcePage() {
         'ready',
       );
       void refreshIntegrations();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const continueWithDims = async () => {
+    if (!supplyPurchase) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const linePatches = Object.keys(dimEdits).map((key) => {
+        const edit = dimEdits[Number(key)]!;
+        return {
+          index: Number(key),
+          thickness_mm: edit.thickness_mm ? Number(edit.thickness_mm) : undefined,
+          size: edit.size || undefined,
+          quantity: edit.quantity ? Number(edit.quantity) : undefined,
+        };
+      });
+      const result = await allocateSupply({
+        purchase: supplyPurchase,
+        freight: supplyFreight,
+        duty: supplyDuty,
+        linePatches,
+      });
+      setSupplyPurchase(result.purchase);
+      setSupplyPlan(result.plan);
+      setPoolEdit(String(result.plan.landed.import_pool.toFixed(2)));
+      setDimsModal(false);
+      setSupplyModal(true);
+      activity.push(
+        'Supply & Costing',
+        `${result.plan.invoice_number} · ${result.plan.landed.method} $${result.plan.landed.import_pool.toFixed(0)} → ${result.plan.lines.length} SKUs · preview`,
+        'ready',
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -726,6 +793,91 @@ export function AgentWorkforcePage() {
           </ul>
         </aside>
       </div>
+
+      <AnimatePresence>
+        {dimsModal && supplyPurchase ? (
+          <ModalShell
+            title="Fill acrylic thickness & size"
+            onClose={() => setDimsModal(false)}
+            wide
+          >
+            <p className="mb-3 text-sm text-neutral-600">
+              Document AI returned acrylic rows, but landed-cost needs{' '}
+              <strong>thickness_mm</strong> and <strong>size</strong> (e.g. 3 and 18x24). Your
+              ai_erp flow fills these via LLM enrich; here you can enter them manually.
+            </p>
+            <ul className="max-h-[50vh] space-y-3 overflow-auto">
+              {Object.keys(dimEdits).map((key) => {
+                const index = Number(key);
+                const edit = dimEdits[index]!;
+                const ln = supplyPurchase.lines[index];
+                if (!ln) return null;
+                return (
+                  <li
+                    key={key}
+                    className="rounded-xl border border-neutral-200 p-3 text-sm"
+                  >
+                    <p className="mb-2 whitespace-pre-wrap text-xs text-neutral-600">
+                      {ln.raw_description}
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <label className="text-xs">
+                        thickness_mm
+                        <input
+                          value={edit.thickness_mm}
+                          onChange={(e) =>
+                            setDimEdits((prev) => ({
+                              ...prev,
+                              [index]: { ...edit, thickness_mm: e.target.value },
+                            }))
+                          }
+                          placeholder="e.g. 3"
+                          className="mt-1 w-full rounded-lg border px-2 py-1.5"
+                        />
+                      </label>
+                      <label className="text-xs">
+                        size
+                        <input
+                          value={edit.size}
+                          onChange={(e) =>
+                            setDimEdits((prev) => ({
+                              ...prev,
+                              [index]: { ...edit, size: e.target.value },
+                            }))
+                          }
+                          placeholder="e.g. 18x24"
+                          className="mt-1 w-full rounded-lg border px-2 py-1.5"
+                        />
+                      </label>
+                      <label className="text-xs">
+                        qty
+                        <input
+                          value={edit.quantity}
+                          onChange={(e) =>
+                            setDimEdits((prev) => ({
+                              ...prev,
+                              [index]: { ...edit, quantity: e.target.value },
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border px-2 py-1.5"
+                        />
+                      </label>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void continueWithDims()}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+            >
+              Continue landed cost
+            </button>
+          </ModalShell>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {supplyModal && supplyPlan ? (
