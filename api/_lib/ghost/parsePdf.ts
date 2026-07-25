@@ -1,86 +1,57 @@
 /**
- * Port of ai_erp parse_pdf.parse_pdf backends.
+ * Exact port of ai_erp parse_pdf.parse_pdf routing.
  *
- * Default ``auto`` (same as ai_erp):
- * 1. Rich / usable PDF text layer → text+LLM  (best qty/unit price)
- * 2. Else try Document AI OCR text → LLM
- * 3. Else OpenAI PDF vision (gpt-4o) — replaces local PyMuPDF vision on Vercel
- * 4. Last resort: Document AI line-item tables (often wrong on multi-column)
+ * Default auto:
+ *   rich PDF text (≥120 chars + ≥2 money keywords) → text+LLM (gpt-4o-mini)
+ *   else → vision: render PNG pages (2x, ≤6) → vision LLM (gpt-4o)
+ *
+ * Document AI / Parseur kept as optional backends only — not used by default.
  */
 import type { DocumentExtract } from '../../../shared/ghost';
-import { extractPdfText } from '../workflow/pdfText';
+import { extractPdfText, renderPdfPagesB64 } from '../workflow/pdfText';
 import { llmEnrichConfigured } from './enrichAcrylic';
 import { parseWithDocumentAi } from './mapToExtract';
-import { parseInvoiceBytes } from './documentAi';
-import { parseDocumentPdfVision, parseDocumentText } from './parseDocumentLlm';
+import {
+  parseDocumentImages,
+  parseDocumentText,
+  parseDocumentTwoPass,
+} from './parseDocumentLlm';
 
 export type ParseBackend =
   | 'auto'
   | 'text'
   | 'vision'
-  | 'documentai'
-  | 'documentai_ocr';
+  | 'two_pass'
+  | 'documentai';
 
-export type ParseBackendUsed =
-  | 'text+llm'
-  | 'documentai_ocr+llm'
-  | 'openai_pdf_vision'
-  | 'documentai_lines'
-  | 'none';
+const BACKENDS = new Set<ParseBackend>([
+  'auto',
+  'text',
+  'vision',
+  'two_pass',
+  'documentai',
+]);
 
 export function resolveParseBackend(): ParseBackend {
   const raw = (process.env.GHOST_PO_PARSE_BACKEND || 'auto').trim().toLowerCase();
-  if (
-    raw === 'text' ||
-    raw === 'vision' ||
-    raw === 'documentai' ||
-    raw === 'documentai_ocr' ||
-    raw === 'auto'
-  ) {
-    return raw;
-  }
+  if (BACKENDS.has(raw as ParseBackend)) return raw as ParseBackend;
   return 'auto';
 }
 
-/** Prefer text+LLM whenever the PDF has a usable text layer (ai_erp auto). */
+/** Exact ai_erp _text_is_rich_enough */
 export function textIsRichEnough(text: string): boolean {
-  if (text.length < 80) return false;
-  const moneyish = (text.match(/\$|USD|Total|Amount|Invoice|Unit\s*Price|Qty|Quantity|pcs/gi) || [])
-    .length;
-  if (moneyish >= 2) return true;
-  // Multi-column acrylic invoices often lack "$" in the text layer but still have numbers.
-  return text.length >= 400 && /\d/.test(text);
+  if (text.length < 120) return false;
+  const moneyish = (text.match(/\$|USD|Total|Amount|Invoice|Unit Price/gi) || []).length;
+  return moneyish >= 2;
 }
 
-export function pickAutoBackend(text: string): 'text' | 'documentai_ocr' {
-  return textIsRichEnough(text) ? 'text' : 'documentai_ocr';
-}
-
-async function parseViaDocumentAiOcrThenLlm(
-  content: Buffer,
-  hintRole?: string | null,
-): Promise<DocumentExtract> {
-  const invoice = await parseInvoiceBytes(content);
-  const ocr = (invoice.raw_text || '').trim();
-  if (!ocr) {
-    throw new Error('Document AI returned empty OCR text');
-  }
-  return parseDocumentText(ocr, {
-    hintRole,
-    note: '[parsed via Document AI OCR text + LLM]',
-  });
-}
-
-function withBackendNote(doc: DocumentExtract, used: ParseBackendUsed): DocumentExtract {
-  return {
-    ...doc,
-    notes: `${doc.notes || ''} [backend=${used}]`.trim(),
-  };
+/** Exact ai_erp _pick_auto_backend */
+export function pickAutoBackend(text: string): 'text' | 'vision' {
+  return textIsRichEnough(text) ? 'text' : 'vision';
 }
 
 /**
- * Main entry — mirrors ai_erp parse_pdf for purchase/freight/duty.
- * Requires OPENAI_API_KEY for text / vision / documentai_ocr / auto (preferred path).
+ * Main entry — mirrors ai_erp parse_pdf.
  */
 export async function parsePdf(
   content: Buffer,
@@ -88,91 +59,71 @@ export async function parsePdf(
 ): Promise<DocumentExtract> {
   let backend = opts.backend || resolveParseBackend();
   const text = await extractPdfText(content);
-  const errors: string[] = [];
 
   if (backend === 'auto') {
     if (!llmEnrichConfigured()) {
-      const doc = await parseWithDocumentAi(content, opts.hintRole);
-      return withBackendNote(doc, 'documentai_lines');
+      throw new Error(
+        'GHOST_PO_PARSE_BACKEND=auto requires OPENAI_API_KEY (ai_erp text/vision LLM path). ' +
+          'Or set GHOST_PO_PARSE_BACKEND=documentai.',
+      );
     }
     backend = pickAutoBackend(text);
   }
 
   if (backend === 'documentai') {
     const doc = await parseWithDocumentAi(content, opts.hintRole);
-    return withBackendNote(doc, 'documentai_lines');
+    return {
+      ...doc,
+      notes: `${doc.notes || ''} [backend=documentai]`.trim(),
+    };
+  }
+
+  if (!llmEnrichConfigured()) {
+    throw new Error(`${backend} backend requires OPENAI_API_KEY`);
   }
 
   if (backend === 'text') {
     if (!text.trim()) {
       throw new Error(
-        'text backend but no text layer in PDF — set GHOST_PO_PARSE_BACKEND=auto or vision',
+        'text backend but no text layer in PDF — use GHOST_PO_PARSE_BACKEND=vision (or auto)',
       );
     }
-    if (!llmEnrichConfigured()) throw new Error('text backend requires OPENAI_API_KEY');
     const doc = await parseDocumentText(text, {
       hintRole: opts.hintRole,
-      note: '[parsed via PDF text + LLM]',
+      note: '[parsed via text+LLM]',
     });
-    return withBackendNote(doc, 'text+llm');
+    return { ...doc, notes: `${doc.notes || ''} [backend=text]`.trim() };
   }
 
-  if (backend === 'vision') {
-    if (!llmEnrichConfigured()) throw new Error('vision backend requires OPENAI_API_KEY');
-    const doc = await parseDocumentPdfVision(content, {
-      hintRole: opts.hintRole,
-      textHint: text,
-      note: '[parsed via OpenAI PDF vision]',
-    });
-    return withBackendNote(doc, 'openai_pdf_vision');
+  // vision / two_pass — render pages like PyMuPDF (ai_erp)
+  const images = await renderPdfPagesB64(content, { maxPages: 6, scale: 2 });
+  if (!images.length) {
+    if (text.trim()) {
+      const doc = await parseDocumentText(text, {
+        hintRole: opts.hintRole,
+        note: '[parsed via text+LLM; screenshot render empty]',
+      });
+      return { ...doc, notes: `${doc.notes || ''} [backend=text-fallback]`.trim() };
+    }
+    throw new Error('could not render or read PDF pages for vision parse');
   }
 
-  // documentai_ocr (also auto fallback path)
-  if (llmEnrichConfigured()) {
+  if (backend === 'two_pass') {
     try {
-      const doc = await parseViaDocumentAiOcrThenLlm(content, opts.hintRole);
-      return withBackendNote(doc, 'documentai_ocr+llm');
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-      try {
-        const doc = await parseDocumentPdfVision(content, {
-          hintRole: opts.hintRole,
-          textHint: text,
-          note: `[parsed via OpenAI PDF vision after DocAI OCR failed: ${errors[0]}]`,
-        });
-        return withBackendNote(doc, 'openai_pdf_vision');
-      } catch (visionError) {
-        errors.push(visionError instanceof Error ? visionError.message : String(visionError));
-      }
-      // If PDF text exists at all, still try text+LLM before DocAI line items.
-      if (text.trim().length >= 40) {
-        try {
-          const doc = await parseDocumentText(text, {
-            hintRole: opts.hintRole,
-            note: `[parsed via thin PDF text + LLM after OCR/vision failed: ${errors.join(' | ')}]`,
-          });
-          return withBackendNote(doc, 'text+llm');
-        } catch (textError) {
-          errors.push(textError instanceof Error ? textError.message : String(textError));
-        }
-      }
+      const doc = await parseDocumentTwoPass(images, {
+        hintRole: opts.hintRole,
+        textHint: text,
+      });
+      return { ...doc, notes: `${doc.notes || ''} [backend=two_pass]`.trim() };
+    } catch {
+      // ai_erp: fall through to single vision
     }
   }
 
-  try {
-    const doc = await parseWithDocumentAi(content, opts.hintRole);
-    return withBackendNote(
-      {
-        ...doc,
-        notes: `${doc.notes || ''} [fallback documentai lines; prior errors: ${errors.join(' | ') || 'none'}]`.trim(),
-      },
-      'documentai_lines',
-    );
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `All invoice parse backends failed. OpenAI=${llmEnrichConfigured() ? 'yes' : 'no'}. ` +
-        `Errors: ${[...errors, msg].join(' | ')}`,
-    );
-  }
+  const doc = await parseDocumentImages(images, {
+    hintRole: opts.hintRole,
+    textHint: text,
+    note: `[parsed via vision/${backend}]`,
+  });
+  return { ...doc, notes: `${doc.notes || ''} [backend=vision]`.trim() };
 }

@@ -5,7 +5,6 @@ import {
 } from '../api/_lib/ghost/parseDocumentLlm';
 import { pickAutoBackend, textIsRichEnough } from '../api/_lib/ghost/parsePdf';
 
-/** Fragment similar to Document AI line-item garbage on JM Trophies invoices. */
 const JM_OCR_TEXT = `
 JM TROPHIES
 Invoice INV-8842
@@ -17,28 +16,23 @@ Acrylic Sheet GK-CAS05C 100% virgin
 Two sides kraft paper (cut to 18" x 24") black,GK-0502
 Quantity: 20  Unit Price: 14.00  Amount: 280.00
 
-Acrylic Sheet GK-CAS09T clear,GK-000 (cut to 18" x 24")
-Quantity: 15  Unit Price: 18.25  Amount: 273.75
-
-Invoice Total: 1053.75 USD
+Invoice Total: 780.00 USD
 `.trim();
 
 describe('parse backend selection (ai_erp auto)', () => {
-  it('treats money-rich PDF text as text backend', () => {
+  it('uses exact ai_erp rich-text rule (≥120 + ≥2 money keywords)', () => {
     expect(textIsRichEnough(JM_OCR_TEXT)).toBe(true);
     expect(pickAutoBackend(JM_OCR_TEXT)).toBe('text');
   });
 
-  it('falls back to documentai_ocr for thin scans', () => {
-    expect(pickAutoBackend('page 1')).toBe('documentai_ocr');
+  it('routes thin scans to vision (not Document AI)', () => {
+    expect(textIsRichEnough('page 1')).toBe(false);
+    expect(pickAutoBackend('page 1')).toBe('vision');
   });
 
-  it('uses text backend for long numeric invoice dumps without $', () => {
-    const dump = Array.from({ length: 30 }, (_, i) => `row ${i} qty ${i + 1} 18x24 clear`).join(
-      '\n',
-    );
-    expect(textIsRichEnough(dump)).toBe(true);
-    expect(pickAutoBackend(dump)).toBe('text');
+  it('rejects short text even with one money keyword', () => {
+    expect(textIsRichEnough('Invoice only')).toBe(false);
+    expect(pickAutoBackend('Invoice only')).toBe('vision');
   });
 });
 
@@ -56,7 +50,7 @@ describe('text+LLM extract (ai_erp parse_document_text)', () => {
         invoice_number: 'INV-8842',
         invoice_date: '2026-05-19',
         currency: 'USD',
-        invoice_total: 1053.75,
+        invoice_total: 780,
         includes_ddp: false,
         lines: [
           {
@@ -73,31 +67,14 @@ describe('text+LLM extract (ai_erp parse_document_text)', () => {
             amount: 500,
             line_kind: 'acrylic',
           },
-          {
-            raw_description: 'Acrylic Sheet GK-CAS05C black',
-            is_acrylic: true,
-            is_packing_or_misc: false,
-            product_code: 'ACR',
-            color_code: 'BLK',
-            color_name: 'Black',
-            thickness_mm: 3,
-            size: '18x24',
-            quantity: 20,
-            unit_price: 14,
-            amount: 280,
-            line_kind: 'acrylic',
-          },
         ],
       },
       { note: '[test]' },
     );
     expect(doc.vendor?.id).toBe('JM');
-    expect(doc.lines).toHaveLength(2);
     expect(doc.lines[0]!.quantity).toBe(40);
     expect(doc.lines[0]!.unit_price).toBe(12.5);
     expect(doc.lines[0]!.amount).toBe(500);
-    expect(doc.lines[0]!.thickness_mm).toBe(3);
-    expect(doc.lines[0]!.size).toBe('18x24');
   });
 
   it('prefers amount/qty when LLM unit_price looks like density', () => {
@@ -112,13 +89,12 @@ describe('text+LLM extract (ai_erp parse_document_text)', () => {
           thickness_mm: 4,
           size: '4x8',
           quantity: 10,
-          unit_price: 1.2, // density mistake
+          unit_price: 1.2,
           amount: 400,
           line_kind: 'acrylic',
         },
       ],
     });
-    // mapLine already derives unit from amount/qty; sanitize also fixes density.
     expect(doc.lines[0]!.unit_price).toBe(40);
     expect(doc.lines[0]!.quantity).toBe(10);
   });

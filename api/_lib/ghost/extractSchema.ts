@@ -1,4 +1,4 @@
-/** Shared extract schema hint — ported from ai_erp parse_pdf._EXTRACT_SCHEMA_HINT */
+/** Exact port of ai_erp parse_pdf._EXTRACT_SCHEMA_HINT (+ _OCR_MARKDOWN_HINT). */
 export const EXTRACT_SCHEMA_HINT = `
 Return ONLY a JSON object matching this shape (no markdown):
 {
@@ -55,20 +55,27 @@ Rules:
   * unit_price / amount / invoice_total / freight_amount / duty_amount / ddp_amount
     MUST be currency dollars (USD/$), NEVER Density, specific gravity, kg, mm, or qty.
   * Columns named Density / Spec Gravity / Weight / Thickness are NOT prices.
-  * For acrylic lines ALWAYS capture line amount (extended $) when printed.
+  * For acrylic lines ALWAYS capture line \`amount\` (extended $) when printed.
     Prefer unit_price = amount / quantity when both exist.
   * Typical acrylic sheet unit prices are tens of dollars (often ~20–300), not
     0.8–1.5 (density) or bare thickness values.
 - Packing materials / misc: is_packing_or_misc=true, line_kind="packing" or "other".
 - If the invoice includes DDP (delivered duty paid), set includes_ddp=true and
-  ddp_amount to the DDP dollar amount (or residual); never a weight/density.
+  ddp_amount to the DDP **dollar** amount (or residual); never a weight/density.
 - Freight-only PDF: document_role="freight". freight_amount AND invoice_total =
-  TOTAL Amount Due / PLEASE PAY THIS AMOUNT / Grand Total in dollars.
+  TOTAL **Amount Due / PLEASE PAY THIS AMOUNT / Grand Total** in dollars.
   No acrylic lines.
 - Duty-only PDF: document_role="duty". duty_amount AND invoice_total = TOTAL
-  Amount Due in dollars. No acrylic lines.
+  **Amount Due** in dollars (same number when one total is shown). No acrylic lines.
 - vendor.id: invent a short 2–4 letter code from the vendor name when not printed
   (Gokai → GOK).
-- JM Trophies / cut-to-size sheets: size like 18x24 from "cut to 18\\" x 24\\"";
-  keep quantity and Unit Price from the table columns (not density).
+`.trim();
+
+export const OCR_MARKDOWN_HINT = `
+Transcribe this invoice/document into clean Markdown.
+- Preserve every table with column headers exactly as printed.
+- Keep ALL numeric cells (prices, amounts, qty, density, weight) with their headers.
+- Include invoice #, dates, vendor, and Amount Due / Grand Total / Totals.
+- Do NOT invent values. If a cell is unreadable, write [?].
+- Output Markdown only (no JSON yet).
 `.trim();

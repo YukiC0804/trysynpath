@@ -41,12 +41,22 @@ import {
   sendOutreachEmail,
 } from '../lib/agentsApi';
 
+function numInputValue(n: number): string {
+  return Number.isFinite(n) ? String(n) : '';
+}
+
+function parseNumInput(raw: string): number {
+  if (raw.trim() === '') return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function money(n: number, currency = 'USD') {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
     maximumFractionDigits: 2,
-  }).format(n);
+  }).format(Number.isFinite(n) ? n : 0);
 }
 
 function relativeTime(iso: string) {
@@ -974,9 +984,9 @@ export function AgentWorkforcePage() {
                           qty
                           <input
                             type="number"
-                            value={ln.quantity}
+                            value={numInputValue(ln.quantity)}
                             onChange={(e) =>
-                              updateLine(i, { quantity: Number(e.target.value) })
+                              updateLine(i, { quantity: parseNumInput(e.target.value) })
                             }
                             className="w-full rounded border px-1"
                           />
@@ -985,9 +995,11 @@ export function AgentWorkforcePage() {
                           raw unit price
                           <input
                             type="number"
-                            value={ln.raw_unit_price}
+                            value={numInputValue(ln.raw_unit_price)}
                             onChange={(e) =>
-                              updateLine(i, { raw_unit_price: Number(e.target.value) })
+                              updateLine(i, {
+                                raw_unit_price: parseNumInput(e.target.value),
+                              })
                             }
                             className="w-full rounded border px-1"
                           />
@@ -997,7 +1009,7 @@ export function AgentWorkforcePage() {
                           <input
                             type="number"
                             readOnly
-                            value={Number(ln.landed_unit_cost.toFixed(4))}
+                            value={numInputValue(Number(ln.landed_unit_cost.toFixed(4)))}
                             className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
                           />
                         </label>
@@ -1006,7 +1018,7 @@ export function AgentWorkforcePage() {
                           <input
                             type="number"
                             readOnly
-                            value={Number(ln.land_cost_per_sheet.toFixed(4))}
+                            value={numInputValue(Number(ln.land_cost_per_sheet.toFixed(4)))}
                             className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
                           />
                         </label>

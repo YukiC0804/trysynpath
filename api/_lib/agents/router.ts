@@ -61,13 +61,13 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         configured: llmEnrichConfigured(),
         model: resolveParseModel(),
         detail: llmEnrichConfigured()
-          ? `OpenAI enrich/parse ready (${resolveParseModel()}) — ai_erp text+LLM path`
-          : 'Set OPENAI_API_KEY on Vercel (ai_erp used text+LLM for qty/unit price; Document AI alone is weak on multi-column sheets)',
+          ? `OpenAI ready (${resolveParseModel()} / vision=${process.env.GHOST_PO_VISION_MODEL || 'gpt-4o'}) — ai_erp text|vision LLM`
+          : 'Set OPENAI_API_KEY (required for default auto = text/vision LLM, same as ai_erp)',
       },
       parseBackend: {
         configured: resolveParseBackend(),
         detail:
-          'auto = PDF text+LLM when rich, else Document AI OCR text+LLM (same as ai_erp default; documentai line-items optional)',
+          'auto = rich PDF text→text+LLM else PNG pages→vision LLM (ai_erp parse_pdf). documentai optional only.',
       },
       sage: { connected: false, detail: 'Sage write disabled — preview only' },
     });
