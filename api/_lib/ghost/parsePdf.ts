@@ -8,7 +8,11 @@
  * Document AI kept as optional backend only — not used by default.
  */
 import type { DocumentExtract } from '../../../shared/ghost';
-import { extractPdfText, renderPdfPagesB64 } from '../workflow/pdfText';
+import {
+  ensureCanvasDomPolyfills,
+  extractPdfText,
+  renderPdfPagesB64,
+} from '../workflow/pdfText';
 import { llmEnrichConfigured } from './enrichAcrylic';
 import { parseWithDocumentAi } from './mapToExtract';
 import {
@@ -85,19 +89,30 @@ async function visionFromPngOrFallback(
 
   // Fallbacks when Vercel lacks DOMMatrix / canvas screenshot support
   if (text.trim().length >= 40) {
-    const doc = await parseDocumentText(text, {
-      hintRole: opts.hintRole,
-      note: `[parsed via text+LLM after vision render failed: ${renderError}]`,
-    });
-    return { ...doc, notes: `${doc.notes || ''} [backend=text-fallback]`.trim() };
+    try {
+      const doc = await parseDocumentText(text, {
+        hintRole: opts.hintRole,
+        note: `[parsed via text+LLM after vision render failed: ${renderError}]`,
+      });
+      return { ...doc, notes: `${doc.notes || ''} [backend=text-fallback]`.trim() };
+    } catch (textError) {
+      renderError += ` | text-fallback: ${textError instanceof Error ? textError.message : textError}`;
+    }
   }
 
-  const doc = await parseDocumentPdfFile(content, {
-    hintRole: opts.hintRole,
-    textHint: text,
-    note: `[parsed via OpenAI PDF file after vision render failed: ${renderError}]`,
-  });
-  return { ...doc, notes: `${doc.notes || ''} [backend=openai_pdf_file]`.trim() };
+  try {
+    const doc = await parseDocumentPdfFile(content, {
+      hintRole: opts.hintRole,
+      textHint: text,
+      note: `[parsed via OpenAI PDF file_id after vision render failed: ${renderError}]`,
+    });
+    return { ...doc, notes: `${doc.notes || ''} [backend=openai_pdf_file]`.trim() };
+  } catch (openaiError) {
+    const openaiMsg = openaiError instanceof Error ? openaiError.message : String(openaiError);
+    throw new Error(
+      `Vision parse failed. screenshot=${renderError || 'unknown'}; openai=${openaiMsg}`,
+    );
+  }
 }
 
 /**
@@ -107,6 +122,9 @@ export async function parsePdf(
   content: Buffer,
   opts: { hintRole?: string | null; backend?: ParseBackend | null } = {},
 ): Promise<DocumentExtract> {
+  // Polyfill before any pdf-parse import (extract or screenshot).
+  await ensureCanvasDomPolyfills().catch(() => undefined);
+
   let backend = opts.backend || resolveParseBackend();
   const text = await extractPdfText(content);
 

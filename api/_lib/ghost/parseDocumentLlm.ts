@@ -168,7 +168,49 @@ function parseLlmJsonContent(content: string): Record<string, unknown> {
   }
 }
 
-/** Fallback when local PNG render fails (e.g. missing DOMMatrix) — send PDF to OpenAI. */
+async function uploadOpenAiFile(pdf: Buffer, apiKey: string): Promise<string> {
+  const form = new FormData();
+  form.append('purpose', 'user_data');
+  form.append('file', new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), 'invoice.pdf');
+  const resp = await fetch('https://api.openai.com/v1/files', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    throw new Error(`OpenAI file upload failed HTTP ${resp.status}: ${detail.slice(0, 300)}`);
+  }
+  const body = (await resp.json()) as { id?: string };
+  if (!body.id) throw new Error('OpenAI file upload returned no file id');
+  return body.id;
+}
+
+async function deleteOpenAiFile(fileId: string, apiKey: string): Promise<void> {
+  await fetch(`https://api.openai.com/v1/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${apiKey}` },
+  }).catch(() => undefined);
+}
+
+function extractResponsesText(body: {
+  output_text?: string;
+  output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+}): string {
+  let content = body.output_text || '';
+  if (!content && Array.isArray(body.output)) {
+    content = body.output
+      .flatMap((o) => o.content || [])
+      .map((c) => c.text || '')
+      .join('\n');
+  }
+  return content;
+}
+
+/**
+ * Scan-PDF fallback when local PNG render fails.
+ * Prefer Files API upload + file_id (more reliable than huge inline base64).
+ */
 export async function parseDocumentPdfFile(
   pdf: Buffer,
   opts: { hintRole?: string | null; textHint?: string; note?: string } = {},
@@ -186,50 +228,65 @@ export async function parseDocumentPdfFile(
       ? `\n\nOptional text layer (may be incomplete):\n${opts.textHint.slice(0, 8000)}`
       : '');
 
-  const resp = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: resolveVisionModel(),
-      temperature: 0,
-      input: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_file',
-              filename: 'invoice.pdf',
-              file_data: `data:application/pdf;base64,${pdf.toString('base64')}`,
-            },
-            { type: 'input_text', text: prompt },
-          ],
+  if (pdf.length > 20 * 1024 * 1024) {
+    throw new Error(`PDF too large for OpenAI vision fallback (${pdf.length} bytes)`);
+  }
+
+  const fileId = await uploadOpenAiFile(pdf, apiKey);
+  const errors: string[] = [];
+  try {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const resp = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
         },
-      ],
-    }),
-  });
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => '');
-    throw new Error(`OpenAI PDF file parse failed HTTP ${resp.status}: ${detail.slice(0, 400)}`);
+        body: JSON.stringify({
+          model: resolveVisionModel(),
+          temperature: 0,
+          input: [
+            {
+              role: 'user',
+              content: [
+                { type: 'input_file', file_id: fileId },
+                { type: 'input_text', text: prompt },
+              ],
+            },
+          ],
+        }),
+      });
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => '');
+        errors.push(`attempt ${attempt} HTTP ${resp.status}: ${detail.slice(0, 200)}`);
+        if (resp.status >= 500 && attempt < 3) {
+          await new Promise((r) => setTimeout(r, 800 * attempt));
+          continue;
+        }
+        break;
+      }
+      const body = (await resp.json()) as {
+        output_text?: string;
+        output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+      };
+      const content = extractResponsesText(body);
+      if (!content.trim()) {
+        errors.push(`attempt ${attempt}: empty content`);
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 800 * attempt));
+          continue;
+        }
+        break;
+      }
+      return documentExtractFromLlmJson(parseLlmJsonContent(content), {
+        hintRole: opts.hintRole,
+        note: opts.note || '[parsed via OpenAI PDF file_id]',
+      });
+    }
+  } finally {
+    await deleteOpenAiFile(fileId, apiKey);
   }
-  const body = (await resp.json()) as {
-    output_text?: string;
-    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
-  };
-  let content = body.output_text || '';
-  if (!content && Array.isArray(body.output)) {
-    content = body.output
-      .flatMap((o) => o.content || [])
-      .map((c) => c.text || '')
-      .join('\n');
-  }
-  if (!content.trim()) throw new Error('OpenAI PDF file parse returned empty content');
-  return documentExtractFromLlmJson(parseLlmJsonContent(content), {
-    hintRole: opts.hintRole,
-    note: opts.note || '[parsed via OpenAI PDF file]',
-  });
+  throw new Error(`OpenAI PDF file parse failed after retries: ${errors.join(' | ')}`);
 }
 
 /** ai_erp parse_document_text */

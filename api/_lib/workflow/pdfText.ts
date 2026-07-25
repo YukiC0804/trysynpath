@@ -2,54 +2,70 @@
  * PDF text + page screenshots — mirrors ai_erp parse_pdf extract/render.
  * Uses pdf-parse (PDF.js) + @napi-rs/canvas (same role as PyMuPDF on Node/Vercel).
  *
- * Vercel/Node has no browser DOMMatrix; pdf.js screenshot needs it polyfilled
- * from @napi-rs/canvas before getScreenshot().
+ * IMPORTANT: polyfill DOMMatrix *before* importing pdf-parse/pdfjs, otherwise
+ * pdfjs captures a missing DOMMatrix at module init and screenshots fail on Vercel.
  */
 
-async function ensureCanvasDomPolyfills(): Promise<void> {
-  const g = globalThis as typeof globalThis & {
-    DOMMatrix?: unknown;
-    DOMPoint?: unknown;
-    DOMRect?: unknown;
-    ImageData?: unknown;
-    Path2D?: unknown;
-  };
-  if (typeof g.DOMMatrix === 'function') return;
-  const canvas = (await import('@napi-rs/canvas')) as unknown as {
-    DOMMatrix?: unknown;
-    DOMPoint?: unknown;
-    DOMRect?: unknown;
-    ImageData?: unknown;
-    Path2D?: unknown;
-  };
-  if (canvas.DOMMatrix) g.DOMMatrix = canvas.DOMMatrix;
-  if (canvas.DOMPoint) g.DOMPoint = canvas.DOMPoint;
-  if (canvas.DOMRect) g.DOMRect = canvas.DOMRect;
-  if (canvas.ImageData && !g.ImageData) g.ImageData = canvas.ImageData;
-  if (canvas.Path2D && !g.Path2D) g.Path2D = canvas.Path2D;
-  if (typeof g.DOMMatrix !== 'function') {
-    throw new Error(
-      'DOMMatrix polyfill unavailable — install @napi-rs/canvas for PDF vision screenshots',
-    );
+let polyfillPromise: Promise<void> | null = null;
+
+export async function ensureCanvasDomPolyfills(): Promise<void> {
+  if (!polyfillPromise) {
+    polyfillPromise = (async () => {
+      const g = globalThis as typeof globalThis & {
+        DOMMatrix?: unknown;
+        DOMPoint?: unknown;
+        DOMRect?: unknown;
+        ImageData?: unknown;
+        Path2D?: unknown;
+      };
+      if (typeof g.DOMMatrix === 'function') return;
+      const canvas = (await import('@napi-rs/canvas')) as unknown as {
+        DOMMatrix?: unknown;
+        DOMPoint?: unknown;
+        DOMRect?: unknown;
+        ImageData?: unknown;
+        Path2D?: unknown;
+      };
+      if (canvas.DOMMatrix) g.DOMMatrix = canvas.DOMMatrix;
+      if (canvas.DOMPoint) g.DOMPoint = canvas.DOMPoint;
+      if (canvas.DOMRect) g.DOMRect = canvas.DOMRect;
+      if (canvas.ImageData && !g.ImageData) g.ImageData = canvas.ImageData;
+      if (canvas.Path2D && !g.Path2D) g.Path2D = canvas.Path2D;
+      if (typeof g.DOMMatrix !== 'function') {
+        throw new Error(
+          'DOMMatrix polyfill unavailable — install @napi-rs/canvas for PDF vision screenshots',
+        );
+      }
+    })();
   }
+  await polyfillPromise;
+}
+
+async function loadPdfParse() {
+  await ensureCanvasDomPolyfills();
+  return (await import('pdf-parse')) as unknown as {
+    PDFParse: new (options: { data: Uint8Array; verbosity?: number }) => {
+      getText: () => Promise<{ text?: string }>;
+      getScreenshot: (params?: {
+        scale?: number;
+        first?: number;
+        imageDataUrl?: boolean;
+        imageBuffer?: boolean;
+      }) => Promise<{
+        pages: Array<{ dataUrl?: string; data?: Uint8Array; pageNumber: number }>;
+      }>;
+      destroy?: () => Promise<void>;
+    };
+    VerbosityLevel?: { ERRORS?: number };
+  };
 }
 
 export async function extractPdfText(content: Buffer): Promise<string> {
   if (!content?.length) return '';
   try {
-    const mod = (await import('pdf-parse')) as unknown as {
-      PDFParse: new (options: {
-        data: Uint8Array;
-        verbosity?: number;
-      }) => {
-        getText: () => Promise<{ text?: string }>;
-        destroy?: () => Promise<void>;
-      };
-      VerbosityLevel?: { ERRORS?: number };
-    };
-    const data = Uint8Array.from(content);
+    const mod = await loadPdfParse();
     const parser = new mod.PDFParse({
-      data,
+      data: Uint8Array.from(content),
       verbosity: mod.VerbosityLevel?.ERRORS ?? 0,
     });
     try {
@@ -78,22 +94,7 @@ export async function renderPdfPagesB64(
   const maxPages = opts.maxPages ?? 6;
   const scale = opts.scale ?? 2;
 
-  await ensureCanvasDomPolyfills();
-
-  const mod = (await import('pdf-parse')) as unknown as {
-    PDFParse: new (options: { data: Uint8Array; verbosity?: number }) => {
-      getScreenshot: (params?: {
-        scale?: number;
-        first?: number;
-        imageDataUrl?: boolean;
-        imageBuffer?: boolean;
-      }) => Promise<{
-        pages: Array<{ dataUrl?: string; data?: Uint8Array; pageNumber: number }>;
-      }>;
-      destroy?: () => Promise<void>;
-    };
-    VerbosityLevel?: { ERRORS?: number };
-  };
+  const mod = await loadPdfParse();
   const parser = new mod.PDFParse({
     data: Uint8Array.from(content),
     verbosity: mod.VerbosityLevel?.ERRORS ?? 0,
