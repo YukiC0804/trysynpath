@@ -104,7 +104,7 @@ export function acrylicLineFromExtract(
     colorName,
   });
   const qty = Number(line.quantity);
-  const decimals = line.price_decimals != null && line.price_decimals >= 0 ? line.price_decimals : 2;
+  const decimals = line.price_decimals != null && line.price_decimals >= 0 ? line.price_decimals : 3;
   const rawUnit =
     line.amount != null && qty > 0 ? Number(line.amount) / qty : Number(line.unit_price);
   const unit = roundTo(rawUnit, decimals);

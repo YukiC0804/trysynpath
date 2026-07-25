@@ -168,7 +168,7 @@ export function reapplyLandedCost(
   const pool = Number(opts.importPool);
   const perKg = totalWeight > 0 ? pool / totalWeight : 0;
   const updated = lines.map((ln) => {
-    const decimals = ln.price_decimals != null && ln.price_decimals >= 0 ? ln.price_decimals : 2;
+    const decimals = ln.price_decimals != null && ln.price_decimals >= 0 ? ln.price_decimals : 3;
     const land = roundTo(ln.sheet_weight_kg * perKg, decimals);
     const landed = roundTo(ln.raw_unit_price + land, decimals);
     return {

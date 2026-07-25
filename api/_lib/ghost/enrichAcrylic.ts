@@ -160,7 +160,7 @@ export async function enrichAcrylicAttrsWithLlm(
             'is_packing_or_misc, line_kind, product_code (default ACR), ' +
             'color_code, color_name, thickness_mm, size (e.g. 4x8 or 18x24), ' +
             'quantity, unit_price, amount, raw_description, price_decimals ' +
-            '(digits printed after the decimal point on the unit price, default 2). ' +
+            '(digits printed after the decimal point on the unit price, default 3). ' +
             'Acrylic sheets need thickness_mm + size. ' +
             'Infer thickness_mm and size from OCR text, product codes (GK-*), ' +
             'and phrases like "cut to 18\\" x 24\\"" when line text is fragmented. ' +

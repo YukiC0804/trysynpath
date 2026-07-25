@@ -34,7 +34,7 @@ Return ONLY a JSON object matching this shape (no markdown):
       "unit_price": 42.5,
       "amount": 425.0,
       "line_kind": "acrylic" | "packing" | "ddp" | "freight" | "duty" | "other",
-      "price_decimals": 2
+      "price_decimals": 3
     }
   ],
   "notes": null
@@ -73,8 +73,7 @@ Rules:
 - price_decimals: the number of digits printed after the decimal point on the
   Unit Price / Amount columns for that line (e.g. "42.50" → 2, "42.500" → 3).
   Use the same integer for every line on one document unless the printed
-  precision genuinely differs row to row. Default 2 when not shown explicitly
-  (whole-dollar tables).
+  precision genuinely differs row to row. Default 3 when not shown explicitly.
 `.trim();
 
 export const OCR_MARKDOWN_HINT = `

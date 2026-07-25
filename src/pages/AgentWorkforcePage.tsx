@@ -320,7 +320,7 @@ export function AgentWorkforcePage() {
     const totalWeight = patched.reduce((sum, ln) => sum + ln.sheet_weight_kg * ln.quantity, 0);
     const perKg = totalWeight > 0 ? pool / totalWeight : 0;
     const lines = patched.map((ln) => {
-      const decimals = ln.price_decimals ?? 2;
+      const decimals = ln.price_decimals ?? 3;
       const land = Number((ln.sheet_weight_kg * perKg).toFixed(decimals));
       const landed = Number((ln.raw_unit_price + land).toFixed(decimals));
       return {
@@ -1003,7 +1003,7 @@ export function AgentWorkforcePage() {
                           <input
                             type="number"
                             value={numInputValue(
-                              Number(ln.raw_unit_price.toFixed(ln.price_decimals ?? 2)),
+                              Number(ln.raw_unit_price.toFixed(ln.price_decimals ?? 3)),
                             )}
                             onChange={(e) =>
                               updateLine(i, {
@@ -1019,7 +1019,7 @@ export function AgentWorkforcePage() {
                             type="number"
                             readOnly
                             value={numInputValue(
-                              Number(ln.landed_unit_cost.toFixed(ln.price_decimals ?? 2)),
+                              Number(ln.landed_unit_cost.toFixed(ln.price_decimals ?? 3)),
                             )}
                             className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
                           />
@@ -1030,7 +1030,7 @@ export function AgentWorkforcePage() {
                             type="number"
                             readOnly
                             value={numInputValue(
-                              Number(ln.land_cost_per_sheet.toFixed(ln.price_decimals ?? 2)),
+                              Number(ln.land_cost_per_sheet.toFixed(ln.price_decimals ?? 3)),
                             )}
                             className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
                           />
@@ -1057,8 +1057,8 @@ export function AgentWorkforcePage() {
                       lines: supplyPlan.lines.map((l) => ({
                         sku: l.sku_id,
                         qty: l.quantity,
-                        raw_unit_price: Number(l.raw_unit_price.toFixed(l.price_decimals ?? 2)),
-                        land_unit_price: Number(l.landed_unit_cost.toFixed(l.price_decimals ?? 2)),
+                        raw_unit_price: Number(l.raw_unit_price.toFixed(l.price_decimals ?? 3)),
+                        land_unit_price: Number(l.landed_unit_cost.toFixed(l.price_decimals ?? 3)),
                         amount: Number(l.amount.toFixed(2)),
                       })),
                       sageWrite: 'preview_only',
