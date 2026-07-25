@@ -5,7 +5,7 @@
  *   rich PDF text (≥120 chars + ≥2 money keywords) → text+LLM (gpt-4o-mini)
  *   else → vision: render PNG pages (2x, ≤6) → vision LLM (gpt-4o)
  *
- * Document AI / Parseur kept as optional backends only — not used by default.
+ * Document AI kept as optional backend only — not used by default.
  */
 import type { DocumentExtract } from '../../../shared/ghost';
 import { extractPdfText, renderPdfPagesB64 } from '../workflow/pdfText';
@@ -13,6 +13,7 @@ import { llmEnrichConfigured } from './enrichAcrylic';
 import { parseWithDocumentAi } from './mapToExtract';
 import {
   parseDocumentImages,
+  parseDocumentPdfFile,
   parseDocumentText,
   parseDocumentTwoPass,
 } from './parseDocumentLlm';
@@ -48,6 +49,55 @@ export function textIsRichEnough(text: string): boolean {
 /** Exact ai_erp _pick_auto_backend */
 export function pickAutoBackend(text: string): 'text' | 'vision' {
   return textIsRichEnough(text) ? 'text' : 'vision';
+}
+
+async function visionFromPngOrFallback(
+  content: Buffer,
+  text: string,
+  opts: { hintRole?: string | null; backend: 'vision' | 'two_pass' },
+): Promise<DocumentExtract> {
+  let renderError = '';
+  try {
+    const images = await renderPdfPagesB64(content, { maxPages: 6, scale: 2 });
+    if (images.length) {
+      if (opts.backend === 'two_pass') {
+        try {
+          const doc = await parseDocumentTwoPass(images, {
+            hintRole: opts.hintRole,
+            textHint: text,
+          });
+          return { ...doc, notes: `${doc.notes || ''} [backend=two_pass]`.trim() };
+        } catch {
+          // fall through to single vision — same as ai_erp
+        }
+      }
+      const doc = await parseDocumentImages(images, {
+        hintRole: opts.hintRole,
+        textHint: text,
+        note: `[parsed via vision/${opts.backend}]`,
+      });
+      return { ...doc, notes: `${doc.notes || ''} [backend=vision]`.trim() };
+    }
+    renderError = 'screenshot returned zero pages';
+  } catch (error) {
+    renderError = error instanceof Error ? error.message : String(error);
+  }
+
+  // Fallbacks when Vercel lacks DOMMatrix / canvas screenshot support
+  if (text.trim().length >= 40) {
+    const doc = await parseDocumentText(text, {
+      hintRole: opts.hintRole,
+      note: `[parsed via text+LLM after vision render failed: ${renderError}]`,
+    });
+    return { ...doc, notes: `${doc.notes || ''} [backend=text-fallback]`.trim() };
+  }
+
+  const doc = await parseDocumentPdfFile(content, {
+    hintRole: opts.hintRole,
+    textHint: text,
+    note: `[parsed via OpenAI PDF file after vision render failed: ${renderError}]`,
+  });
+  return { ...doc, notes: `${doc.notes || ''} [backend=openai_pdf_file]`.trim() };
 }
 
 /**
@@ -95,35 +145,8 @@ export async function parsePdf(
     return { ...doc, notes: `${doc.notes || ''} [backend=text]`.trim() };
   }
 
-  // vision / two_pass — render pages like PyMuPDF (ai_erp)
-  const images = await renderPdfPagesB64(content, { maxPages: 6, scale: 2 });
-  if (!images.length) {
-    if (text.trim()) {
-      const doc = await parseDocumentText(text, {
-        hintRole: opts.hintRole,
-        note: '[parsed via text+LLM; screenshot render empty]',
-      });
-      return { ...doc, notes: `${doc.notes || ''} [backend=text-fallback]`.trim() };
-    }
-    throw new Error('could not render or read PDF pages for vision parse');
-  }
-
-  if (backend === 'two_pass') {
-    try {
-      const doc = await parseDocumentTwoPass(images, {
-        hintRole: opts.hintRole,
-        textHint: text,
-      });
-      return { ...doc, notes: `${doc.notes || ''} [backend=two_pass]`.trim() };
-    } catch {
-      // ai_erp: fall through to single vision
-    }
-  }
-
-  const doc = await parseDocumentImages(images, {
+  return visionFromPngOrFallback(content, text, {
     hintRole: opts.hintRole,
-    textHint: text,
-    note: `[parsed via vision/${backend}]`,
+    backend,
   });
-  return { ...doc, notes: `${doc.notes || ''} [backend=vision]`.trim() };
 }

@@ -168,6 +168,70 @@ function parseLlmJsonContent(content: string): Record<string, unknown> {
   }
 }
 
+/** Fallback when local PNG render fails (e.g. missing DOMMatrix) — send PDF to OpenAI. */
+export async function parseDocumentPdfFile(
+  pdf: Buffer,
+  opts: { hintRole?: string | null; textHint?: string; note?: string } = {},
+): Promise<DocumentExtract> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+  const roleLine = opts.hintRole
+    ? `This PDF is expected to be a ${opts.hintRole} document.\n`
+    : 'Invoice / bill PDF.\n';
+  const prompt =
+    roleLine +
+    'Read the document carefully (tables + totals). Money fields must be currency amounts only. ' +
+    EXTRACT_SCHEMA_HINT +
+    (opts.textHint?.trim()
+      ? `\n\nOptional text layer (may be incomplete):\n${opts.textHint.slice(0, 8000)}`
+      : '');
+
+  const resp = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: resolveVisionModel(),
+      temperature: 0,
+      input: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'input_file',
+              filename: 'invoice.pdf',
+              file_data: `data:application/pdf;base64,${pdf.toString('base64')}`,
+            },
+            { type: 'input_text', text: prompt },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    throw new Error(`OpenAI PDF file parse failed HTTP ${resp.status}: ${detail.slice(0, 400)}`);
+  }
+  const body = (await resp.json()) as {
+    output_text?: string;
+    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+  };
+  let content = body.output_text || '';
+  if (!content && Array.isArray(body.output)) {
+    content = body.output
+      .flatMap((o) => o.content || [])
+      .map((c) => c.text || '')
+      .join('\n');
+  }
+  if (!content.trim()) throw new Error('OpenAI PDF file parse returned empty content');
+  return documentExtractFromLlmJson(parseLlmJsonContent(content), {
+    hintRole: opts.hintRole,
+    note: opts.note || '[parsed via OpenAI PDF file]',
+  });
+}
+
 /** ai_erp parse_document_text */
 export async function parseDocumentText(
   text: string,
