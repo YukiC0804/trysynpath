@@ -1,16 +1,24 @@
 /**
- * Exact port of ai_erp parse_pdf.parse_pdf routing.
+ * Port of ai_erp po_write_entry/parse_pdf.py routing.
  *
- * Default auto:
- *   rich PDF text (≥120 chars + ≥2 money keywords) → text+LLM (gpt-4o-mini)
- *   else → vision: render PNG pages (2x, ≤6) → vision LLM (gpt-4o)
+ * Backends (GHOST_PO_PARSE_BACKEND): auto (default) | text | vision | two_pass | documentai | parseur.
  *
- * Document AI kept as optional backend only — not used by default.
+ * auto:
+ *   1. extract_pdf_text (PyMuPDF here: pdf-parse/pdf.js)
+ *   2. _text_is_rich_enough(text, max_len): thin text (short AND small vs. an
+ *      expected-length budget scaled by page count) → vision; else → text
+ *   3. text → gpt-4o-mini over the PDF text layer
+ *      vision → render_pdf_pages_b64 (150 DPI PNG, ≤6 pages) → gpt-4o
+ *
+ * Document AI / Parseur are kept as optional backends only, never the
+ * default — ai_erp benchmarked auto (text/vision LLM) as faster, cheaper,
+ * and more accurate on multi-column Gokai-style acrylic invoices.
  */
 import type { DocumentExtract } from '../../../shared/ghost';
 import {
   ensureCanvasDomPolyfills,
   extractPdfText,
+  getPdfPageCount,
   renderPdfPagesB64,
 } from '../workflow/pdfText';
 import { llmEnrichConfigured } from './enrichAcrylic';
@@ -43,16 +51,30 @@ export function resolveParseBackend(): ParseBackend {
   return 'auto';
 }
 
-/** Exact ai_erp _text_is_rich_enough */
-export function textIsRichEnough(text: string): boolean {
-  if (text.length < 120) return false;
-  const moneyish = (text.match(/\$|USD|Total|Amount|Invoice|Unit Price/gi) || []).length;
-  return moneyish >= 2;
+/** Expected rich-text budget per page — used as the max_len denominator. */
+const EXPECTED_CHARS_PER_PAGE = 2000;
+/** Absolute floor below which text is always considered too thin. */
+const THIN_TEXT_ABSOLUTE_CEILING = 600;
+/** Below this fraction of the expected budget, text is considered too thin. */
+const THIN_TEXT_RATIO_CEILING = 0.3;
+
+/**
+ * ai_erp _text_is_rich_enough(text, max_len):
+ *   too thin  ⇔  len(text)/max_len < 0.3  AND  len(text) < 600
+ *   rich enough otherwise.
+ * max_len defaults to pageCount * 2000 chars (typical text-native invoice page).
+ */
+export function textIsRichEnough(text: string, maxLen?: number): boolean {
+  const len = text.length;
+  const budget = maxLen && maxLen > 0 ? maxLen : EXPECTED_CHARS_PER_PAGE;
+  const ratio = len / budget;
+  const tooThin = ratio < THIN_TEXT_RATIO_CEILING && len < THIN_TEXT_ABSOLUTE_CEILING;
+  return !tooThin;
 }
 
-/** Exact ai_erp _pick_auto_backend */
-export function pickAutoBackend(text: string): 'text' | 'vision' {
-  return textIsRichEnough(text) ? 'text' : 'vision';
+/** ai_erp _pick_auto_backend */
+export function pickAutoBackend(text: string, maxLen?: number): 'text' | 'vision' {
+  return textIsRichEnough(text, maxLen) ? 'text' : 'vision';
 }
 
 async function visionFromPngOrFallback(
@@ -62,7 +84,8 @@ async function visionFromPngOrFallback(
 ): Promise<DocumentExtract> {
   let renderError = '';
   try {
-    const images = await renderPdfPagesB64(content, { maxPages: 6, scale: 2 });
+    // ai_erp render_pdf_pages_b64: 150 DPI, ≤6 pages.
+    const images = await renderPdfPagesB64(content, { maxPages: 6, dpi: 150 });
     if (images.length) {
       if (opts.backend === 'two_pass') {
         try {
@@ -135,7 +158,9 @@ export async function parsePdf(
           'Or set GHOST_PO_PARSE_BACKEND=documentai.',
       );
     }
-    backend = pickAutoBackend(text);
+    const pageCount = await getPdfPageCount(content).catch(() => 0);
+    const maxLen = pageCount > 0 ? pageCount * EXPECTED_CHARS_PER_PAGE : undefined;
+    backend = pickAutoBackend(text, maxLen);
   }
 
   if (backend === 'documentai') {

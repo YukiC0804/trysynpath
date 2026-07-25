@@ -79,6 +79,29 @@ async function loadPdfParse() {
   };
 }
 
+/** Page count via pdf.js getInfo() — used to size the auto text/vision heuristic. */
+export async function getPdfPageCount(content: Buffer): Promise<number> {
+  if (!content?.length) return 0;
+  try {
+    const mod = await loadPdfParse();
+    const parser = new mod.PDFParse({
+      data: Uint8Array.from(content),
+      verbosity: mod.VerbosityLevel?.ERRORS ?? 0,
+    }) as unknown as {
+      getInfo: () => Promise<{ total?: number }>;
+      destroy?: () => Promise<void>;
+    };
+    try {
+      const info = await parser.getInfo();
+      return Number(info?.total) || 0;
+    } finally {
+      await parser.destroy?.().catch(() => undefined);
+    }
+  } catch {
+    return 0;
+  }
+}
+
 export async function extractPdfText(content: Buffer): Promise<string> {
   if (!content?.length) return '';
   try {
@@ -104,14 +127,18 @@ export async function extractPdfText(content: Buffer): Promise<string> {
   }
 }
 
-/** ai_erp render_pdf_pages_b64 — PNG pages at 2x zoom, max 6 pages. */
+/** PDF is authored in points (72/inch); scale 1.0 in pdf-parse ≈ 72 DPI. */
+const POINTS_PER_INCH = 72;
+
+/** ai_erp render_pdf_pages_b64 — PNG pages at 150 DPI, max 6 pages. */
 export async function renderPdfPagesB64(
   content: Buffer,
-  opts: { maxPages?: number; scale?: number } = {},
+  opts: { maxPages?: number; dpi?: number } = {},
 ): Promise<Array<{ mime: string; base64: string }>> {
   if (!content?.length) return [];
   const maxPages = opts.maxPages ?? 6;
-  const scale = opts.scale ?? 2;
+  const dpi = opts.dpi ?? 150;
+  const scale = dpi / POINTS_PER_INCH;
 
   const mod = await loadPdfParse();
   const parser = new mod.PDFParse({

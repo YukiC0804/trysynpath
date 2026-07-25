@@ -19,20 +19,46 @@ Quantity: 20  Unit Price: 14.00  Amount: 280.00
 Invoice Total: 780.00 USD
 `.trim();
 
-describe('parse backend selection (ai_erp auto)', () => {
-  it('uses exact ai_erp rich-text rule (≥120 + ≥2 money keywords)', () => {
-    expect(textIsRichEnough(JM_OCR_TEXT)).toBe(true);
-    expect(pickAutoBackend(JM_OCR_TEXT)).toBe('text');
+describe('parse backend selection (ai_erp _text_is_rich_enough)', () => {
+  // ai_erp: too_thin = len(text)/max_len < 0.3 AND len(text) < 600; rich otherwise.
+  // max_len defaults to pageCount * 2000 (typical text-native invoice page).
+
+  it('treats a full text-native page (>=600 chars) as rich regardless of ratio', () => {
+    const fullPageText = JM_OCR_TEXT.repeat(2); // ~700 chars, one-page budget (2000)
+    expect(fullPageText.length).toBeGreaterThanOrEqual(600);
+    expect(textIsRichEnough(fullPageText, 2000)).toBe(true);
+    expect(pickAutoBackend(fullPageText, 2000)).toBe('text');
   });
 
-  it('routes thin scans to vision (not Document AI)', () => {
-    expect(textIsRichEnough('page 1')).toBe(false);
-    expect(pickAutoBackend('page 1')).toBe('vision');
+  it('routes a near-empty scanned page to vision', () => {
+    expect(textIsRichEnough('page 1', 2000)).toBe(false);
+    expect(pickAutoBackend('page 1', 2000)).toBe('vision');
   });
 
-  it('rejects short text even with one money keyword', () => {
-    expect(textIsRichEnough('Invoice only')).toBe(false);
-    expect(pickAutoBackend('Invoice only')).toBe('vision');
+  it('is thin when short both absolutely and relative to a multi-page budget', () => {
+    // 3-page scan with only a stray watermark line of real text extracted.
+    const thinScan = JM_OCR_TEXT.slice(0, 80);
+    const maxLen = 3 * 2000;
+    expect(thinScan.length).toBeLessThan(600);
+    expect(thinScan.length / maxLen).toBeLessThan(0.3);
+    expect(textIsRichEnough(thinScan, maxLen)).toBe(false);
+    expect(pickAutoBackend(thinScan, maxLen)).toBe('vision');
+  });
+
+  it('rescues short text when the ratio clears 0.3 (small expected budget)', () => {
+    // e.g. a tiny single-line freight/duty bill: short in absolute terms,
+    // but large relative to what such a document is expected to contain.
+    const shortButDenseText = JM_OCR_TEXT.slice(0, 500);
+    const smallBudget = 1000; // ratio = 500/1000 = 0.5 >= 0.3
+    expect(shortButDenseText.length).toBeLessThan(600);
+    expect(shortButDenseText.length / smallBudget).toBeGreaterThanOrEqual(0.3);
+    expect(textIsRichEnough(shortButDenseText, smallBudget)).toBe(true);
+    expect(pickAutoBackend(shortButDenseText, smallBudget)).toBe('text');
+  });
+
+  it('falls back to a single-page (2000 char) budget when maxLen is omitted', () => {
+    expect(textIsRichEnough('short', undefined)).toBe(false);
+    expect(textIsRichEnough('x'.repeat(650), undefined)).toBe(true);
   });
 });
 
