@@ -169,21 +169,32 @@ function parseLlmJsonContent(content: string): Record<string, unknown> {
 }
 
 async function uploadOpenAiFile(pdf: Buffer, apiKey: string): Promise<string> {
-  const form = new FormData();
-  form.append('purpose', 'user_data');
-  form.append('file', new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }), 'invoice.pdf');
-  const resp = await fetch('https://api.openai.com/v1/files', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => '');
-    throw new Error(`OpenAI file upload failed HTTP ${resp.status}: ${detail.slice(0, 300)}`);
+  let lastError = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const form = new FormData();
+    form.append('purpose', 'user_data');
+    form.append(
+      'file',
+      new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }),
+      'invoice.pdf',
+    );
+    const resp = await fetch('https://api.openai.com/v1/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+    if (resp.ok) {
+      const body = (await resp.json()) as { id?: string };
+      if (body.id) return body.id;
+      lastError = 'upload ok but no file id in response';
+    } else {
+      const detail = await resp.text().catch(() => '');
+      lastError = `HTTP ${resp.status}: ${detail.slice(0, 300)}`;
+      if (resp.status < 500) break;
+    }
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 800 * attempt));
   }
-  const body = (await resp.json()) as { id?: string };
-  if (!body.id) throw new Error('OpenAI file upload returned no file id');
-  return body.id;
+  throw new Error(`OpenAI file upload failed after retries: ${lastError}`);
 }
 
 async function deleteOpenAiFile(fileId: string, apiKey: string): Promise<void> {

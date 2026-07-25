@@ -2,43 +2,62 @@
  * PDF text + page screenshots — mirrors ai_erp parse_pdf extract/render.
  * Uses pdf-parse (PDF.js) + @napi-rs/canvas (same role as PyMuPDF on Node/Vercel).
  *
- * IMPORTANT: polyfill DOMMatrix *before* importing pdf-parse/pdfjs, otherwise
- * pdfjs captures a missing DOMMatrix at module init and screenshots fail on Vercel.
+ * pdf.js normally loads its worker via a *dynamic* `import(workerSrc)` with a
+ * path relative to the bundled module (`./pdf.worker.mjs`). Vercel's function
+ * bundler cannot trace that computed path, so the worker file is missing at
+ * runtime ("Setting up fake worker failed: Cannot find module ...pdf.worker.mjs").
+ *
+ * Fix: statically import the matching `pdf.worker.mjs` once so it registers
+ * `globalThis.pdfjsWorker.WorkerMessageHandler` itself — pdf.js then uses that
+ * main-thread handler directly and never attempts the dynamic import.
+ * Must happen (along with the DOMMatrix polyfill) before any pdf-parse import.
  */
 
-let polyfillPromise: Promise<void> | null = null;
+let readyPromise: Promise<void> | null = null;
 
 export async function ensureCanvasDomPolyfills(): Promise<void> {
-  if (!polyfillPromise) {
-    polyfillPromise = (async () => {
+  if (!readyPromise) {
+    readyPromise = (async () => {
       const g = globalThis as typeof globalThis & {
         DOMMatrix?: unknown;
         DOMPoint?: unknown;
         DOMRect?: unknown;
         ImageData?: unknown;
         Path2D?: unknown;
+        pdfjsWorker?: unknown;
       };
-      if (typeof g.DOMMatrix === 'function') return;
-      const canvas = (await import('@napi-rs/canvas')) as unknown as {
-        DOMMatrix?: unknown;
-        DOMPoint?: unknown;
-        DOMRect?: unknown;
-        ImageData?: unknown;
-        Path2D?: unknown;
-      };
-      if (canvas.DOMMatrix) g.DOMMatrix = canvas.DOMMatrix;
-      if (canvas.DOMPoint) g.DOMPoint = canvas.DOMPoint;
-      if (canvas.DOMRect) g.DOMRect = canvas.DOMRect;
-      if (canvas.ImageData && !g.ImageData) g.ImageData = canvas.ImageData;
-      if (canvas.Path2D && !g.Path2D) g.Path2D = canvas.Path2D;
+
+      if (typeof g.DOMMatrix !== 'function') {
+        const canvas = (await import('@napi-rs/canvas')) as unknown as {
+          DOMMatrix?: unknown;
+          DOMPoint?: unknown;
+          DOMRect?: unknown;
+          ImageData?: unknown;
+          Path2D?: unknown;
+        };
+        if (canvas.DOMMatrix) g.DOMMatrix = canvas.DOMMatrix;
+        if (canvas.DOMPoint) g.DOMPoint = canvas.DOMPoint;
+        if (canvas.DOMRect) g.DOMRect = canvas.DOMRect;
+        if (canvas.ImageData && !g.ImageData) g.ImageData = canvas.ImageData;
+        if (canvas.Path2D && !g.Path2D) g.Path2D = canvas.Path2D;
+      }
       if (typeof g.DOMMatrix !== 'function') {
         throw new Error(
           'DOMMatrix polyfill unavailable — install @napi-rs/canvas for PDF vision screenshots',
         );
       }
+
+      if (!g.pdfjsWorker) {
+        // pdf-parse (this version) uses pdfjs-dist/legacy/build/pdf.mjs internally.
+        // @ts-expect-error -- no type declarations for this worker entry point
+        await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+      }
+      if (!g.pdfjsWorker) {
+        throw new Error('pdf.worker.mjs did not register globalThis.pdfjsWorker');
+      }
     })();
   }
-  await polyfillPromise;
+  await readyPromise;
 }
 
 async function loadPdfParse() {
