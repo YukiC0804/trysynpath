@@ -32,6 +32,14 @@ describe('parse backend selection (ai_erp auto)', () => {
   it('falls back to documentai_ocr for thin scans', () => {
     expect(pickAutoBackend('page 1')).toBe('documentai_ocr');
   });
+
+  it('uses text backend for long numeric invoice dumps without $', () => {
+    const dump = Array.from({ length: 30 }, (_, i) => `row ${i} qty ${i + 1} 18x24 clear`).join(
+      '\n',
+    );
+    expect(textIsRichEnough(dump)).toBe(true);
+    expect(pickAutoBackend(dump)).toBe('text');
+  });
 });
 
 describe('text+LLM extract (ai_erp parse_document_text)', () => {

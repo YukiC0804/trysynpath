@@ -926,6 +926,11 @@ export function AgentWorkforcePage() {
             <div className="grid gap-4 lg:grid-cols-3">
               <div>
                 <h4 className="mb-2 text-xs font-semibold uppercase text-neutral-500">OCR</h4>
+                {supplyPurchase?.notes ? (
+                  <p className="mb-2 rounded-lg bg-emerald-50 px-2 py-1.5 text-[11px] text-emerald-800">
+                    {supplyPurchase.notes}
+                  </p>
+                ) : null}
                 <pre className="max-h-64 overflow-auto rounded-xl bg-neutral-50 p-3 text-[11px]">
                   {JSON.stringify(supplyPurchase, null, 2)}
                 </pre>

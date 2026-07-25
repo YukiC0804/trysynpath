@@ -114,7 +114,7 @@ export function documentExtractFromLlmJson(
   return sanitizeExtract(propagateAcrylicDims(base));
 }
 
-async function openaiJsonCompletion(messages: Array<{ role: string; content: string }>) {
+async function openaiJsonCompletion(messages: Array<{ role: string; content: unknown }>) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
   const model = resolveParseModel();
@@ -134,6 +134,87 @@ async function openaiJsonCompletion(messages: Array<{ role: string; content: str
     choices?: Array<{ message?: { content?: string | null } }>;
   };
   return body.choices?.[0]?.message?.content || '';
+}
+
+function resolveVisionModel(): string {
+  return process.env.GHOST_PO_VISION_MODEL || 'gpt-4o';
+}
+
+/**
+ * Vision / PDF path — mirrors ai_erp parse_document_images for scans.
+ * Uses OpenAI Responses API with the PDF as an input_file (no local rasterizer).
+ */
+export async function parseDocumentPdfVision(
+  pdf: Buffer,
+  opts: { hintRole?: string | null; textHint?: string; note?: string } = {},
+): Promise<DocumentExtract> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+  const model = resolveVisionModel();
+  const roleLine = opts.hintRole
+    ? `This PDF is expected to be a ${opts.hintRole} document.\n`
+    : 'Invoice / bill PDF.\n';
+  const textHint = opts.textHint?.trim()
+    ? `\n\nOptional text layer (may be incomplete):\n${opts.textHint.slice(0, 8000)}`
+    : '';
+  const prompt =
+    roleLine +
+    'Read the document carefully (tables + totals). Money fields must be currency amounts only. ' +
+    EXTRACT_SCHEMA_HINT +
+    textHint;
+
+  const fileData = `data:application/pdf;base64,${pdf.toString('base64')}`;
+  const resp = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_file', filename: 'invoice.pdf', file_data: fileData },
+            { type: 'input_text', text: prompt },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    throw new Error(`OpenAI PDF vision failed HTTP ${resp.status}: ${detail.slice(0, 400)}`);
+  }
+  const body = (await resp.json()) as {
+    output_text?: string;
+    output?: Array<{
+      content?: Array<{ type?: string; text?: string }>;
+    }>;
+  };
+  let content = body.output_text || '';
+  if (!content && Array.isArray(body.output)) {
+    content = body.output
+      .flatMap((o) => o.content || [])
+      .filter((c) => c.type === 'output_text' || Boolean(c.text))
+      .map((c) => c.text || '')
+      .join('\n');
+  }
+  if (!content.trim()) throw new Error('OpenAI PDF vision returned empty content');
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(stripJsonFence(content)) as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(
+      `Vision LLM returned non-JSON: ${error instanceof Error ? error.message : error}\n${content.slice(0, 500)}`,
+    );
+  }
+  return documentExtractFromLlmJson(data, {
+    hintRole: opts.hintRole,
+    note: opts.note || '[parsed via OpenAI PDF vision]',
+  });
 }
 
 /** ai_erp parse_document_text */
