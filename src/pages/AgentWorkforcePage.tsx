@@ -320,8 +320,9 @@ export function AgentWorkforcePage() {
     const totalWeight = patched.reduce((sum, ln) => sum + ln.sheet_weight_kg * ln.quantity, 0);
     const perKg = totalWeight > 0 ? pool / totalWeight : 0;
     const lines = patched.map((ln) => {
-      const land = ln.sheet_weight_kg * perKg;
-      const landed = ln.raw_unit_price + land;
+      const decimals = ln.price_decimals ?? 2;
+      const land = Number((ln.sheet_weight_kg * perKg).toFixed(decimals));
+      const landed = Number((ln.raw_unit_price + land).toFixed(decimals));
       return {
         ...ln,
         land_cost_per_sheet: land,
@@ -954,7 +955,13 @@ export function AgentWorkforcePage() {
                     Method: <strong>{supplyPlan.landed.method}</strong>
                   </p>
                   <p>Product cost: {money(supplyPlan.landed.total_acrylic_product_cost)}</p>
-                  <p>Import pool: {money(supplyPlan.landed.import_pool)}</p>
+                  {supplyPlan.landed.method === 'freight_and_duty' ? (
+                    <>
+                      <p>Freight: {money(supplyPlan.landed.freight_amount ?? 0)}</p>
+                      <p>Duty: {money(supplyPlan.landed.duty_amount ?? 0)}</p>
+                    </>
+                  ) : null}
+                  <p>Total land cost: {money(supplyPlan.landed.import_pool)}</p>
                   <p>Total weight: {supplyPlan.landed.total_weight_kg.toFixed(2)} kg</p>
                   <label className="block text-xs">
                     Edit pool → recalculate
@@ -995,7 +1002,9 @@ export function AgentWorkforcePage() {
                           raw unit price
                           <input
                             type="number"
-                            value={numInputValue(ln.raw_unit_price)}
+                            value={numInputValue(
+                              Number(ln.raw_unit_price.toFixed(ln.price_decimals ?? 2)),
+                            )}
                             onChange={(e) =>
                               updateLine(i, {
                                 raw_unit_price: parseNumInput(e.target.value),
@@ -1009,7 +1018,9 @@ export function AgentWorkforcePage() {
                           <input
                             type="number"
                             readOnly
-                            value={numInputValue(Number(ln.landed_unit_cost.toFixed(4)))}
+                            value={numInputValue(
+                              Number(ln.landed_unit_cost.toFixed(ln.price_decimals ?? 2)),
+                            )}
                             className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
                           />
                         </label>
@@ -1018,7 +1029,9 @@ export function AgentWorkforcePage() {
                           <input
                             type="number"
                             readOnly
-                            value={numInputValue(Number(ln.land_cost_per_sheet.toFixed(4)))}
+                            value={numInputValue(
+                              Number(ln.land_cost_per_sheet.toFixed(ln.price_decimals ?? 2)),
+                            )}
                             className="w-full rounded border bg-neutral-50 px-1 text-neutral-700"
                           />
                         </label>
@@ -1044,8 +1057,8 @@ export function AgentWorkforcePage() {
                       lines: supplyPlan.lines.map((l) => ({
                         sku: l.sku_id,
                         qty: l.quantity,
-                        raw_unit_price: Number(l.raw_unit_price.toFixed(4)),
-                        land_unit_price: Number(l.landed_unit_cost.toFixed(4)),
+                        raw_unit_price: Number(l.raw_unit_price.toFixed(l.price_decimals ?? 2)),
+                        land_unit_price: Number(l.landed_unit_cost.toFixed(l.price_decimals ?? 2)),
                         amount: Number(l.amount.toFixed(2)),
                       })),
                       sageWrite: 'preview_only',

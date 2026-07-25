@@ -33,6 +33,8 @@ export interface InvoiceLineExtract {
   unit_price: number;
   amount?: number | null;
   line_kind: LineKind;
+  /** Decimal digits the unit price / amount are printed with on the source document. */
+  price_decimals?: number | null;
 }
 
 export interface DocumentExtract {
@@ -62,6 +64,8 @@ export interface AcrylicSkuLine {
   landed_unit_cost: number;
   amount: number;
   raw_description?: string | null;
+  /** Decimal digits raw_unit_price / landed_unit_cost / land_cost_per_sheet are rounded to. */
+  price_decimals: number;
 }
 
 export interface LandedCostBreakdown {

@@ -43,6 +43,12 @@ function numOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function priceDecimalsOrNull(v: unknown): number | null {
+  const n = numOrNull(v);
+  if (n == null) return null;
+  return Math.min(6, Math.max(0, Math.round(n)));
+}
+
 function normalizeInvoiceDate(raw: unknown): string | null {
   if (raw == null || raw === '') return null;
   const s = String(raw).trim();
@@ -79,6 +85,7 @@ function mapLine(raw: Record<string, unknown>): InvoiceLineExtract {
     unit_price: unit,
     amount,
     line_kind: asKind(raw.line_kind, isAcrylic ? 'acrylic' : 'other'),
+    price_decimals: priceDecimalsOrNull(raw.price_decimals),
   };
 }
 

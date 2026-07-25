@@ -73,6 +73,11 @@ export function buildDescription(input: {
   return `Ghost ${vendor} ${input.productWord ?? 'Acrylic'} ${thick} x ${pretty} ${color}.`;
 }
 
+export function roundTo(value: number, decimals: number): number {
+  const factor = 10 ** Math.max(0, decimals);
+  return Math.round(value * factor) / factor;
+}
+
 export function acrylicLineFromExtract(
   line: InvoiceLineExtract,
   vendorId: string,
@@ -99,8 +104,10 @@ export function acrylicLineFromExtract(
     colorName,
   });
   const qty = Number(line.quantity);
-  const unit =
+  const decimals = line.price_decimals != null && line.price_decimals >= 0 ? line.price_decimals : 2;
+  const rawUnit =
     line.amount != null && qty > 0 ? Number(line.amount) / qty : Number(line.unit_price);
+  const unit = roundTo(rawUnit, decimals);
   return {
     sku_id: sku,
     description: desc,
@@ -113,5 +120,6 @@ export function acrylicLineFromExtract(
     landed_unit_cost: unit,
     amount: qty * unit,
     raw_description: line.raw_description,
+    price_decimals: decimals,
   };
 }

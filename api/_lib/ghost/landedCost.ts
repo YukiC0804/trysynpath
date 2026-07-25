@@ -5,7 +5,7 @@ import type {
   InvoiceLineExtract,
   LandedCostBreakdown,
 } from '../../../shared/ghost';
-import { acrylicLineFromExtract } from './sku';
+import { acrylicLineFromExtract, roundTo } from './sku';
 
 const WEIGHT_FACTOR = 1.22 * 2.44 * 1.2;
 
@@ -128,9 +128,9 @@ export function allocateLandedCost(
 
   const perKg = totalWeight > 0 ? importPool / totalWeight : 0;
   for (const skuLine of lines) {
-    const land = skuLine.sheet_weight_kg * perKg;
+    const land = roundTo(skuLine.sheet_weight_kg * perKg, skuLine.price_decimals);
     skuLine.land_cost_per_sheet = land;
-    skuLine.landed_unit_cost = skuLine.raw_unit_price + land;
+    skuLine.landed_unit_cost = roundTo(skuLine.raw_unit_price + land, skuLine.price_decimals);
     skuLine.amount = skuLine.quantity * skuLine.landed_unit_cost;
   }
 
@@ -168,8 +168,9 @@ export function reapplyLandedCost(
   const pool = Number(opts.importPool);
   const perKg = totalWeight > 0 ? pool / totalWeight : 0;
   const updated = lines.map((ln) => {
-    const land = ln.sheet_weight_kg * perKg;
-    const landed = ln.raw_unit_price + land;
+    const decimals = ln.price_decimals != null && ln.price_decimals >= 0 ? ln.price_decimals : 2;
+    const land = roundTo(ln.sheet_weight_kg * perKg, decimals);
+    const landed = roundTo(ln.raw_unit_price + land, decimals);
     return {
       ...ln,
       land_cost_per_sheet: land,

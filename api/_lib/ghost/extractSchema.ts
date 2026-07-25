@@ -33,7 +33,8 @@ Return ONLY a JSON object matching this shape (no markdown):
       "quantity": 10,
       "unit_price": 42.5,
       "amount": 425.0,
-      "line_kind": "acrylic" | "packing" | "ddp" | "freight" | "duty" | "other"
+      "line_kind": "acrylic" | "packing" | "ddp" | "freight" | "duty" | "other",
+      "price_decimals": 2
     }
   ],
   "notes": null
@@ -69,6 +70,11 @@ Rules:
   **Amount Due** in dollars (same number when one total is shown). No acrylic lines.
 - vendor.id: invent a short 2–4 letter code from the vendor name when not printed
   (Gokai → GOK).
+- price_decimals: the number of digits printed after the decimal point on the
+  Unit Price / Amount columns for that line (e.g. "42.50" → 2, "42.500" → 3).
+  Use the same integer for every line on one document unless the printed
+  precision genuinely differs row to row. Default 2 when not shown explicitly
+  (whole-dollar tables).
 `.trim();
 
 export const OCR_MARKDOWN_HINT = `

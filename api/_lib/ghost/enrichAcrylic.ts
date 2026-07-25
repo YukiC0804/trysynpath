@@ -39,6 +39,12 @@ function asLineKind(value: unknown, fallback: LineKind): LineKind {
     : fallback;
 }
 
+function priceDecimalsOrNull(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(6, Math.max(0, Math.round(n))) : null;
+}
+
 function mergeLine(
   original: InvoiceLineExtract,
   upd: Record<string, unknown>,
@@ -65,6 +71,7 @@ function mergeLine(
     unit_price: original.unit_price,
     amount: original.amount,
     raw_description: original.raw_description,
+    price_decimals: priceDecimalsOrNull(upd.price_decimals) ?? original.price_decimals,
   };
 
   const qty = original.quantity || Number(upd.quantity ?? 0) || candidate.quantity;
@@ -111,6 +118,7 @@ function lineFromLlm(upd: Record<string, unknown>): InvoiceLineExtract {
     unit_price: unit,
     amount,
     line_kind: asLineKind(upd.line_kind, isAcrylic ? 'acrylic' : 'other'),
+    price_decimals: priceDecimalsOrNull(upd.price_decimals),
   };
 }
 
@@ -151,7 +159,8 @@ export async function enrichAcrylicAttrsWithLlm(
             '1:1 (same order/count). For each line set: is_acrylic, ' +
             'is_packing_or_misc, line_kind, product_code (default ACR), ' +
             'color_code, color_name, thickness_mm, size (e.g. 4x8 or 18x24), ' +
-            'quantity, unit_price, amount, raw_description. ' +
+            'quantity, unit_price, amount, raw_description, price_decimals ' +
+            '(digits printed after the decimal point on the unit price, default 2). ' +
             'Acrylic sheets need thickness_mm + size. ' +
             'Infer thickness_mm and size from OCR text, product codes (GK-*), ' +
             'and phrases like "cut to 18\\" x 24\\"" when line text is fragmented. ' +
