@@ -102,7 +102,7 @@ export function allocateLandedCost(
   breakdown: LandedCostBreakdown;
   excluded: InvoiceLineExtract[];
 } {
-  let { method, importPool, meta } = resolveImportPool(purchase, opts.freight, opts.duty);
+  const { method, importPool, meta } = resolveImportPool(purchase, opts.freight, opts.duty);
 
   const acrylicExtracts = purchase.lines.filter(
     (ln) =>
@@ -115,13 +115,6 @@ export function allocateLandedCost(
   const excluded = purchase.lines.filter((ln) => !acrylicExtracts.includes(ln));
 
   const productCost = acrylicProductCost(acrylicExtracts);
-  if (method === 'ddp_on_invoice' && purchase.invoice_total != null) {
-    const residual = Number(purchase.invoice_total) - productCost;
-    if (residual >= 0) {
-      importPool = residual;
-      meta = { ...meta, ddp_amount: residual };
-    }
-  }
 
   const lines: AcrylicSkuLine[] = [];
   let totalWeight = 0;
