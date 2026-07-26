@@ -68,8 +68,10 @@ Rules:
   No acrylic lines.
 - Duty-only PDF: document_role="duty". duty_amount AND invoice_total = TOTAL
   **Amount Due** in dollars (same number when one total is shown). No acrylic lines.
-- vendor.id: invent a short 2–4 letter code from the vendor name when not printed
-  (Gokai → GOK).
+- vendor.id: invent a short 2–4 letter code from the vendor name when not printed.
+  Skip leading city/province/country words (e.g. "Shanghai Gokai Industry Co., Ltd."
+  → code from "Gokai" → GOK, not "Shanghai" → SHA) — use the actual brand/company
+  word, not the place name in front of it.
 - price_decimals: the number of digits printed after the decimal point on the
   Unit Price / Amount columns for that line (e.g. "42.50" → 2, "42.500" → 3).
   Use the same integer for every line on one document unless the printed

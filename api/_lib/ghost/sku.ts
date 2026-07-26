@@ -35,8 +35,29 @@ function prettySize(size: string): string {
   return size.trim();
 }
 
+/**
+ * Best-effort — not a general gazetteer. Covers the city/country words that
+ * actually show up leading Ghost's vendor names (e.g. "Shanghai Gokai
+ * Industry Co., Ltd."); extend as new vendors surface more of them.
+ */
+const LOCATION_WORDS = new Set([
+  'shanghai', 'beijing', 'guangzhou', 'shenzhen', 'ningbo', 'hangzhou', 'suzhou',
+  'dongguan', 'foshan', 'qingdao', 'tianjin', 'wuhan', 'chengdu', 'xiamen', 'nanjing',
+  'jiangsu', 'zhejiang', 'guangdong', 'fujian', 'shandong', 'china', 'hong', 'kong',
+  'taiwan', 'usa', 'us', 'america', 'american', 'united', 'states', 'uk', 'england',
+]);
+
+/** First word of a vendor name that isn't a leading place name (see LOCATION_WORDS). */
+export function firstBrandWord(name: string): string {
+  const words = name.trim().match(/[A-Za-z]+/g) ?? [];
+  for (const w of words) {
+    if (!LOCATION_WORDS.has(w.toLowerCase())) return w;
+  }
+  return words[0] ?? name.trim();
+}
+
 function vendorDisplayName(vendorId: string, vendorName: string | null | undefined): string {
-  if (vendorName?.trim()) return vendorName.trim().split(/\s+/)[0]!;
+  if (vendorName?.trim()) return firstBrandWord(vendorName);
   return vendorId;
 }
 

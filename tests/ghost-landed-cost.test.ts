@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { allocateLandedCost, resolveImportPool, sheetWeightKg } from '../api/_lib/ghost/landedCost';
 import type { DocumentExtract } from '../shared/ghost';
-import { buildSkuId, normalizeSheetSize } from '../api/_lib/ghost/sku';
+import { buildDescription, buildSkuId, firstBrandWord, normalizeSheetSize } from '../api/_lib/ghost/sku';
 import { documentAiToExtract, parseThicknessSize, propagateAcrylicDims } from '../api/_lib/ghost/mapToExtract';
 import type { InvoiceData } from '../api/_lib/ghost/documentAi';
 
@@ -96,6 +96,19 @@ describe('sku helpers', () => {
         size: '4x8',
       }),
     ).toBe('GHOGOKACRCLR4mm4x8');
+  });
+
+  it('skips leading place names when picking the vendor brand word', () => {
+    expect(firstBrandWord('Shanghai Gokai Industry Co., Ltd.')).toBe('Gokai');
+    expect(firstBrandWord('Gokai Industrial')).toBe('Gokai');
+    expect(
+      buildDescription({
+        vendorId: 'GOK',
+        vendorName: 'Shanghai Gokai Industry Co., Ltd.',
+        thicknessMm: 18,
+        size: '4x8',
+      }),
+    ).toBe("Ghost Gokai Acrylic 18mm x 4' x 8' Clear.");
   });
 });
 

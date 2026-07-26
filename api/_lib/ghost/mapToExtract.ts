@@ -13,6 +13,7 @@ import {
   needsAcrylicEnrichment,
 } from './enrichAcrylic';
 import { sanitizeExtract } from './sanitize';
+import { firstBrandWord } from './sku';
 
 const THICKNESS_RE = /(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mm(?![A-Za-z])/i;
 const THICKNESS_COL_RE = /(?:thick(?:ness)?|thk)[:\s]*(\d+(?:\.\d+)?)\s*(?:mm)?/i;
@@ -40,7 +41,8 @@ const COLOR_MAP: Record<string, [string, string]> = {
 function vendorIdFromName(name: string): string {
   const words = name.match(/[A-Za-z]+/g) ?? [];
   if (!words.length) return 'UNK';
-  if (words[0]!.length >= 3) return words[0]!.slice(0, 3).toUpperCase();
+  const brand = firstBrandWord(name);
+  if (brand.length >= 3) return brand.slice(0, 3).toUpperCase();
   return (words.map((w) => w[0]).join('').slice(0, 4) || 'UNK').toUpperCase();
 }
 
