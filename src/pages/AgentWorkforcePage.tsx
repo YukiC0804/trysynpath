@@ -61,6 +61,23 @@ function money(n: number, currency = 'USD') {
   }).format(Number.isFinite(n) ? n : 0);
 }
 
+const VARIABLE_SPLIT_RE = /(\{\{\s*(?:name|company)\s*\}\})/gi;
+const VARIABLE_TOKEN_RE = /^\{\{\s*(?:name|company)\s*\}\}$/i;
+
+/** Live preview of a template with {{name}}/{{company}} tokens colored apart from the rest. */
+function renderTemplatePreview(text: string): ReactNode {
+  if (!text) return <span className="text-neutral-400">—</span>;
+  return text.split(VARIABLE_SPLIT_RE).map((part, i) =>
+    VARIABLE_TOKEN_RE.test(part) ? (
+      <span key={i} className="font-semibold text-sky-600">
+        {part}
+      </span>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
 function relativeTime(iso: string) {
   const ms = Date.now() - new Date(iso).getTime();
   if (ms < 15_000) return 'just now';
@@ -158,7 +175,7 @@ export function AgentWorkforcePage() {
   const [outreachSteps, setOutreachSteps] = useState<EmailStep[]>([
     {
       subject: 'Quick follow-up from Synpath',
-      body: 'Hi {{name}} — following up on acrylic sheet pricing and lead times for {{company}}. Happy to send a quote this week.',
+      body: 'Hi {{name}},\ndemo test for company\nBest,\nYuki',
       delayDays: 0,
     },
   ]);
@@ -768,6 +785,9 @@ export function AgentWorkforcePage() {
                           + company
                         </button>
                       </div>
+                      <p className="mt-1 rounded-lg bg-neutral-50 px-2 py-1 text-xs">
+                        {renderTemplatePreview(step.subject)}
+                      </p>
                       <label className="mt-2 block text-xs text-neutral-600">
                         Body
                         <textarea
@@ -793,6 +813,9 @@ export function AgentWorkforcePage() {
                           + company
                         </button>
                       </div>
+                      <p className="mt-1 whitespace-pre-wrap rounded-lg bg-neutral-50 px-2 py-1.5 text-xs">
+                        {renderTemplatePreview(step.body)}
+                      </p>
                     </div>
                   ))}
                   {outreachSteps.length < 3 ? (
