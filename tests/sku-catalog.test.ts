@@ -3,6 +3,7 @@ import {
   __resetMemorySkuCatalog,
   findSkuCatalogByCustomerAndThickness,
   getSkuCatalogEntry,
+  listSkuCatalog,
   upsertSkuCatalogEntries,
 } from '../api/_lib/ghost/skuCatalog';
 import type { SkuCatalogEntry } from '../shared/ghost';
@@ -60,14 +61,33 @@ describe('SKU catalog', () => {
     expect(wrongThickness).toHaveLength(0);
   });
 
-  it('reprocessing overwrites the old entry, no history kept', async () => {
-    await upsertSkuCatalogEntries([entry({ quantity: 112, invoice_number: 'INV-1' })]);
+  it('reprocessing the same invoice_number overwrites all its lines, no history kept', async () => {
     await upsertSkuCatalogEntries([
-      entry({ quantity: 999, invoice_number: 'INV-2', landed_unit_cost: 200 }),
+      entry({ sku_id: 'A', quantity: 1, invoice_number: 'INV-1' }),
+      entry({ sku_id: 'B', quantity: 2, invoice_number: 'INV-1' }),
     ]);
+    await upsertSkuCatalogEntries([entry({ sku_id: 'C', quantity: 3, invoice_number: 'INV-1' })]);
+
+    const all = await listSkuCatalog();
+    expect(all.map((e) => e.sku_id)).toEqual(['C']);
+    expect(await getSkuCatalogEntry('A')).toBeNull();
+    expect(await getSkuCatalogEntry('B')).toBeNull();
+    expect((await getSkuCatalogEntry('C'))?.quantity).toBe(3);
+  });
+
+  it('different invoice_numbers coexist; lookups prefer the most recent by date', async () => {
+    await upsertSkuCatalogEntries([
+      entry({ invoice_number: 'INV-OLD', date: '01/01/2026', landed_unit_cost: 100 }),
+    ]);
+    await upsertSkuCatalogEntries([
+      entry({ invoice_number: 'INV-NEW', date: '02/01/2026', landed_unit_cost: 200 }),
+    ]);
+
     const found = await getSkuCatalogEntry('GHOGOKACRCLR18mm4x8');
-    expect(found?.quantity).toBe(999);
-    expect(found?.invoice_number).toBe('INV-2');
+    expect(found?.invoice_number).toBe('INV-NEW');
     expect(found?.landed_unit_cost).toBe(200);
+
+    const matches = await findSkuCatalogByCustomerAndThickness('CN LEDGE', 18);
+    expect(matches.map((m) => m.invoice_number)).toEqual(['INV-NEW', 'INV-OLD']);
   });
 });
