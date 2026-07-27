@@ -7,32 +7,10 @@ import type {
 } from '../../../shared/ghost';
 import { parseThicknessSize } from './mapToExtract';
 import { toMmDdYyyy } from './orchestrator';
-import { findSkuCatalogByCustomerAndThickness } from './skuCatalog';
+import { findSkuCatalogByCustomerAndThickness, normalizeCustomerName } from './skuCatalog';
 
-/** Demo fixture catalog for Sales Order review rules not yet backed by real data. */
-export const SALES_FIXTURE = {
-  customers: [
-    { id: 'CUST-SPAN', name: 'Spandex', aliases: ['spandex', 'ghost acrylics customer'] },
-    { id: 'CUST-ACME', name: 'Acme Interiors', aliases: ['acme'] },
-  ],
-  priceList: {
-    default: 85,
-    bySkuPrefix: { GHO: 72 },
-  },
-  inventory: {
-    defaultOnHand: 40,
-  },
-  unusualPricePct: 0.25,
-};
-
-function resolveCustomer(name: string | null | undefined): { id: string; name: string } {
-  const raw = (name || 'Unknown Customer').trim();
-  const lower = raw.toLowerCase();
-  const hit = SALES_FIXTURE.customers.find(
-    (c) => c.name.toLowerCase() === lower || c.aliases.some((a) => lower.includes(a)),
-  );
-  return hit ? { id: hit.id, name: hit.name } : { id: 'CUST-NEW', name: raw };
-}
+/** Flag a sold price as unusual once it strays this far from the catalog's landed cost. */
+const UNUSUAL_PRICE_PCT = 0.25;
 
 /**
  * Sales Order PDFs are customer invoices Ghost sends out — `vendor` on the
@@ -57,7 +35,6 @@ export async function buildSalesOrderPlan(
   opts: { recentKeys?: string[] } = {},
 ): Promise<SalesOrderPlan> {
   const customerName = customerNameFromShipTo(doc);
-  const customer = resolveCustomer(customerName);
 
   const lines: SalesOrderLine[] = [];
   const reasons: SalesReviewReason[] = [];
@@ -104,20 +81,14 @@ export async function buildSalesOrderPlan(
     }
 
     if (!qty) reasons.push('missing_data');
+    // Only compare against a real cost basis from the catalog — no fixture price-list fallback.
     if (costBasis != null && costBasis > 0) {
-      if (Math.abs(rate - costBasis) / costBasis > SALES_FIXTURE.unusualPricePct) {
-        reasons.push('unusual_price');
-      }
-    } else {
-      const listPrice = SALES_FIXTURE.priceList.default;
-      if (listPrice > 0 && Math.abs(rate - listPrice) / listPrice > SALES_FIXTURE.unusualPricePct) {
+      if (Math.abs(rate - costBasis) / costBasis > UNUSUAL_PRICE_PCT) {
         reasons.push('unusual_price');
       }
     }
-    const onHand = SALES_FIXTURE.inventory.defaultOnHand;
-    if (qty > onHand) reasons.push('stock_conflict');
 
-    const dupKey = `${customer.id}|${doc.invoice_number || ''}|${sku}|${qty}`;
+    const dupKey = `${normalizeCustomerName(customerName)}|${doc.invoice_number || ''}|${sku}|${qty}`;
     if (opts.recentKeys?.includes(dupKey)) reasons.push('possible_duplicate');
 
     lines.push({
@@ -127,8 +98,6 @@ export async function buildSalesOrderPlan(
       unit_price: rate,
       amount,
       line_kind: ln.line_kind === 'acrylic' ? 'acrylic' : 'other',
-      list_price: costBasis,
-      on_hand: onHand,
     });
   }
 
@@ -137,8 +106,7 @@ export async function buildSalesOrderPlan(
   const uniqueReasons = [...new Set(reasons)];
 
   return {
-    customer: customer.name,
-    customer_id: customer.id,
+    customer: customerName,
     po_number: doc.invoice_number,
     invoice_number: doc.invoice_number,
     invoice_date: doc.invoice_date,

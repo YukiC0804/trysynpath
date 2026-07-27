@@ -143,7 +143,6 @@ export interface PurchaseWritePlan {
 export type SalesReviewReason =
   | 'missing_data'
   | 'unusual_price'
-  | 'stock_conflict'
   | 'possible_duplicate'
   | 'no_catalog_match';
 
@@ -154,13 +153,10 @@ export interface SalesOrderLine {
   unit_price: number;
   amount: number;
   line_kind: LineKind;
-  list_price?: number | null;
-  on_hand?: number | null;
 }
 
 export interface SalesOrderPlan {
   customer: string;
-  customer_id?: string | null;
   po_number?: string | null;
   invoice_number?: string | null;
   invoice_date?: string | null;
