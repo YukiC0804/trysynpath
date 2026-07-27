@@ -39,7 +39,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
   const config = envPresence(GOOGLE_REQUIRED_ENV);
 
   if (method === 'GET' && (path.length === 0 || path[0] === 'status')) {
-    const session = readGmailSession(req);
+    const session = await readGmailSession(req);
     let connected = false;
     let emailAddress = session?.emailAddress;
     if (config.configured && session) {
@@ -49,7 +49,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
         if (auth && !emailAddress) {
           const profile = await getGmailProfile(auth.accessToken);
           emailAddress = profile.emailAddress;
-          writeGmailSession(res, { ...auth.session, emailAddress });
+          await writeGmailSession(res, { ...auth.session, emailAddress });
         }
       } catch {
         connected = false;
@@ -95,7 +95,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
         );
       }
       const profile = await getGmailProfile(tokens.accessToken);
-      writeGmailSession(res, {
+      await writeGmailSession(res, {
         tokens,
         emailAddress: profile.emailAddress,
         connectedAt: new Date().toISOString(),
@@ -106,7 +106,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
       });
       return res.end();
     } catch (error) {
-      clearGmailSession(res);
+      await clearGmailSession(res);
       res.writeHead(302, {
         Location: `${appBase}/agents?gmail=failed&agent=outreach&reason=${encodeURIComponent(
           errorMessage(error),
@@ -117,7 +117,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
   }
 
   if ((method === 'POST' || method === 'GET') && path[0] === 'disconnect') {
-    clearGmailSession(res);
+    await clearGmailSession(res);
     return json(res, 200, { disconnected: true });
   }
 
@@ -150,7 +150,7 @@ export async function handleGmailRequest(req: VercelRequest, res: VercelResponse
     const query = typeof body.query === 'string' ? body.query : DEFAULT_GMAIL_SEARCH;
     const summary = await listGmailMessageSummaries(auth.accessToken, query);
     const lastSyncAt = new Date().toISOString();
-    writeGmailSession(res, { ...auth.session, lastSyncAt });
+    await writeGmailSession(res, { ...auth.session, lastSyncAt });
     return json(res, 200, {
       query,
       lastSyncAt,

@@ -4,6 +4,12 @@
       "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"
     }
   },
+  "crons": [
+    {
+      "path": "/api/sage?__integration=cron",
+      "schedule": "0 14 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/integrations/sage",

@@ -26,6 +26,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (integration === 'agents') {
       const { handleAgentsRequest } = await import('./_lib/agents/router');
       await handleAgentsRequest(req, res);
+    } else if (integration === 'cron') {
+      const { handleCronRequest } = await import('./_lib/cron/router');
+      await handleCronRequest(req, res);
     } else {
       await handleSageRequest(req, res);
     }

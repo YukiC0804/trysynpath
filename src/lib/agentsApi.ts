@@ -6,6 +6,7 @@ import type {
   SalesOrderPlan,
   DocumentExtract,
 } from '../../shared/ghost';
+import type { EmailStep, OutreachLead, OutreachSequence } from '../../shared/outreach';
 
 async function parseJson<T>(res: Response): Promise<T> {
   const data = (await res.json()) as T & { error?: string };
@@ -21,7 +22,31 @@ export async function fetchAgentsStatus() {
     documentAi: { configured: boolean; connected: boolean; detail: string };
     acrylicLlmEnrich?: { configured: boolean; model: string; detail: string };
     sage: { connected: boolean; detail: string };
+    hubspot?: { configured: boolean; connected: boolean; detail: string };
   }>(res);
+}
+
+export async function fetchHubspotLeads() {
+  const res = await fetch('/api/agents/outreach/leads');
+  return parseJson<{ ok: boolean; leads: OutreachLead[] }>(res);
+}
+
+export async function createOutreachSequence(input: {
+  lead: OutreachLead;
+  steps: EmailStep[];
+  startDate: string;
+}) {
+  const res = await fetch('/api/agents/outreach/sequences', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return parseJson<{ ok: boolean; sequence: OutreachSequence }>(res);
+}
+
+export async function fetchOutreachSequences() {
+  const res = await fetch('/api/agents/outreach/sequences');
+  return parseJson<{ ok: boolean; sequences: OutreachSequence[] }>(res);
 }
 
 export async function fetchGmailStatus() {
@@ -36,19 +61,6 @@ export async function fetchGmailStatus() {
 export async function disconnectGmail() {
   const res = await fetch('/api/gmail/disconnect', { method: 'POST' });
   return parseJson<{ disconnected: boolean }>(res);
-}
-
-export async function sendOutreachEmail(input: {
-  to: string;
-  subject: string;
-  body: string;
-}) {
-  const res = await fetch('/api/gmail/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  return parseJson<{ ok: boolean; message: { id: string } }>(res);
 }
 
 export function fileToBase64(file: File): Promise<string> {

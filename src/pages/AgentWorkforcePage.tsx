@@ -19,10 +19,10 @@ import type {
   PurchaseWritePlan,
   SalesOrderPlan,
 } from '../../shared/ghost';
+import type { EmailStep, OutreachLead, OutreachSequence } from '../../shared/outreach';
 import {
   AGENTS,
   FAKE_INTELLIGENCE,
-  FAKE_PROSPECTS,
   FAKE_SOURCING,
   matchAgentFromPrompt,
   type AgentId,
@@ -31,14 +31,16 @@ import { useSessionActivity } from '../hooks/useSessionActivity';
 import {
   approveSupply,
   allocateSupply,
+  createOutreachSequence,
   disconnectGmail,
   fetchAgentsStatus,
   fetchGmailStatus,
+  fetchHubspotLeads,
+  fetchOutreachSequences,
   fileToBase64,
   processSales,
   processSupply,
   recalculateSupply,
-  sendOutreachEmail,
 } from '../lib/agentsApi';
 
 function numInputValue(n: number): string {
@@ -124,6 +126,7 @@ export function AgentWorkforcePage() {
   const [docAi, setDocAi] = useState({ connected: false, detail: '' });
   const [llmEnrich, setLlmEnrich] = useState({ connected: false, detail: '' });
   const [gmail, setGmail] = useState({ connected: false, email: '' });
+  const [hubspot, setHubspot] = useState({ connected: false, detail: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,11 +152,19 @@ export function AgentWorkforcePage() {
   const [salesModal, setSalesModal] = useState(false);
 
   // Outreach
-  const [toEmail, setToEmail] = useState('');
-  const [subject, setSubject] = useState('Quick follow-up from Synpath');
-  const [body, setBody] = useState(
-    'Hi — following up on acrylic sheet pricing and lead times. Happy to send a quote this week.',
+  const [leads, setLeads] = useState<OutreachLead[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [outreachStartDate, setOutreachStartDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
   );
+  const [outreachSteps, setOutreachSteps] = useState<EmailStep[]>([
+    {
+      subject: 'Quick follow-up from Synpath',
+      body: 'Hi {{name}} — following up on acrylic sheet pricing and lead times for {{company}}. Happy to send a quote this week.',
+      delayDays: 0,
+    },
+  ]);
+  const [sequences, setSequences] = useState<OutreachSequence[]>([]);
 
   const refreshIntegrations = useCallback(async () => {
     try {
@@ -173,6 +184,33 @@ export function AgentWorkforcePage() {
         connected: gmailStatus.connected,
         email: gmailStatus.emailAddress || '',
       });
+      setHubspot({
+        connected: Boolean(agentsStatus.hubspot?.connected),
+        detail: agentsStatus.hubspot?.detail || '',
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const loadHubspotLeads = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await fetchHubspotLeads();
+      setLeads(result.leads);
+      if (result.leads.length && !selectedLeadId) setSelectedLeadId(result.leads[0]!.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedLeadId]);
+
+  const loadSequences = useCallback(async () => {
+    try {
+      const result = await fetchOutreachSequences();
+      setSequences(result.sequences);
     } catch {
       /* ignore */
     }
@@ -187,6 +225,10 @@ export function AgentWorkforcePage() {
       void refreshIntegrations();
     }
   }, [refreshIntegrations]);
+
+  useEffect(() => {
+    if (agent === 'outreach') void loadSequences();
+  }, [agent, loadSequences]);
 
   const openFromChat = () => {
     const matched = matchAgentFromPrompt(chat) ?? agent;
@@ -390,13 +432,46 @@ export function AgentWorkforcePage() {
     }
   };
 
+  const updateOutreachStep = (index: number, patch: Partial<EmailStep>) => {
+    setOutreachSteps((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  };
+
+  const addFollowupStep = () => {
+    setOutreachSteps((prev) =>
+      prev.length >= 3 ? prev : [...prev, { subject: 'Following up', body: '', delayDays: 3 }],
+    );
+  };
+
+  const removeFollowupStep = (index: number) => {
+    setOutreachSteps((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  };
+
+  const insertVariable = (index: number, field: 'subject' | 'body', variable: 'name' | 'company') => {
+    setOutreachSteps((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, [field]: `${s[field]}{{${variable}}}` } : s)),
+    );
+  };
+
   const runOutreach = async () => {
+    const lead = leads.find((l) => l.id === selectedLeadId);
+    if (!lead) {
+      setError('Pick a lead from HubSpot first');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await sendOutreachEmail({ to: toEmail, subject, body });
-      activity.push('Outreach', `sent to ${toEmail} · “${subject.slice(0, 40)}”`, 'sent');
-      setToEmail('');
+      const result = await createOutreachSequence({
+        lead,
+        steps: outreachSteps,
+        startDate: outreachStartDate,
+      });
+      setSequences((prev) => [result.sequence, ...prev]);
+      activity.push(
+        'Outreach',
+        `${outreachSteps.length}-step sequence scheduled for ${lead.name} (${lead.company}) starting ${outreachStartDate}`,
+        'scheduled',
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -553,7 +628,7 @@ export function AgentWorkforcePage() {
 
             {agent === 'outreach' ? (
               <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-3">
                   {gmail.connected ? (
                     <>
                       <span className="text-sm text-emerald-700">Connected as {gmail.email}</span>
@@ -573,59 +648,180 @@ export function AgentWorkforcePage() {
                       <Mail size={16} /> Connect Gmail
                     </a>
                   )}
+                  <span className={`text-xs ${hubspot.connected ? 'text-emerald-700' : 'text-neutral-500'}`}>
+                    HubSpot: {hubspot.connected ? 'connected' : hubspot.detail || 'not connected'}
+                  </span>
                 </div>
-                <div className="grid gap-2">
-                  {FAKE_PROSPECTS.map((p) => (
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-neutral-600">Lead (from HubSpot)</p>
                     <button
-                      key={p.company}
                       type="button"
-                      className="rounded-lg border border-neutral-200 px-3 py-2 text-left text-xs hover:bg-neutral-50"
-                      onClick={() =>
-                        setSubject(`Intro for ${p.company}`)
-                      }
+                      disabled={busy}
+                      onClick={() => void loadHubspotLeads()}
+                      className="text-xs font-medium text-neutral-600 underline disabled:opacity-50"
                     >
-                      <span className="font-medium">{p.company}</span>
-                      <span className="text-neutral-500">
-                        {' '}
-                        · {p.contact} · {p.territory}
-                      </span>
+                      Load leads
                     </button>
-                  ))}
+                  </div>
+                  <select
+                    value={selectedLeadId}
+                    onChange={(e) => setSelectedLeadId(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">— pick a lead —</option>
+                    {leads.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name} · {l.company} · {l.email}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
                 <label className="block text-xs font-medium text-neutral-600">
-                  To (email address)
+                  Start date (initial email)
                   <input
-                    value={toEmail}
-                    onChange={(e) => setToEmail(e.target.value)}
-                    placeholder="prospect@company.com"
+                    type="date"
+                    value={outreachStartDate}
+                    onChange={(e) => setOutreachStartDate(e.target.value)}
                     className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
                   />
                 </label>
-                <label className="block text-xs font-medium text-neutral-600">
-                  Subject
-                  <input
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="block text-xs font-medium text-neutral-600">
-                  Body
-                  <textarea
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    rows={5}
-                    className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
-                  />
-                </label>
+
+                <div className="space-y-3">
+                  {outreachSteps.map((step, i) => (
+                    <div key={i} className="rounded-xl border border-neutral-200 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase text-neutral-500">
+                          {i === 0 ? 'Initial email' : `Follow-up ${i}`}
+                        </p>
+                        {i > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => removeFollowupStep(i)}
+                            className="text-xs text-rose-600"
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                      {i > 0 ? (
+                        <label className="mb-2 block text-xs text-neutral-600">
+                          Days after previous email
+                          <input
+                            type="number"
+                            min={1}
+                            value={step.delayDays}
+                            onChange={(e) =>
+                              updateOutreachStep(i, { delayDays: Number(e.target.value) || 1 })
+                            }
+                            className="mt-1 w-24 rounded-lg border border-neutral-300 px-2 py-1 text-sm"
+                          />
+                        </label>
+                      ) : null}
+                      <label className="block text-xs text-neutral-600">
+                        Subject
+                        <input
+                          value={step.subject}
+                          onChange={(e) => updateOutreachStep(i, { subject: e.target.value })}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <div className="mt-1 flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(i, 'subject', 'name')}
+                          className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
+                        >
+                          + name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(i, 'subject', 'company')}
+                          className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
+                        >
+                          + company
+                        </button>
+                      </div>
+                      <label className="mt-2 block text-xs text-neutral-600">
+                        Body
+                        <textarea
+                          value={step.body}
+                          onChange={(e) => updateOutreachStep(i, { body: e.target.value })}
+                          rows={4}
+                          className="mt-1 w-full rounded-lg border border-neutral-300 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <div className="mt-1 flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(i, 'body', 'name')}
+                          className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
+                        >
+                          + name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(i, 'body', 'company')}
+                          className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
+                        >
+                          + company
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {outreachSteps.length < 3 ? (
+                    <button
+                      type="button"
+                      onClick={addFollowupStep}
+                      className="w-full rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-xs text-neutral-600"
+                    >
+                      + Add follow-up email
+                    </button>
+                  ) : null}
+                </div>
+
                 <button
                   type="button"
-                  disabled={busy || !gmail.connected || !toEmail}
+                  disabled={busy || !gmail.connected || !selectedLeadId}
                   onClick={() => void runOutreach()}
                   className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
                 >
-                  <Send size={16} /> Send email
+                  <Send size={16} /> Schedule sequence
                 </button>
+
+                {sequences.length ? (
+                  <div className="mt-4">
+                    <p className="mb-2 text-xs font-semibold uppercase text-neutral-500">
+                      Scheduled sequences
+                    </p>
+                    <ul className="space-y-2 text-xs">
+                      {sequences.map((seq) => (
+                        <li key={seq.id} className="rounded-lg border border-neutral-200 p-2">
+                          <p className="font-medium">
+                            {seq.lead.name} · {seq.lead.company}{' '}
+                            <span className="text-neutral-400">({seq.status})</span>
+                          </p>
+                          <p className="text-neutral-500">{seq.lead.email}</p>
+                          <ul className="mt-1 space-y-0.5 text-neutral-600">
+                            {seq.stepState.map((s, i) => (
+                              <li key={i}>
+                                Step {i + 1}:{' '}
+                                {s.sentAt
+                                  ? `sent ${new Date(s.sentAt).toLocaleDateString()}`
+                                  : `scheduled ${s.scheduledFor}`}
+                                {s.error ? (
+                                  <span className="text-rose-600"> · error: {s.error}</span>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

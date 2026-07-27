@@ -10,6 +10,9 @@ import { upsertSkuCatalogEntries } from '../ghost/skuCatalog';
 import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder';
 import { upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
+import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
+import { computeStepSchedule } from '../outreach/scheduler';
+import { listOutreachSequences, upsertOutreachSequence } from '../outreach/store';
 import type {
   AcrylicSkuLine,
   CfoAuditRecord,
@@ -19,6 +22,7 @@ import type {
   PurchaseWritePlan,
   SalesOrderPlan,
 } from '../../../shared/ghost';
+import type { EmailStep, OutreachLead, OutreachSequence } from '../../../shared/outreach';
 
 function pathSegments(req: VercelRequest): string[] {
   const raw = req.query.__agentsPath ?? req.query.__integrationPath;
@@ -71,7 +75,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
   const method = (req.method ?? 'GET').toUpperCase();
 
   if (method === 'GET' && (path[0] === 'status' || path.length === 0)) {
-    const docAi = await pingDocumentAi();
+    const [docAi, hubspot] = await Promise.all([pingDocumentAi(), pingHubspot()]);
     return json(res, 200, {
       documentAi: {
         configured: documentAiConfigured(),
@@ -91,6 +95,11 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
           'auto = rich PDF text→text+LLM else PNG pages→vision LLM (ai_erp parse_pdf). documentai optional only.',
       },
       sage: { connected: false, detail: 'Sage write disabled — preview only' },
+      hubspot: {
+        configured: hubspotConfigured(),
+        connected: hubspot.ok,
+        detail: hubspot.detail,
+      },
     });
   }
 
@@ -232,6 +241,53 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       const plan = await buildSalesOrderPlan(doc);
       await saveToSalesOrderStore(plan);
       return json(res, 200, { ok: true, document: doc, plan });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'GET' && path[0] === 'outreach' && path[1] === 'leads') {
+    try {
+      const leads = await fetchHubspotLeads();
+      return json(res, 200, { ok: true, leads });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'POST' && path[0] === 'outreach' && path[1] === 'sequences') {
+    try {
+      const body = bodyOf(req);
+      const lead = body.lead as OutreachLead | undefined;
+      const steps = body.steps as EmailStep[] | undefined;
+      const startDate = typeof body.startDate === 'string' ? body.startDate : '';
+      if (!lead?.email) throw new Error('lead with email is required');
+      if (!Array.isArray(steps) || steps.length < 1 || steps.length > 3) {
+        throw new Error('1 to 3 email steps are required');
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+        throw new Error('startDate (YYYY-MM-DD) is required');
+      }
+      const sequence: OutreachSequence = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        lead,
+        steps,
+        startDate,
+        stepState: computeStepSchedule(startDate, steps),
+        status: 'scheduled',
+        createdAt: new Date().toISOString(),
+      };
+      await upsertOutreachSequence(sequence);
+      return json(res, 200, { ok: true, sequence });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'GET' && path[0] === 'outreach' && path[1] === 'sequences') {
+    try {
+      const sequences = await listOutreachSequences();
+      return json(res, 200, { ok: true, sequences });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }

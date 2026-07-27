@@ -7,6 +7,7 @@ import {
   setCookie,
 } from '../sage/http';
 import { decryptJson, encryptJson } from '../sage/tokenStore';
+import { clearGmailSessionKv, readGmailSessionKv, writeGmailSessionKv } from './store';
 import {
   COOKIE_GMAIL_OAUTH_STATE,
   COOKIE_GMAIL_SESSION,
@@ -107,7 +108,10 @@ export async function refreshGmailTokens(refreshToken: string): Promise<GoogleTo
   return { ...refreshed, refreshToken };
 }
 
-export function readGmailSession(req: VercelRequest): GmailSession | null {
+/** KV first (source of truth, readable from a cron context too), cookie as fallback. */
+export async function readGmailSession(req: VercelRequest): Promise<GmailSession | null> {
+  const fromKv = await readGmailSessionKv().catch(() => null);
+  if (fromKv) return fromKv;
   const raw = parseCookies(req)[COOKIE_GMAIL_SESSION];
   if (!raw) return null;
   try {
@@ -117,28 +121,50 @@ export function readGmailSession(req: VercelRequest): GmailSession | null {
   }
 }
 
-export function writeGmailSession(res: VercelResponse, session: GmailSession) {
+export async function writeGmailSession(res: VercelResponse, session: GmailSession): Promise<void> {
   setCookie(res, COOKIE_GMAIL_SESSION, encryptJson(session, GOOGLE_KEY_ENV), {
     maxAge: 60 * 60 * 24 * 30,
   });
+  await writeGmailSessionKv(session).catch((error) =>
+    console.warn('[gmail] KV session write failed', error instanceof Error ? error.message : error),
+  );
 }
 
-export function clearGmailSession(res: VercelResponse) {
+export async function clearGmailSession(res: VercelResponse): Promise<void> {
   clearCookie(res, COOKIE_GMAIL_SESSION);
   clearCookie(res, COOKIE_GMAIL_OAUTH_STATE);
+  await clearGmailSessionKv().catch(() => undefined);
 }
 
 export async function getValidGmailAccessToken(
   req: VercelRequest,
   res: VercelResponse,
 ): Promise<{ session: GmailSession; accessToken: string } | null> {
-  const session = readGmailSession(req);
+  const session = await readGmailSession(req);
   if (!session?.tokens.refreshToken) return null;
   if (session.tokens.expiresAt > Date.now() + 15_000) {
     return { session, accessToken: session.tokens.accessToken };
   }
   const tokens = await refreshGmailTokens(session.tokens.refreshToken);
   const next = { ...session, tokens };
-  writeGmailSession(res, next);
+  await writeGmailSession(res, next);
+  return { session: next, accessToken: tokens.accessToken };
+}
+
+/**
+ * Cron-context accessor — no req/res (a scheduled invocation has no browser
+ * cookies), KV-only. Used by the Outreach send-due-emails cron handler.
+ */
+export async function getValidGmailAccessTokenForCron(): Promise<
+  { session: GmailSession; accessToken: string } | null
+> {
+  const session = await readGmailSessionKv();
+  if (!session?.tokens.refreshToken) return null;
+  if (session.tokens.expiresAt > Date.now() + 15_000) {
+    return { session, accessToken: session.tokens.accessToken };
+  }
+  const tokens = await refreshGmailTokens(session.tokens.refreshToken);
+  const next = { ...session, tokens };
+  await writeGmailSessionKv(next);
   return { session: next, accessToken: tokens.accessToken };
 }
