@@ -53,6 +53,13 @@ async function connectorFetch<T>(path: string, init: RequestInit = {}): Promise<
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/** Forces the connector to drop its warm Sage session and re-acquire a fresh one —
+ * needed after the Sage 50 desktop UI was opened on the connector host, since Sage
+ * is single-writer and the connector otherwise keeps hanging against a stale session. */
+export async function resetSageSession(): Promise<unknown> {
+  return connectorFetch('/session/reset', { method: 'POST' });
+}
+
 export async function pingSageConnector(): Promise<{ ok: boolean; detail: string }> {
   if (!sageConnectorConfigured()) {
     return { ok: false, detail: 'SAGE_CONNECTOR_URL not set — Sage write disabled, preview only' };

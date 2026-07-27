@@ -46,6 +46,7 @@ import {
   processSales,
   processSupply,
   recalculateSupply,
+  reconnectSage,
   resetSupplyAndSalesData,
   type SageWriteResult,
 } from '../lib/agentsApi';
@@ -178,6 +179,9 @@ export function AgentWorkforcePage() {
   /** Sage 50 / HubSpot / Acrylic LLM / ZoomInfo connect state is config-driven (env vars,
    * no real per-click toggle) — these buttons just flip the displayed dot locally. */
   const [fakeToggles, setFakeToggles] = useState<Record<string, boolean>>({});
+  const [sageReconnecting, setSageReconnecting] = useState(false);
+  const [sageReconnectMsg, setSageReconnectMsg] = useState<string | null>(null);
+  const [sageHelpModal, setSageHelpModal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -247,6 +251,22 @@ export function AgentWorkforcePage() {
       /* ignore */
     }
   }, []);
+
+  const retrySageConnection = async () => {
+    setSageReconnecting(true);
+    setSageReconnectMsg(null);
+    try {
+      const result = await reconnectSage();
+      setSageReconnectMsg(result.detail);
+      if (!result.ok) setSageHelpModal(true);
+      await refreshIntegrations();
+    } catch (e) {
+      setSageReconnectMsg(e instanceof Error ? e.message : String(e));
+      setSageHelpModal(true);
+    } finally {
+      setSageReconnecting(false);
+    }
+  };
 
   const loadHubspotLeads = useCallback(async () => {
     setBusy(true);
@@ -1355,6 +1375,23 @@ export function AgentWorkforcePage() {
             {sage.detail ? (
               <p className="mt-2 text-[11px] text-neutral-400">Sage 50: {sage.detail}</p>
             ) : null}
+            <button
+              type="button"
+              disabled={sageReconnecting}
+              onClick={() => void retrySageConnection()}
+              className="mt-1 inline-flex items-center gap-1 text-[11px] text-neutral-500 underline-offset-2 hover:underline disabled:opacity-50"
+              title="Resets the connector's Sage session and re-checks health — use after opening (and closing) the Sage 50 desktop UI on the connector host."
+            >
+              {sageReconnecting ? (
+                <Loader2 size={11} className="animate-spin" />
+              ) : (
+                <Zap size={11} />
+              )}
+              Retry Sage connection
+            </button>
+            {sageReconnectMsg ? (
+              <p className="mt-1 text-[11px] text-neutral-400">{sageReconnectMsg}</p>
+            ) : null}
             {llmEnrich.detail ? (
               <p className="mt-1 text-[11px] text-neutral-400">Acrylic LLM: {llmEnrich.detail}</p>
             ) : null}
@@ -1760,6 +1797,42 @@ export function AgentWorkforcePage() {
                 )}
               </div>
             ) : null}
+          </ModalShell>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sageHelpModal ? (
+          <ModalShell title="Sage 50 still not connected" onClose={() => setSageHelpModal(false)}>
+            <p className="mb-3 text-sm text-neutral-700">
+              {sageReconnectMsg || 'The connector is still unreachable after resetting its session.'}
+            </p>
+            <ol className="list-decimal space-y-3 pl-5 text-sm text-neutral-700">
+              <li>
+                RDP into the connector host and confirm the Sage 50 desktop app is fully
+                closed (not just minimized) — Sage 50 only allows one program to hold the
+                company file open at a time:
+                <pre className="mt-1 overflow-auto rounded-lg bg-neutral-50 p-2 text-[11px] text-neutral-800">
+                  {`Get-Process -Name Peachw -ErrorAction SilentlyContinue`}
+                </pre>
+                (if this prints anything, close Sage 50 fully, then re-run it until empty)
+              </li>
+              <li>
+                Restart the connector service so it drops its stuck session, in an
+                Administrator PowerShell on the same host:
+                <pre className="mt-1 overflow-auto rounded-lg bg-neutral-50 p-2 text-[11px] text-neutral-800">
+                  {`Stop-ScheduledTask -TaskName "SageConnectorApi"\nStart-ScheduledTask -TaskName "SageConnectorApi"`}
+                </pre>
+              </li>
+              <li>Come back here and click "Retry Sage connection" again.</li>
+            </ol>
+            <button
+              type="button"
+              onClick={() => setSageHelpModal(false)}
+              className="mt-4 rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
+            >
+              Got it
+            </button>
           </ModalShell>
         ) : null}
       </AnimatePresence>

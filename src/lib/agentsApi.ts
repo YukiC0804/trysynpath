@@ -27,6 +27,13 @@ export async function fetchAgentsStatus() {
   }>(res);
 }
 
+/** Resets the Sage connector's warm session and re-checks health — use after the Sage
+ * 50 desktop UI was opened (and closed again) on the connector host. */
+export async function reconnectSage() {
+  const res = await fetch('/api/agents/sage/reconnect', { method: 'POST' });
+  return parseJson<{ ok: boolean; detail: string }>(res);
+}
+
 export async function fetchHubspotLeads() {
   const res = await fetch('/api/agents/outreach/leads');
   return parseJson<{ ok: boolean; leads: OutreachLead[] }>(res);

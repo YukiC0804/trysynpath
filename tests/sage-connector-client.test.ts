@@ -6,6 +6,7 @@ import {
   createSalesOrder,
   findMissingSkuIds,
   pingSageConnector,
+  resetSageSession,
   sageConnectorConfigured,
   toPurchaseOrderPayload,
   toReceivePayload,
@@ -99,6 +100,19 @@ describe('sageConnectorConfigured / pingSageConnector', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:8080/health',
       expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+});
+
+describe('resetSageSession', () => {
+  it('POSTs to /session/reset', async () => {
+    process.env.SAGE_CONNECTOR_URL = 'http://127.0.0.1:8080';
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await resetSageSession();
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8080/session/reset',
+      expect.objectContaining({ method: 'POST' }),
     );
   });
 });

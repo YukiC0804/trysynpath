@@ -18,6 +18,7 @@ import {
   createSalesOrder,
   findMissingSkuIds,
   pingSageConnector,
+  resetSageSession,
   sageConnectorConfigured,
   upsertCustomer,
   upsertVendor,
@@ -414,6 +415,21 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     } catch (error) {
       return json(res, 502, { ok: false, error: `Sage connector write failed: ${errorMessage(error)}` });
     }
+  }
+
+  if (method === 'POST' && path[0] === 'sage' && path[1] === 'reconnect') {
+    if (!sageConnectorConfigured()) {
+      return json(res, 200, { ok: false, detail: 'SAGE_CONNECTOR_URL not set' });
+    }
+    try {
+      await resetSageSession();
+    } catch (error) {
+      // /session/reset failing is still informative (e.g. the service itself is down) —
+      // fall through to the health re-check rather than erroring out immediately.
+      console.warn('[sage] session reset failed', errorMessage(error));
+    }
+    const health = await pingSageConnector();
+    return json(res, 200, { ok: health.ok, detail: health.detail });
   }
 
   if (method === 'GET' && path[0] === 'outreach' && path[1] === 'leads') {
