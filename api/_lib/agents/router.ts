@@ -86,17 +86,18 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
   if (method === 'POST' && path[0] === 'supply' && path[1] === 'process') {
     try {
       const body = bodyOf(req);
-      const purchase = await parsePdf(decodePdf(body.purchasePdfBase64), {
-        hintRole: 'purchase_invoice',
-      });
+      // purchase/freight/duty parses are independent — run them concurrently
+      // instead of one after another (each is its own PDF-parse + LLM round trip).
+      const [purchase, freight, duty] = await Promise.all([
+        parsePdf(decodePdf(body.purchasePdfBase64), { hintRole: 'purchase_invoice' }),
+        body.freightPdfBase64
+          ? parsePdf(decodePdf(body.freightPdfBase64), { hintRole: 'freight' })
+          : Promise.resolve(null),
+        body.dutyPdfBase64
+          ? parsePdf(decodePdf(body.dutyPdfBase64), { hintRole: 'duty' })
+          : Promise.resolve(null),
+      ]);
       if (purchase.document_role === 'unknown') purchase.document_role = 'purchase_invoice';
-
-      const freight = body.freightPdfBase64
-        ? await parsePdf(decodePdf(body.freightPdfBase64), { hintRole: 'freight' })
-        : null;
-      const duty = body.dutyPdfBase64
-        ? await parsePdf(decodePdf(body.dutyPdfBase64), { hintRole: 'duty' })
-        : null;
 
       try {
         const plan = buildWritePlan(purchase, { freight, duty });

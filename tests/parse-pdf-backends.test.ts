@@ -166,4 +166,48 @@ describe('text+LLM extract (ai_erp parse_document_text)', () => {
     expect(doc.lines[0]!.unit_price).toBe(12.5);
     expect(doc.notes).toMatch(/text\+LLM/);
   });
+
+  it('retries a transient 5xx then succeeds', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const okBody = {
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                document_role: 'purchase_invoice',
+                includes_ddp: false,
+                lines: [],
+              }),
+            },
+          },
+        ],
+      }),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'server hiccup' })
+      .mockResolvedValueOnce(okBody);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const doc = await parseDocumentText(JM_OCR_TEXT, { hintRole: 'purchase_invoice' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(doc.document_role).toBe('purchase_invoice');
+  });
+
+  it('does not retry a 4xx (bad request/auth) failure', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => 'bad request',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(parseDocumentText(JM_OCR_TEXT, { hintRole: 'purchase_invoice' })).rejects.toThrow(
+      /HTTP 400/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

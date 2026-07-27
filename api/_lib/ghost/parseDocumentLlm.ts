@@ -151,25 +151,57 @@ function resolveVisionModel(): string {
   return process.env.GHOST_PO_VISION_MODEL || 'gpt-4o';
 }
 
+const CHAT_TIMEOUT_MS = 25_000;
+const CHAT_MAX_ATTEMPTS = 3;
+
 async function openaiChatCompletion(body: Record<string, unknown>): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
-  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => '');
-    throw new Error(`OpenAI chat failed HTTP ${resp.status}: ${detail.slice(0, 400)}`);
+
+  let lastError = '';
+  for (let attempt = 1; attempt <= CHAT_MAX_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
+    try {
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => '');
+        lastError = `HTTP ${resp.status}: ${detail.slice(0, 400)}`;
+        // Only retry transient server-side failures — a 4xx (bad request, auth) won't fix itself.
+        if (resp.status < 500 || attempt === CHAT_MAX_ATTEMPTS) {
+          throw new Error(`OpenAI chat failed ${lastError}`);
+        }
+      } else {
+        const json = (await resp.json()) as {
+          choices?: Array<{ message?: { content?: string | null } }>;
+        };
+        return json.choices?.[0]?.message?.content || '';
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('OpenAI chat failed')) throw error;
+      lastError =
+        error instanceof Error && error.name === 'AbortError'
+          ? `timed out after ${CHAT_TIMEOUT_MS}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      if (attempt === CHAT_MAX_ATTEMPTS) {
+        throw new Error(`OpenAI chat failed after ${CHAT_MAX_ATTEMPTS} attempts: ${lastError}`);
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise((r) => setTimeout(r, 500 * attempt));
   }
-  const json = (await resp.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>;
-  };
-  return json.choices?.[0]?.message?.content || '';
+  throw new Error(`OpenAI chat failed after ${CHAT_MAX_ATTEMPTS} attempts: ${lastError}`);
 }
 
 function parseLlmJsonContent(content: string): Record<string, unknown> {
