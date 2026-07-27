@@ -53,22 +53,39 @@ export function matchAgentFromPrompt(prompt: string): AgentId | null {
   return null;
 }
 
-export const FAKE_INTELLIGENCE = {
-  marginPct: 28.4,
-  spendMtd: 184_200,
-  savingsOpps: 12_400,
-  pipeline: 2.1e6,
-  anomalies: [
-    { title: 'Off-contract acrylic buy', detail: 'GOK 18mm · +14% vs contract', severity: 'high' },
-    { title: 'Freight spike', detail: 'Carrier invoice · $2.4k vs $1.1k avg', severity: 'med' },
-    { title: 'Margin dip — Spandex', detail: 'SO GA18 · margin 11% vs 24% target', severity: 'med' },
-  ],
-  spendBySupplier: [
-    { name: 'Gokai', amount: 62_000 },
-    { name: 'Spandex freight', amount: 18_400 },
-    { name: 'Other', amount: 41_200 },
-  ],
-};
+/** Placeholder — no real email tracking/CRM data source wired up yet. */
+export const FAKE_SALES_PIPELINE = [
+  {
+    rep: 'Yuki Chu',
+    emailsSent: 142,
+    deliveryRatePct: 98.6,
+    openRatePct: 61.3,
+    clickThroughRatePct: 18.9,
+    responseRatePct: 12.7,
+    meetingConversionPct: 5.6,
+    hitRatePct: 3.5,
+  },
+  {
+    rep: 'Russ Warner',
+    emailsSent: 96,
+    deliveryRatePct: 97.9,
+    openRatePct: 54.2,
+    clickThroughRatePct: 14.1,
+    responseRatePct: 9.4,
+    meetingConversionPct: 4.2,
+    hitRatePct: 2.1,
+  },
+  {
+    rep: 'Cesar Orozco',
+    emailsSent: 58,
+    deliveryRatePct: 99.1,
+    openRatePct: 68.7,
+    clickThroughRatePct: 22.4,
+    responseRatePct: 16.0,
+    meetingConversionPct: 7.1,
+    hitRatePct: 4.8,
+  },
+];
 
 export const FAKE_SOURCING = {
   item: 'Acrylic sheet 4mm Clear 4x8',

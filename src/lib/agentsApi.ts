@@ -5,6 +5,7 @@ import type {
   PurchaseWritePlan,
   SalesOrderPlan,
   DocumentExtract,
+  PnlSummary,
 } from '../../shared/ghost';
 import type { EmailStep, OutreachLead, OutreachSequence } from '../../shared/outreach';
 
@@ -207,4 +208,9 @@ export async function fetchSalesFromEmail() {
     plan: SalesOrderPlan;
     emailSource?: { messageId: string; subject: string; fileName: string };
   }>(res);
+}
+
+export async function fetchPnl() {
+  const res = await fetch('/api/agents/intelligence/pnl');
+  return parseJson<{ ok: boolean; pnl: PnlSummary }>(res);
 }

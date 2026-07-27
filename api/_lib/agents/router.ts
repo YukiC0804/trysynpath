@@ -10,6 +10,7 @@ import { upsertSkuCatalogEntries } from '../ghost/skuCatalog';
 import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder';
 import { upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
+import { computePnlSummary } from '../ghost/pnl';
 import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
 import { getValidGmailAccessToken } from '../gmail/auth';
 import { fetchLatestSynpathPricingPoPdfs, fetchLatestSynpathPricingSoPdf } from '../gmail/pricingEmailSource';
@@ -353,6 +354,15 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     try {
       const sequences = await listOutreachSequences();
       return json(res, 200, { ok: true, sequences });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'GET' && path[0] === 'intelligence' && path[1] === 'pnl') {
+    try {
+      const pnl = await computePnlSummary();
+      return json(res, 200, { ok: true, pnl });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }

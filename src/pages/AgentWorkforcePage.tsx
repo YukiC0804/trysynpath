@@ -16,13 +16,14 @@ import type {
   AcrylicSkuLine,
   CfoAuditRecord,
   DocumentExtract,
+  PnlSummary,
   PurchaseWritePlan,
   SalesOrderPlan,
 } from '../../shared/ghost';
 import type { EmailStep, OutreachLead, OutreachSequence } from '../../shared/outreach';
 import {
   AGENTS,
-  FAKE_INTELLIGENCE,
+  FAKE_SALES_PIPELINE,
   FAKE_SOURCING,
   matchAgentFromPrompt,
   type AgentId,
@@ -37,6 +38,7 @@ import {
   fetchGmailStatus,
   fetchHubspotLeads,
   fetchOutreachSequences,
+  fetchPnl,
   fetchSalesFromEmail,
   fetchSupplyFromEmail,
   fileToBase64,
@@ -166,6 +168,9 @@ export function AgentWorkforcePage() {
   ]);
   const [sequences, setSequences] = useState<OutreachSequence[]>([]);
 
+  // Intelligence
+  const [pnl, setPnl] = useState<PnlSummary | null>(null);
+
   const refreshIntegrations = useCallback(async () => {
     try {
       const [agentsStatus, gmailStatus] = await Promise.all([
@@ -220,6 +225,15 @@ export function AgentWorkforcePage() {
     }
   }, []);
 
+  const loadPnl = useCallback(async () => {
+    try {
+      const result = await fetchPnl();
+      setPnl(result.pnl);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     void refreshIntegrations();
     const params = new URLSearchParams(window.location.search);
@@ -232,7 +246,8 @@ export function AgentWorkforcePage() {
 
   useEffect(() => {
     if (agent === 'outreach') void loadSequences();
-  }, [agent, loadSequences]);
+    if (agent === 'intelligence') void loadPnl();
+  }, [agent, loadSequences, loadPnl]);
 
   const openFromChat = () => {
     const matched = matchAgentFromPrompt(chat) ?? agent;
@@ -563,12 +578,18 @@ export function AgentWorkforcePage() {
     }
   };
 
-  const runIntelligence = () => {
-    activity.push(
-      'Intelligence',
-      `opened exec dashboard · ${FAKE_INTELLIGENCE.anomalies.length} anomalies highlighted`,
-      'viewed',
-    );
+  const runIntelligence = async () => {
+    try {
+      const result = await fetchPnl();
+      setPnl(result.pnl);
+      activity.push(
+        'Intelligence',
+        `refreshed P&L · revenue ${money(result.pnl.total_revenue)} · ${result.pnl.sku_margins.length} SKU margins`,
+        'viewed',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const runSourcing = () => {
@@ -965,55 +986,135 @@ export function AgentWorkforcePage() {
             ) : null}
 
             {agent === 'intelligence' ? (
-              <div className="space-y-4">
-                <button
-                  type="button"
-                  onClick={runIntelligence}
-                  className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white"
-                >
-                  <Sparkles size={16} /> Open executive dashboard
-                </button>
-                <div className="grid gap-3 sm:grid-cols-4">
-                  {[
-                    ['Margin', `${FAKE_INTELLIGENCE.marginPct}%`],
-                    ['Spend MTD', money(FAKE_INTELLIGENCE.spendMtd)],
-                    ['Savings ops', money(FAKE_INTELLIGENCE.savingsOpps)],
-                    ['Pipeline', money(FAKE_INTELLIGENCE.pipeline)],
-                  ].map(([k, v]) => (
-                    <div key={k} className="rounded-xl bg-neutral-50 px-3 py-3">
-                      <p className="text-[11px] text-neutral-500">{k}</p>
-                      <p className="mt-1 font-display text-lg font-semibold">{v}</p>
+              <div className="space-y-8">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-display text-base font-semibold">P&L</h4>
+                    <button
+                      type="button"
+                      onClick={() => void runIntelligence()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white"
+                    >
+                      <Sparkles size={16} /> Refresh P&L
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl bg-neutral-50 px-3 py-3">
+                      <p className="text-[11px] text-neutral-500">Total revenue</p>
+                      <p className="mt-1 font-display text-lg font-semibold">
+                        {money(pnl?.total_revenue ?? 0)}
+                      </p>
                     </div>
-                  ))}
+                    <div className="rounded-xl bg-neutral-50 px-3 py-3">
+                      <p className="text-[11px] text-neutral-500">Total land cost</p>
+                      <p className="mt-1 font-display text-lg font-semibold">
+                        {money(pnl?.total_land_cost ?? 0)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-neutral-50 px-3 py-3">
+                      <p className="text-[11px] text-neutral-500">Total cost</p>
+                      <p className="mt-1 font-display text-lg font-semibold">
+                        {money(pnl?.total_cost ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                      Top 3 customers by amount
+                    </p>
+                    {pnl?.top_customers.length ? (
+                      <ul className="space-y-1 text-sm">
+                        {pnl.top_customers.map((c) => (
+                          <li key={c.customer_name} className="flex justify-between">
+                            <span>{c.customer_name}</span>
+                            <span className="font-medium">{money(c.total_amount)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-neutral-400">No Sales Order data yet.</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                      Margin by SKU (sales price vs. landed cost, qty-weighted)
+                    </p>
+                    {pnl?.sku_margins.length ? (
+                      <div className="overflow-x-auto rounded-xl border border-neutral-200">
+                        <table className="min-w-full text-left text-sm">
+                          <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                            <tr>
+                              <th className="px-3 py-2">SKU</th>
+                              <th className="px-3 py-2 text-right">Qty sold</th>
+                              <th className="px-3 py-2 text-right">Sales price</th>
+                              <th className="px-3 py-2 text-right">Landed cost</th>
+                              <th className="px-3 py-2 text-right">Margin</th>
+                              <th className="px-3 py-2 text-right">Margin %</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-100">
+                            {pnl.sku_margins.map((m) => (
+                              <tr key={m.sku_id}>
+                                <td className="px-3 py-2">
+                                  <span className="font-mono text-xs">{m.sku_id}</span>
+                                  <span className="block text-neutral-500">{m.description}</span>
+                                </td>
+                                <td className="px-3 py-2 text-right">{m.quantity_sold}</td>
+                                <td className="px-3 py-2 text-right">{money(m.weighted_sales_price)}</td>
+                                <td className="px-3 py-2 text-right">{money(m.weighted_cost_price)}</td>
+                                <td className="px-3 py-2 text-right">{money(m.margin_per_unit)}</td>
+                                <td className="px-3 py-2 text-right">{m.margin_pct.toFixed(1)}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-neutral-400">
+                        No SKU has both Supply cost and Sales Order data yet.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                    Anomalies
-                  </p>
-                  <ul className="space-y-2">
-                    {FAKE_INTELLIGENCE.anomalies.map((a) => (
-                      <li
-                        key={a.title}
-                        className="rounded-xl border border-neutral-200 px-3 py-2 text-sm"
-                      >
-                        <span className="font-medium">{a.title}</span>
-                        <span className="text-neutral-500"> — {a.detail}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500">
-                    Spend by supplier
-                  </p>
-                  <ul className="space-y-1 text-sm">
-                    {FAKE_INTELLIGENCE.spendBySupplier.map((s) => (
-                      <li key={s.name} className="flex justify-between">
-                        <span>{s.name}</span>
-                        <span className="font-medium">{money(s.amount)}</span>
-                      </li>
-                    ))}
-                  </ul>
+
+                <div className="space-y-3 border-t border-neutral-200 pt-6">
+                  <div>
+                    <h4 className="font-display text-base font-semibold">Sales Pipeline</h4>
+                    <p className="text-xs text-neutral-400">Placeholder numbers — not wired to real data yet.</p>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-neutral-200">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                        <tr>
+                          <th className="px-3 py-2">Rep</th>
+                          <th className="px-3 py-2 text-right">Sent</th>
+                          <th className="px-3 py-2 text-right">Delivery</th>
+                          <th className="px-3 py-2 text-right">Open</th>
+                          <th className="px-3 py-2 text-right">Click-through</th>
+                          <th className="px-3 py-2 text-right">Response</th>
+                          <th className="px-3 py-2 text-right">Meeting conv.</th>
+                          <th className="px-3 py-2 text-right">Hit rate</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100">
+                        {FAKE_SALES_PIPELINE.map((r) => (
+                          <tr key={r.rep}>
+                            <td className="px-3 py-2 font-medium">{r.rep}</td>
+                            <td className="px-3 py-2 text-right">{r.emailsSent}</td>
+                            <td className="px-3 py-2 text-right">{r.deliveryRatePct.toFixed(1)}%</td>
+                            <td className="px-3 py-2 text-right">{r.openRatePct.toFixed(1)}%</td>
+                            <td className="px-3 py-2 text-right">{r.clickThroughRatePct.toFixed(1)}%</td>
+                            <td className="px-3 py-2 text-right">{r.responseRatePct.toFixed(1)}%</td>
+                            <td className="px-3 py-2 text-right">{r.meetingConversionPct.toFixed(1)}%</td>
+                            <td className="px-3 py-2 text-right">{r.hitRatePct.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             ) : null}

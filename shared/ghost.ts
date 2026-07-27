@@ -201,3 +201,28 @@ export interface CfoAuditRecord {
   proposedSagePayload: PurchaseWritePlan;
   status: 'approved';
 }
+
+/** Per-sku margin: sales price vs. landed cost, quantity-weighted when either side has multiple observations. */
+export interface SkuMarginRow {
+  sku_id: string;
+  description: string;
+  quantity_sold: number;
+  weighted_sales_price: number;
+  /** Weighted-average landed_unit_cost (raw_unit_price + land_cost_per_sheet) across SKU catalog entries. */
+  weighted_cost_price: number;
+  margin_per_unit: number;
+  margin_pct: number;
+}
+
+export interface TopCustomer {
+  customer_name: string;
+  total_amount: number;
+}
+
+export interface PnlSummary {
+  total_revenue: number;
+  total_land_cost: number;
+  total_cost: number;
+  sku_margins: SkuMarginRow[];
+  top_customers: TopCustomer[];
+}
