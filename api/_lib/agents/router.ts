@@ -7,7 +7,8 @@ import { parsePdf, resolveParseBackend } from '../ghost/parsePdf';
 import { buildSkuCatalogEntries, buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
 import { reapplyLandedCost } from '../ghost/landedCost';
 import { upsertSkuCatalogEntries } from '../ghost/skuCatalog';
-import { buildSalesOrderPlan } from '../ghost/salesOrder';
+import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder';
+import { upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
 import type {
   AcrylicSkuLine,
@@ -16,6 +17,7 @@ import type {
   ImportCostMethod,
   InvoiceLineExtract,
   PurchaseWritePlan,
+  SalesOrderPlan,
 } from '../../../shared/ghost';
 
 function pathSegments(req: VercelRequest): string[] {
@@ -44,6 +46,15 @@ async function saveToSkuCatalog(plan: PurchaseWritePlan): Promise<void> {
     await upsertSkuCatalogEntries(buildSkuCatalogEntries(plan));
   } catch (error) {
     console.warn('[sku-catalog] upsert failed', error instanceof Error ? error.message : error);
+  }
+}
+
+async function saveToSalesOrderStore(plan: SalesOrderPlan): Promise<void> {
+  try {
+    const record = buildSalesOrderRecord(plan);
+    if (record) await upsertSalesOrderRecord(record);
+  } catch (error) {
+    console.warn('[sales-order-store] upsert failed', error instanceof Error ? error.message : error);
   }
 }
 
@@ -222,6 +233,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         ? body.recentKeys.map(String)
         : [];
       const plan = await buildSalesOrderPlan(doc, { recentKeys });
+      await saveToSalesOrderStore(plan);
       return json(res, 200, { ok: true, document: doc, plan });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });

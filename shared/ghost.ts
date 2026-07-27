@@ -172,6 +172,25 @@ export interface SalesOrderPlan {
   sageWrite: 'preview_only';
 }
 
+export interface SalesOrderPriceLine {
+  sku_id: string;
+  description: string;
+  quantity: number;
+  /** Rate as printed on the customer invoice — read directly, never derived. */
+  sales_price: number;
+  amount: number;
+}
+
+/** Persisted record for one customer invoice — keyed by invoice_number, full overwrite on reprocess. */
+export interface SalesOrderRecord {
+  customer_name: string;
+  invoice_number: string;
+  /** Invoice date as printed on the source document, mm/dd/yyyy. */
+  date: string;
+  currency: string;
+  lines: SalesOrderPriceLine[];
+}
+
 export interface ActivityEvent {
   id: string;
   agent: string;

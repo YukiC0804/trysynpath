@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { buildSalesOrderPlan } from '../api/_lib/ghost/salesOrder';
+import { buildSalesOrderPlan, buildSalesOrderRecord } from '../api/_lib/ghost/salesOrder';
 import { __resetMemorySkuCatalog, upsertSkuCatalogEntries } from '../api/_lib/ghost/skuCatalog';
 import type { DocumentExtract, SkuCatalogEntry } from '../shared/ghost';
 
@@ -123,5 +123,28 @@ describe('Sales Order plan', () => {
   it('flags no_catalog_match when no catalog entry fits the customer + thickness', async () => {
     const plan = await buildSalesOrderPlan(invoice6866());
     expect(plan.review_reasons).toContain('no_catalog_match');
+  });
+
+  it('builds a SalesOrderRecord with mm/dd/yyyy date and no freight lines', async () => {
+    const plan = await buildSalesOrderPlan(invoice6866());
+    const record = buildSalesOrderRecord(plan)!;
+    expect(record.invoice_number).toBe('6866');
+    expect(record.customer_name).toBe('CN Ledge');
+    expect(record.date).toBe('01/08/2026');
+    expect(record.lines).toHaveLength(2);
+    expect(record.lines.find((l) => l.quantity === 36)).toEqual({
+      sku_id: expect.any(String),
+      description: expect.any(String),
+      quantity: 36,
+      sales_price: 220,
+      amount: 7920,
+    });
+  });
+
+  it('returns null SalesOrderRecord when there is no invoice_number', async () => {
+    const doc = invoice6866();
+    doc.invoice_number = null;
+    const plan = await buildSalesOrderPlan(doc);
+    expect(buildSalesOrderRecord(plan)).toBeNull();
   });
 });

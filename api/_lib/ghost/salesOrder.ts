@@ -2,9 +2,11 @@ import type {
   DocumentExtract,
   SalesOrderLine,
   SalesOrderPlan,
+  SalesOrderRecord,
   SalesReviewReason,
 } from '../../../shared/ghost';
 import { parseThicknessSize } from './mapToExtract';
+import { toMmDdYyyy } from './orchestrator';
 import { findSkuCatalogByCustomerAndThickness } from './skuCatalog';
 
 /** Demo fixture catalog for Sales Order review rules not yet backed by real data. */
@@ -146,5 +148,25 @@ export async function buildSalesOrderPlan(
     needs_review: uniqueReasons.length > 0,
     review_reasons: uniqueReasons,
     sageWrite: 'preview_only',
+  };
+}
+
+/** SalesOrderRecord to persist for a processed Sales Order plan (skipped when there's no invoice_number). */
+export function buildSalesOrderRecord(plan: SalesOrderPlan): SalesOrderRecord | null {
+  if (!plan.invoice_number) return null;
+  return {
+    customer_name: plan.customer,
+    invoice_number: plan.invoice_number,
+    date: plan.invoice_date ? toMmDdYyyy(plan.invoice_date) : '',
+    currency: plan.currency,
+    lines: plan.lines
+      .filter((l) => l.line_kind !== 'freight')
+      .map((l) => ({
+        sku_id: l.sku,
+        description: l.description,
+        quantity: l.quantity,
+        sales_price: l.unit_price,
+        amount: l.amount,
+      })),
   };
 }

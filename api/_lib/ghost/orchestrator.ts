@@ -2,7 +2,7 @@ import type { DocumentExtract, PurchaseWritePlan, SkuCatalogEntry } from '../../
 import { allocateLandedCost } from './landedCost';
 import { acrylicLinesNeedingDims, completeAcrylicLines } from './mapToExtract';
 
-function toMmDdYyyy(isoDate: string): string {
+export function toMmDdYyyy(isoDate: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);
   return m ? `${m[2]}/${m[3]}/${m[1]}` : isoDate;
 }
