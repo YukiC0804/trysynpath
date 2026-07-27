@@ -1,6 +1,6 @@
 /** Ghost Acrylics purchase → landed cost domain types (ported from ai_erp models.py). */
 
-export type ImportCostMethod = 'ddp_on_invoice' | 'freight_and_duty' | 'packing_pool_per_customer' | 'none';
+export type ImportCostMethod = 'ddp_on_invoice' | 'freight_and_duty' | 'none';
 
 export type DocumentRole = 'purchase_invoice' | 'freight' | 'duty' | 'unknown';
 

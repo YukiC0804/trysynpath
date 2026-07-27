@@ -23,37 +23,6 @@ function acrylicProductCost(lines: InvoiceLineExtract[]): number {
   return total;
 }
 
-function lineAmount(ln: InvoiceLineExtract): number {
-  return ln.amount != null ? Number(ln.amount) : Number(ln.quantity) * Number(ln.unit_price);
-}
-
-function normalizeCustomerKey(name: string): string {
-  return name.trim().toUpperCase().replace(/\s+/g, ' ');
-}
-
-/** Groups acrylic lines by customer_name (Gokai-style multi-customer invoices). */
-function groupByCustomer(lines: InvoiceLineExtract[]): Map<string, InvoiceLineExtract[]> {
-  const groups = new Map<string, InvoiceLineExtract[]>();
-  for (const ln of lines) {
-    const key = ln.customer_name?.trim() ? normalizeCustomerKey(ln.customer_name) : 'UNASSIGNED';
-    const group = groups.get(key);
-    if (group) group.push(ln);
-    else groups.set(key, [ln]);
-  }
-  return groups;
-}
-
-/** Sum of packing/pallet line amounts earmarked (via customer_name) for one customer. */
-function customerPackingPool(lines: InvoiceLineExtract[], customerKey: string): number {
-  let total = 0;
-  for (const ln of lines) {
-    if (!ln.is_packing_or_misc) continue;
-    const key = ln.customer_name?.trim() ? normalizeCustomerKey(ln.customer_name) : 'UNASSIGNED';
-    if (key === customerKey) total += lineAmount(ln);
-  }
-  return total;
-}
-
 /**
  * Same sku_id can come from multiple source lines within one processing pass
  * (different customers/pallets ordering the identical spec at different
@@ -192,68 +161,28 @@ export function allocateLandedCost(
   const excluded = purchase.lines.filter((ln) => !acrylicExtracts.includes(ln));
   const productCost = acrylicProductCost(acrylicExtracts);
 
-  const hasCustomerGrouping = acrylicExtracts.some((ln) => Boolean(ln.customer_name?.trim()));
+  // Export pallet / packing line amounts are never used as a cost pool —
+  // landed cost is freight + duty (or DDP) only.
+  const { method, importPool, meta } = resolveImportPool(purchase, opts.freight, opts.duty);
 
-  let rawLines: AcrylicSkuLine[];
-  let method: ImportCostMethod;
-  let importPool: number;
+  const rawLines = acrylicExtracts.map((ln) =>
+    acrylicLineFromExtract(ln, opts.vendorId, opts.vendorName),
+  );
   let totalWeight = 0;
-  let meta: {
-    ddp_amount: number | null;
-    freight_amount: number | null;
-    duty_amount: number | null;
-    invoice_total: number | null | undefined;
-  };
-
-  if (hasCustomerGrouping) {
-    // Gokai-style consolidated invoice: each end customer's own Export
-    // pallet/packing lines fund that customer's own import pool, allocated
-    // only across that customer's own acrylic lines — not blended with
-    // other customers riding the same container.
-    method = 'packing_pool_per_customer';
-    meta = { ddp_amount: null, freight_amount: null, duty_amount: null, invoice_total: purchase.invoice_total };
-    importPool = 0;
-    rawLines = [];
-    for (const [customerKey, groupLines] of groupByCustomer(acrylicExtracts)) {
-      const pool = customerPackingPool(purchase.lines, customerKey);
-      const groupSkuLines = groupLines.map((ln) =>
-        acrylicLineFromExtract(ln, opts.vendorId, opts.vendorName),
-      );
-      let groupWeight = 0;
-      for (const skuLine of groupSkuLines) {
-        skuLine.sheet_weight_kg = sheetWeightKg(skuLine.thickness_mm);
-        groupWeight += skuLine.sheet_weight_kg * skuLine.quantity;
-      }
-      const perKg = groupWeight > 0 ? pool / groupWeight : 0;
-      for (const skuLine of groupSkuLines) {
-        const land = roundTo(skuLine.sheet_weight_kg * perKg, skuLine.price_decimals);
-        skuLine.land_cost_per_sheet = land;
-        skuLine.landed_unit_cost = roundTo(skuLine.raw_unit_price + land, skuLine.price_decimals);
-        skuLine.amount = skuLine.quantity * skuLine.landed_unit_cost;
-      }
-      rawLines.push(...groupSkuLines);
-      importPool += pool;
-      totalWeight += groupWeight;
-    }
-  } else {
-    const resolved = resolveImportPool(purchase, opts.freight, opts.duty);
-    method = resolved.method;
-    importPool = resolved.importPool;
-    meta = resolved.meta;
-    rawLines = acrylicExtracts.map((ln) => acrylicLineFromExtract(ln, opts.vendorId, opts.vendorName));
-    for (const skuLine of rawLines) {
-      skuLine.sheet_weight_kg = sheetWeightKg(skuLine.thickness_mm);
-      totalWeight += skuLine.sheet_weight_kg * skuLine.quantity;
-    }
-    const perKg = totalWeight > 0 ? importPool / totalWeight : 0;
-    for (const skuLine of rawLines) {
-      const land = roundTo(skuLine.sheet_weight_kg * perKg, skuLine.price_decimals);
-      skuLine.land_cost_per_sheet = land;
-      skuLine.landed_unit_cost = roundTo(skuLine.raw_unit_price + land, skuLine.price_decimals);
-      skuLine.amount = skuLine.quantity * skuLine.landed_unit_cost;
-    }
+  for (const skuLine of rawLines) {
+    skuLine.sheet_weight_kg = sheetWeightKg(skuLine.thickness_mm);
+    totalWeight += skuLine.sheet_weight_kg * skuLine.quantity;
+  }
+  const perKg = totalWeight > 0 ? importPool / totalWeight : 0;
+  for (const skuLine of rawLines) {
+    const land = roundTo(skuLine.sheet_weight_kg * perKg, skuLine.price_decimals);
+    skuLine.land_cost_per_sheet = land;
+    skuLine.landed_unit_cost = roundTo(skuLine.raw_unit_price + land, skuLine.price_decimals);
+    skuLine.amount = skuLine.quantity * skuLine.landed_unit_cost;
   }
 
+  // Same sku_id can still appear more than once (different customers ordering
+  // the identical spec within one invoice) — merge into one catalog-ready row.
   const lines = mergeBySkuId(rawLines);
 
   return {
@@ -263,7 +192,7 @@ export function allocateLandedCost(
       import_pool: importPool,
       total_acrylic_product_cost: productCost,
       total_weight_kg: totalWeight,
-      import_cost_per_kg: totalWeight > 0 ? importPool / totalWeight : 0,
+      import_cost_per_kg: perKg,
       invoice_total: meta.invoice_total ?? null,
       ddp_amount: meta.ddp_amount,
       freight_amount: meta.freight_amount,

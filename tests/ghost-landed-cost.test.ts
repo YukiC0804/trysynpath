@@ -68,7 +68,7 @@ describe('ghost landed cost (ai_erp port)', () => {
     expect(lines[0]!.landed_unit_cost).toBeGreaterThan(40);
   });
 
-  it('pools packing cost per customer and merges same sku_id across customers', () => {
+  it('ignores Export pallet/packing amounts entirely and merges same sku_id across customers', () => {
     const doc = purchase({
       includes_ddp: false,
       invoice_total: null,
@@ -130,19 +130,18 @@ describe('ghost landed cost (ai_erp port)', () => {
 
     const { lines, breakdown } = allocateLandedCost(doc, { vendorId: 'GOK', vendorName: 'Gokai' });
 
-    expect(breakdown.method).toBe('packing_pool_per_customer');
-    expect(breakdown.import_pool).toBe(148); // 108 (CN LEDGE pallet) + 40 (TROPHY DEPOT pallet)
-    expect(lines).toHaveLength(1); // same spec → same sku_id → merged
+    // No freight/duty/DDP anywhere on this doc → pallet $ is ignored, not pooled.
+    expect(breakdown.method).toBe('none');
+    expect(breakdown.import_pool).toBe(0);
+    expect(lines).toHaveLength(1); // same spec → same sku_id → merged regardless of pool
 
     const merged = lines[0]!;
     expect(merged.sku_id).toBe('GHOGOKACRCLR18mm4x8');
     expect(merged.quantity).toBe(112); // 72 + 40
-    // CN LEDGE alone: land = pool/qty = 108/72 = 1.5; TROPHY DEPOT alone: 40/40 = 1.0
-    // merged land = (72*1.5 + 40*1.0)/112
-    expect(merged.land_cost_per_sheet).toBeCloseTo(1.321, 3);
+    expect(merged.land_cost_per_sheet).toBe(0);
     // merged raw_unit_price = (72*118.53 + 40*120.69)/112
     expect(merged.raw_unit_price).toBeCloseTo(119.301, 3);
-    expect(merged.landed_unit_cost).toBeCloseTo(120.622, 3);
+    expect(merged.landed_unit_cost).toBeCloseTo(119.301, 3);
     expect(merged.customer_names).toEqual(['CN LEDGE', 'TROPHY DEPOT']);
   });
 
