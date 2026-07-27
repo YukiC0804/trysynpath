@@ -12,7 +12,7 @@ import { upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
 import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
 import { getValidGmailAccessToken } from '../gmail/auth';
-import { fetchLatestSynpathPricingPoPdfs } from '../gmail/pricingPoSource';
+import { fetchLatestSynpathPricingPoPdfs, fetchLatestSynpathPricingSoPdf } from '../gmail/pricingEmailSource';
 import { computeStepSchedule, todayIso } from '../outreach/scheduler';
 import { sendSequenceStep } from '../outreach/sender';
 import { listOutreachSequences, upsertOutreachSequence } from '../outreach/store';
@@ -63,6 +63,15 @@ async function saveToSalesOrderStore(plan: SalesOrderPlan): Promise<void> {
   } catch (error) {
     console.warn('[sales-order-store] upsert failed', error instanceof Error ? error.message : error);
   }
+}
+
+/** Shared by the upload-based and email-based Sales Order entry points. */
+async function processSalesPdf(pdf: Buffer): Promise<{ ok: true; document: DocumentExtract; plan: SalesOrderPlan }> {
+  // Sales PDFs often look like invoices; keep extracted customer/lines.
+  const doc = await parsePdf(pdf, { hintRole: 'purchase_invoice' });
+  const plan = await buildSalesOrderPlan(doc);
+  await saveToSalesOrderStore(plan);
+  return { ok: true, document: doc, plan };
 }
 
 function decodePdf(base64: unknown): Buffer {
@@ -270,13 +279,24 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
   if (method === 'POST' && path[0] === 'sales' && path[1] === 'process') {
     try {
       const body = bodyOf(req);
-      const doc = await parsePdf(decodePdf(body.pdfBase64), {
-        hintRole: 'purchase_invoice',
+      const result = await processSalesPdf(decodePdf(body.pdfBase64));
+      return json(res, 200, result);
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if ((method === 'GET' || method === 'POST') && path[0] === 'sales' && path[1] === 'from-email') {
+    try {
+      const auth = await getValidGmailAccessToken(req, res);
+      if (!auth) return json(res, 401, { ok: false, error: 'Gmail is not connected' });
+
+      const found = await fetchLatestSynpathPricingSoPdf(auth.accessToken);
+      const result = await processSalesPdf(found.content);
+      return json(res, 200, {
+        ...result,
+        emailSource: { messageId: found.messageId, subject: found.subject, fileName: found.fileName },
       });
-      // Sales PDFs often look like invoices; keep extracted customer/lines.
-      const plan = await buildSalesOrderPlan(doc);
-      await saveToSalesOrderStore(plan);
-      return json(res, 200, { ok: true, document: doc, plan });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }

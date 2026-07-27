@@ -37,6 +37,7 @@ import {
   fetchGmailStatus,
   fetchHubspotLeads,
   fetchOutreachSequences,
+  fetchSalesFromEmail,
   fetchSupplyFromEmail,
   fileToBase64,
   processSales,
@@ -482,6 +483,28 @@ export function AgentWorkforcePage() {
     }
   };
 
+  const runSalesFromEmail = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await fetchSalesFromEmail();
+      setSalesPlan(result.plan);
+      setSalesModal(true);
+      const src = result.emailSource;
+      activity.push(
+        'Sales Order',
+        `${result.plan.customer} · from email "${src?.subject ?? ''}" (${src?.fileName ?? 'attachment'}) · ${result.plan.lines.length} lines · ${
+          result.plan.needs_review ? 'review' : 'preview'
+        }`,
+        result.plan.needs_review ? 'review' : 'ready',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const updateOutreachStep = (index: number, patch: Partial<EmailStep>) => {
     setOutreachSteps((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   };
@@ -706,6 +729,28 @@ export function AgentWorkforcePage() {
                 >
                   <Upload size={16} /> Process Sales Order
                 </button>
+
+                <div className="flex items-center gap-3 text-xs text-neutral-400">
+                  <div className="h-px flex-1 bg-neutral-200" />
+                  or
+                  <div className="h-px flex-1 bg-neutral-200" />
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    disabled={busy || !gmail.connected}
+                    onClick={() => void runSalesFromEmail()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-800 disabled:opacity-50"
+                  >
+                    <Mail size={16} /> Fetch latest SO from email
+                  </button>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Pulls the PDF from the newest email labeled "synpath pricing" with "SO" in the
+                    subject.
+                    {gmail.connected ? null : ' Connect Gmail on the Outreach tab first.'}
+                  </p>
+                </div>
               </div>
             ) : null}
 

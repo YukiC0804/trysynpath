@@ -198,3 +198,13 @@ export async function processSales(input: { pdfBase64: string }) {
     plan: SalesOrderPlan;
   }>(res);
 }
+
+export async function fetchSalesFromEmail() {
+  const res = await fetch('/api/agents/sales/from-email');
+  return parseJson<{
+    ok: boolean;
+    document: DocumentExtract;
+    plan: SalesOrderPlan;
+    emailSource?: { messageId: string; subject: string; fileName: string };
+  }>(res);
+}
