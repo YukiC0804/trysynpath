@@ -32,6 +32,7 @@ import { useSessionActivity } from '../hooks/useSessionActivity';
 import {
   approveSupply,
   allocateSupply,
+  confirmSales,
   createOutreachSequence,
   disconnectGmail,
   fetchAgentsStatus,
@@ -46,6 +47,7 @@ import {
   processSupply,
   recalculateSupply,
   resetSupplyAndSalesData,
+  type SageWriteResult,
 } from '../lib/agentsApi';
 
 function numInputValue(n: number): string {
@@ -132,6 +134,7 @@ export function AgentWorkforcePage() {
   const [llmEnrich, setLlmEnrich] = useState({ connected: false, detail: '' });
   const [gmail, setGmail] = useState({ connected: false, email: '' });
   const [hubspot, setHubspot] = useState({ connected: false, detail: '' });
+  const [sage, setSage] = useState({ connected: false, detail: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,11 +153,14 @@ export function AgentWorkforcePage() {
   >({});
   const [poolEdit, setPoolEdit] = useState('');
   const [audit, setAudit] = useState<CfoAuditRecord | null>(null);
+  const [sageResult, setSageResult] = useState<SageWriteResult | null>(null);
 
   // Sales
   const [salesFile, setSalesFile] = useState<File | null>(null);
   const [salesPlan, setSalesPlan] = useState<SalesOrderPlan | null>(null);
   const [salesModal, setSalesModal] = useState(false);
+  const [salesSageResult, setSalesSageResult] = useState<SageWriteResult | null>(null);
+  const [salesConfirmed, setSalesConfirmed] = useState(false);
 
   // Outreach
   const [leads, setLeads] = useState<OutreachLead[]>([]);
@@ -193,6 +199,10 @@ export function AgentWorkforcePage() {
       setHubspot({
         connected: Boolean(agentsStatus.hubspot?.connected),
         detail: agentsStatus.hubspot?.detail || '',
+      });
+      setSage({
+        connected: agentsStatus.sage.connected,
+        detail: agentsStatus.sage.detail,
       });
     } catch {
       /* ignore */
@@ -455,16 +465,20 @@ export function AgentWorkforcePage() {
     });
   };
 
-  const cfoApprove = async () => {
+  const cfoApprove = async (writeToSage = false) => {
     if (!supplyPlan) return;
     setBusy(true);
+    setSageResult(null);
     try {
-      const result = await approveSupply(supplyPlan);
+      const result = await approveSupply(supplyPlan, { confirmSageWrite: writeToSage });
       setAudit(result.audit);
+      if (result.sageResult) setSageResult(result.sageResult);
       activity.push(
         'Supply & Costing',
-        `${result.audit.invoiceNumber} · ${result.audit.method} $${result.audit.pool.toFixed(0)} → ${result.audit.lineSkus.length} SKUs · approved (preview only)`,
-        'approved',
+        writeToSage && result.sageResult
+          ? `${result.audit.invoiceNumber} · PO ${result.sageResult.poReference ?? '—'} / Receive ${result.sageResult.receiveReference ?? '—'} · written to Sage 50`
+          : `${result.audit.invoiceNumber} · ${result.audit.method} $${result.audit.pool.toFixed(0)} → ${result.audit.lineSkus.length} SKUs · approved (preview only)`,
+        writeToSage && result.sageResult ? 'written' : 'approved',
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -480,6 +494,8 @@ export function AgentWorkforcePage() {
     }
     setBusy(true);
     setError(null);
+    setSalesSageResult(null);
+    setSalesConfirmed(false);
     try {
       const pdfBase64 = await fileToBase64(salesFile);
       const result = await processSales({ pdfBase64 });
@@ -502,6 +518,8 @@ export function AgentWorkforcePage() {
   const runSalesFromEmail = async () => {
     setBusy(true);
     setError(null);
+    setSalesSageResult(null);
+    setSalesConfirmed(false);
     try {
       const result = await fetchSalesFromEmail();
       setSalesPlan(result.plan);
@@ -513,6 +531,28 @@ export function AgentWorkforcePage() {
           result.plan.needs_review ? 'review' : 'preview'
         }`,
         result.plan.needs_review ? 'review' : 'ready',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmSalesOrder = async (writeToSage: boolean) => {
+    if (!salesPlan) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await confirmSales(salesPlan, { confirmSageWrite: writeToSage });
+      setSalesConfirmed(true);
+      if (result.sageResult) setSalesSageResult(result.sageResult);
+      activity.push(
+        'Sales Order',
+        writeToSage && result.sageResult
+          ? `${salesPlan.customer} · Sales Order ${result.sageResult.referenceNumber ?? '—'} · written to Sage 50 (order only — no invoice/inventory yet)`
+          : `${salesPlan.customer} · confirmed (preview only)`,
+        writeToSage && result.sageResult ? 'written' : 'confirmed',
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -1242,13 +1282,16 @@ export function AgentWorkforcePage() {
               Integrations
             </h2>
             <div className="grid gap-2 sm:grid-cols-2">
-              <StatusDot connected={false} label="Sage 50" />
+              <StatusDot connected={sage.connected} label="Sage 50" />
               <StatusDot connected={gmail.connected} label="Gmail" />
               <StatusDot connected={docAi.connected} label="Document AI" />
               <StatusDot connected={llmEnrich.connected} label="Acrylic LLM" />
               <StatusDot connected={false} label="HubSpot" />
               <StatusDot connected={false} label="ZoomInfo" />
             </div>
+            {sage.detail ? (
+              <p className="mt-2 text-[11px] text-neutral-400">Sage 50: {sage.detail}</p>
+            ) : null}
             {docAi.detail ? (
               <p className="mt-2 text-[11px] text-neutral-400">Document AI: {docAi.detail}</p>
             ) : null}
@@ -1538,15 +1581,39 @@ export function AgentWorkforcePage() {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void cfoApprove()}
+                  onClick={() => void cfoApprove(false)}
                   className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
                 >
                   <CheckCircle2 size={16} /> CFO Approve (audit only)
                 </button>
+                {sage.connected ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void cfoApprove(true)}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    <Zap size={16} /> Write PO + Receive to Sage 50
+                  </button>
+                ) : (
+                  <p className="mt-2 text-[11px] text-neutral-400">
+                    Sage 50 write disabled — set SAGE_CONNECTOR_URL to enable posting this PO +
+                    receive for real.
+                  </p>
+                )}
                 {audit ? (
                   <pre className="mt-2 max-h-40 overflow-auto rounded-xl bg-emerald-50 p-2 text-[10px] text-emerald-900">
                     {JSON.stringify(audit, null, 2)}
                   </pre>
+                ) : null}
+                {sageResult ? (
+                  <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 p-2 text-[11px] text-neutral-700">
+                    <p>PO: {sageResult.poReference ?? '—'}</p>
+                    <p>Receive: {sageResult.receiveReference ?? '—'}</p>
+                    {sageResult.warnings?.length ? (
+                      <p className="mt-1 text-amber-700">{sageResult.warnings.join(' ')}</p>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             </div>
@@ -1560,7 +1627,11 @@ export function AgentWorkforcePage() {
             title={`Sales preview · ${salesPlan.customer}`}
             onClose={() => setSalesModal(false)}
           >
-            <p className="mb-3 text-xs text-amber-700">Sage write disabled — preview only.</p>
+            <p className="mb-3 text-xs text-amber-700">
+              {sage.connected
+                ? 'Sage 50 connected — confirming can write a real Sales Order (order only, no invoice/inventory move yet).'
+                : 'Sage write disabled — preview only.'}
+            </p>
             {salesPlan.needs_review ? (
               <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 Needs review: {salesPlan.review_reasons.join(', ')}
@@ -1600,20 +1671,35 @@ export function AgentWorkforcePage() {
                 </tbody>
               </table>
             </div>
-            <button
-              type="button"
-              className="mt-3 rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
-              onClick={() => {
-                activity.push(
-                  'Sales Order',
-                  `${salesPlan.customer} · confirmed (preview only)`,
-                  'confirmed',
-                );
-                setSalesModal(false);
-              }}
-            >
-              Confirm (fake)
-            </button>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-xl bg-neutral-200 px-4 py-2 text-sm text-neutral-800 disabled:opacity-50"
+                onClick={() => void confirmSalesOrder(false)}
+              >
+                Confirm (preview only)
+              </button>
+              {sage.connected ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                  onClick={() => void confirmSalesOrder(true)}
+                >
+                  <Zap size={16} /> Write Sales Order to Sage 50
+                </button>
+              ) : null}
+            </div>
+            {salesConfirmed ? (
+              <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 p-2 text-[11px] text-neutral-700">
+                {salesSageResult ? (
+                  <p>Sales Order: {salesSageResult.referenceNumber ?? '—'}</p>
+                ) : (
+                  <p>Confirmed (preview only — nothing written to Sage).</p>
+                )}
+              </div>
+            ) : null}
           </ModalShell>
         ) : null}
       </AnimatePresence>

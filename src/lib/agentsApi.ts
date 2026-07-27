@@ -178,13 +178,32 @@ export async function recalculateSupply(input: {
   }>(res);
 }
 
-export async function approveSupply(plan: PurchaseWritePlan, user = 'demo-cfo') {
+export interface SageWriteResult {
+  poReference?: string | null;
+  receiveReference?: string | null;
+  referenceNumber?: string | null;
+  warnings?: string[];
+}
+
+export async function approveSupply(
+  plan: PurchaseWritePlan,
+  opts: { user?: string; confirmSageWrite?: boolean } = {},
+) {
   const res = await fetch('/api/agents/supply/approve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan, user }),
+    body: JSON.stringify({
+      plan,
+      user: opts.user ?? 'demo-cfo',
+      confirmSageWrite: opts.confirmSageWrite === true,
+    }),
   });
-  return parseJson<{ ok: boolean; audit: CfoAuditRecord; message: string }>(res);
+  return parseJson<{
+    ok: boolean;
+    audit: CfoAuditRecord;
+    message: string;
+    sageResult?: SageWriteResult;
+  }>(res);
 }
 
 export async function processSales(input: { pdfBase64: string }) {
@@ -198,6 +217,15 @@ export async function processSales(input: { pdfBase64: string }) {
     document: DocumentExtract;
     plan: SalesOrderPlan;
   }>(res);
+}
+
+export async function confirmSales(plan: SalesOrderPlan, opts: { confirmSageWrite?: boolean } = {}) {
+  const res = await fetch('/api/agents/sales/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan, confirmSageWrite: opts.confirmSageWrite === true }),
+  });
+  return parseJson<{ ok: boolean; message: string; sageResult?: SageWriteResult }>(res);
 }
 
 export async function fetchSalesFromEmail() {

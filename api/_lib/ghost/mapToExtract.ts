@@ -38,7 +38,9 @@ const COLOR_MAP: Record<string, [string, string]> = {
   opaque: ['OPQ', 'Opaque'],
 };
 
-function vendorIdFromName(name: string): string {
+/** Deterministic short ID from a party's display name — used for vendors and (in
+ * sageConnector) customers alike, since Sage 50 entity IDs are just short codes. */
+export function vendorIdFromName(name: string): string {
   const words = name.match(/[A-Za-z]+/g) ?? [];
   if (!words.length) return 'UNK';
   const brand = firstBrandWord(name);

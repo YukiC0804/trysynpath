@@ -9,9 +9,19 @@ import { reapplyLandedCost } from '../ghost/landedCost';
 import { clearSkuCatalog, upsertSkuCatalogEntries } from '../ghost/skuCatalog';
 import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder';
 import { clearSalesOrderRecords, upsertSalesOrderRecord } from '../ghost/salesOrderStore';
-import { propagateAcrylicDims } from '../ghost/mapToExtract';
+import { propagateAcrylicDims, vendorIdFromName } from '../ghost/mapToExtract';
 import { computePnlSummary } from '../ghost/pnl';
 import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
+import {
+  createPurchaseOrder,
+  createPurchaseReceive,
+  createSalesOrder,
+  findMissingSkuIds,
+  pingSageConnector,
+  sageConnectorConfigured,
+  upsertCustomer,
+  upsertVendor,
+} from '../sageConnector/client';
 import { getValidGmailAccessToken } from '../gmail/auth';
 import { fetchLatestSynpathPricingPoPdfs, fetchLatestSynpathPricingSoPdf } from '../gmail/pricingEmailSource';
 import { computeStepSchedule, todayIso } from '../outreach/scheduler';
@@ -124,7 +134,11 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
   const method = (req.method ?? 'GET').toUpperCase();
 
   if (method === 'GET' && (path[0] === 'status' || path.length === 0)) {
-    const [docAi, hubspot] = await Promise.all([pingDocumentAi(), pingHubspot()]);
+    const [docAi, hubspot, sage] = await Promise.all([
+      pingDocumentAi(),
+      pingHubspot(),
+      pingSageConnector(),
+    ]);
     return json(res, 200, {
       documentAi: {
         configured: documentAiConfigured(),
@@ -143,7 +157,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         detail:
           'auto = rich PDF text→text+LLM else PNG pages→vision LLM (ai_erp parse_pdf). documentai optional only.',
       },
-      sage: { connected: false, detail: 'Sage write disabled — preview only' },
+      sage: { connected: sage.ok, detail: sage.detail },
       hubspot: {
         configured: hubspotConfigured(),
         connected: hubspot.ok,
@@ -270,11 +284,57 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       proposedSagePayload: plan,
       status: 'approved',
     };
-    return json(res, 200, {
-      ok: true,
-      audit,
-      message: 'CFO approved (preview only — nothing written to Sage)',
-    });
+
+    if (!sageConnectorConfigured()) {
+      return json(res, 200, {
+        ok: true,
+        audit,
+        message: 'CFO approved (preview only — SAGE_CONNECTOR_URL not set, nothing written to Sage)',
+      });
+    }
+    if (body.confirmSageWrite !== true) {
+      return json(res, 200, {
+        ok: true,
+        audit,
+        message: 'CFO approved (preview only — pass confirmSageWrite:true to actually post to Sage)',
+      });
+    }
+
+    try {
+      const missingSkuIds = await findMissingSkuIds(plan.lines.map((l) => l.sku_id));
+      if (missingSkuIds.length) {
+        return json(res, 422, {
+          ok: false,
+          audit,
+          error: `${missingSkuIds.length} SKU(s) don't exist in Sage yet — create them by hand or CSV import first: ${missingSkuIds.join(', ')}`,
+          missingSkuIds,
+        });
+      }
+
+      await upsertVendor(plan.vendor);
+      const po = await createPurchaseOrder(plan);
+      const poReference = po?.reference_number || plan.po_reference_number;
+
+      const warnings: string[] = [];
+      let receiveReference: string | null = null;
+      try {
+        const receive = await createPurchaseReceive(plan);
+        receiveReference = receive?.reference_number || plan.receive_reference_number;
+      } catch (error) {
+        warnings.push(
+          `Purchase Order ${poReference} was created, but Purchase Invoice / Receive failed: ${errorMessage(error)}. Retry the receive once fixed — the PO already exists in Sage.`,
+        );
+      }
+
+      return json(res, 200, {
+        ok: true,
+        audit,
+        message: 'Written to Sage 50',
+        sageResult: { poReference, receiveReference, warnings },
+      });
+    } catch (error) {
+      return json(res, 502, { ok: false, audit, error: `Sage connector write failed: ${errorMessage(error)}` });
+    }
   }
 
   if (method === 'POST' && path[0] === 'sales' && path[1] === 'process') {
@@ -300,6 +360,59 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'POST' && path[0] === 'sales' && path[1] === 'confirm') {
+    const body = bodyOf(req);
+    const plan = body.plan as SalesOrderPlan | undefined;
+    if (!plan?.customer) {
+      return json(res, 400, { ok: false, error: 'plan required' });
+    }
+
+    if (!sageConnectorConfigured()) {
+      return json(res, 200, {
+        ok: true,
+        message: 'Confirmed (preview only — SAGE_CONNECTOR_URL not set, nothing written to Sage)',
+      });
+    }
+    if (body.confirmSageWrite !== true) {
+      return json(res, 200, {
+        ok: true,
+        message: 'Confirmed (preview only — pass confirmSageWrite:true to actually post to Sage)',
+      });
+    }
+    if (!plan.invoice_number) {
+      return json(res, 400, {
+        ok: false,
+        error: 'Sales Order plan is missing invoice_number — needed as a stable Sage reference number',
+      });
+    }
+
+    try {
+      const customerId = vendorIdFromName(plan.customer);
+      const referenceNumber = `SO-${plan.invoice_number}`;
+      const acrylicSkuIds = plan.lines.filter((l) => l.line_kind === 'acrylic').map((l) => l.sku);
+      const missingSkuIds = await findMissingSkuIds(acrylicSkuIds);
+      if (missingSkuIds.length) {
+        return json(res, 422, {
+          ok: false,
+          error: `${missingSkuIds.length} SKU(s) don't exist in Sage yet — create them by hand or CSV import first: ${missingSkuIds.join(', ')}`,
+          missingSkuIds,
+        });
+      }
+
+      await upsertCustomer(customerId, plan.customer);
+      const order = await createSalesOrder(plan, customerId, referenceNumber);
+
+      return json(res, 200, {
+        ok: true,
+        message:
+          'Sales Order written to Sage 50 — this creates the order record only. It does not post an invoice or reduce inventory yet (the connector has no Sales Invoice endpoint).',
+        sageResult: { referenceNumber: order?.reference_number || referenceNumber },
+      });
+    } catch (error) {
+      return json(res, 502, { ok: false, error: `Sage connector write failed: ${errorMessage(error)}` });
     }
   }
 
