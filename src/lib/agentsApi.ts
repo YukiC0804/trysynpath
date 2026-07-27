@@ -105,6 +105,32 @@ export async function processSupply(input: {
   return data;
 }
 
+export async function fetchSupplyFromEmail() {
+  const res = await fetch('/api/agents/supply/from-email');
+  const data = (await res.json()) as {
+    ok: boolean;
+    error?: string;
+    code?: string;
+    purchase?: DocumentExtract;
+    freight?: DocumentExtract | null;
+    duty?: DocumentExtract | null;
+    plan?: PurchaseWritePlan;
+    incompleteAcrylicLines?: DocumentExtract['lines'];
+    emailSource?: {
+      messageId: string;
+      subject: string;
+      fileNames: { purchase: string; freight: string | null; duty: string | null };
+    };
+  };
+  if (res.status === 422 && data.code === 'MISSING_ACRYLIC_DIMS') {
+    return data;
+  }
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  return data;
+}
+
 export async function allocateSupply(input: {
   purchase: DocumentExtract;
   freight?: DocumentExtract | null;

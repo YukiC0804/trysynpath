@@ -37,6 +37,7 @@ import {
   fetchGmailStatus,
   fetchHubspotLeads,
   fetchOutreachSequences,
+  fetchSupplyFromEmail,
   fileToBase64,
   processSales,
   processSupply,
@@ -285,6 +286,53 @@ export function AgentWorkforcePage() {
       activity.push(
         'Supply & Costing',
         `${result.plan.invoice_number} · ${result.plan.landed.method} $${result.plan.landed.import_pool.toFixed(0)} → ${result.plan.lines.length} SKUs · preview`,
+        'ready',
+      );
+      void refreshIntegrations();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runSupplyFromEmail = async () => {
+    setBusy(true);
+    setError(null);
+    setAudit(null);
+    try {
+      const result = await fetchSupplyFromEmail();
+      setSupplyPurchase(result.purchase ?? null);
+      setSupplyFreight(result.freight ?? null);
+      setSupplyDuty(result.duty ?? null);
+
+      if (result.code === 'MISSING_ACRYLIC_DIMS' && result.purchase) {
+        const edits: Record<number, { thickness_mm: string; size: string; quantity: string }> =
+          {};
+        result.purchase.lines.forEach((ln, index) => {
+          if (!ln.is_acrylic || ln.line_kind !== 'acrylic') return;
+          edits[index] = {
+            thickness_mm: ln.thickness_mm != null ? String(ln.thickness_mm) : '',
+            size: ln.size ?? '',
+            quantity: String(ln.quantity || ''),
+          };
+        });
+        setDimEdits(edits);
+        setDimsModal(true);
+        setError(
+          'Set OPENAI_API_KEY (ai_erp LLM enrich) or fill thickness/size manually to continue.',
+        );
+        return;
+      }
+
+      if (!result.plan) throw new Error(result.error || 'No plan returned');
+      setSupplyPlan(result.plan);
+      setPoolEdit(String(result.plan.landed.import_pool.toFixed(2)));
+      setSupplyModal(true);
+      const src = result.emailSource;
+      activity.push(
+        'Supply & Costing',
+        `${result.plan.invoice_number} · from email "${src?.subject ?? ''}" (${src?.fileNames.purchase ?? 'attachment'}) · ${result.plan.landed.method} $${result.plan.landed.import_pool.toFixed(0)} → ${result.plan.lines.length} SKUs · preview`,
         'ready',
       );
       void refreshIntegrations();
@@ -622,6 +670,28 @@ export function AgentWorkforcePage() {
                 >
                   <Upload size={16} /> Run Supply & Costing
                 </button>
+
+                <div className="flex items-center gap-3 text-xs text-neutral-400">
+                  <div className="h-px flex-1 bg-neutral-200" />
+                  or
+                  <div className="h-px flex-1 bg-neutral-200" />
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    disabled={busy || !gmail.connected}
+                    onClick={() => void runSupplyFromEmail()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-medium text-neutral-800 disabled:opacity-50"
+                  >
+                    <Mail size={16} /> Fetch latest PO from email
+                  </button>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Pulls the PDF(s) from the newest email labeled "synpath pricing" with "PO" in
+                    the subject.
+                    {gmail.connected ? null : ' Connect Gmail on the Outreach tab first.'}
+                  </p>
+                </div>
               </div>
             ) : null}
 

@@ -11,6 +11,8 @@ import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder'
 import { upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
 import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
+import { getValidGmailAccessToken } from '../gmail/auth';
+import { fetchLatestSynpathPricingPoPdfs } from '../gmail/pricingPoSource';
 import { computeStepSchedule, todayIso } from '../outreach/scheduler';
 import { sendSequenceStep } from '../outreach/sender';
 import { listOutreachSequences, upsertOutreachSequence } from '../outreach/store';
@@ -71,6 +73,42 @@ function decodePdf(base64: unknown): Buffer {
   return Buffer.from(cleaned, 'base64');
 }
 
+/** Shared by the upload-based and email-based Supply & Costing entry points. */
+async function processSupplyPdfs(
+  purchaseBuf: Buffer,
+  freightBuf?: Buffer | null,
+  dutyBuf?: Buffer | null,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const [purchase, freight, duty] = await Promise.all([
+    parsePdf(purchaseBuf, { hintRole: 'purchase_invoice' }),
+    freightBuf ? parsePdf(freightBuf, { hintRole: 'freight' }) : Promise.resolve(null),
+    dutyBuf ? parsePdf(dutyBuf, { hintRole: 'duty' }) : Promise.resolve(null),
+  ]);
+  if (purchase.document_role === 'unknown') purchase.document_role = 'purchase_invoice';
+
+  try {
+    const plan = buildWritePlan(purchase, { freight, duty });
+    await saveToSkuCatalog(plan);
+    return { status: 200, body: { ok: true, purchase, freight, duty, plan } };
+  } catch (error) {
+    if (error instanceof MissingAcrylicDimsError) {
+      return {
+        status: 422,
+        body: {
+          ok: false,
+          code: error.code,
+          error: error.message,
+          purchase,
+          freight,
+          duty,
+          incompleteAcrylicLines: error.incomplete,
+        },
+      };
+    }
+    throw error;
+  }
+}
+
 export async function handleAgentsRequest(req: VercelRequest, res: VercelResponse) {
   const path = pathSegments(req);
   const method = (req.method ?? 'GET').toUpperCase();
@@ -107,43 +145,40 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
   if (method === 'POST' && path[0] === 'supply' && path[1] === 'process') {
     try {
       const body = bodyOf(req);
-      // purchase/freight/duty parses are independent — run them concurrently
-      // instead of one after another (each is its own PDF-parse + LLM round trip).
-      const [purchase, freight, duty] = await Promise.all([
-        parsePdf(decodePdf(body.purchasePdfBase64), { hintRole: 'purchase_invoice' }),
-        body.freightPdfBase64
-          ? parsePdf(decodePdf(body.freightPdfBase64), { hintRole: 'freight' })
-          : Promise.resolve(null),
-        body.dutyPdfBase64
-          ? parsePdf(decodePdf(body.dutyPdfBase64), { hintRole: 'duty' })
-          : Promise.resolve(null),
-      ]);
-      if (purchase.document_role === 'unknown') purchase.document_role = 'purchase_invoice';
+      const result = await processSupplyPdfs(
+        decodePdf(body.purchasePdfBase64),
+        body.freightPdfBase64 ? decodePdf(body.freightPdfBase64) : null,
+        body.dutyPdfBase64 ? decodePdf(body.dutyPdfBase64) : null,
+      );
+      return json(res, result.status, result.body);
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
 
-      try {
-        const plan = buildWritePlan(purchase, { freight, duty });
-        await saveToSkuCatalog(plan);
-        return json(res, 200, {
-          ok: true,
-          purchase,
-          freight,
-          duty,
-          plan,
-        });
-      } catch (error) {
-        if (error instanceof MissingAcrylicDimsError) {
-          return json(res, 422, {
-            ok: false,
-            code: error.code,
-            error: error.message,
-            purchase,
-            freight,
-            duty,
-            incompleteAcrylicLines: error.incomplete,
-          });
-        }
-        throw error;
-      }
+  if ((method === 'GET' || method === 'POST') && path[0] === 'supply' && path[1] === 'from-email') {
+    try {
+      const auth = await getValidGmailAccessToken(req, res);
+      if (!auth) return json(res, 401, { ok: false, error: 'Gmail is not connected' });
+
+      const bundle = await fetchLatestSynpathPricingPoPdfs(auth.accessToken);
+      const result = await processSupplyPdfs(
+        bundle.purchase.content,
+        bundle.freight?.content ?? null,
+        bundle.duty?.content ?? null,
+      );
+      return json(res, result.status, {
+        ...result.body,
+        emailSource: {
+          messageId: bundle.messageId,
+          subject: bundle.subject,
+          fileNames: {
+            purchase: bundle.purchase.fileName,
+            freight: bundle.freight?.fileName ?? null,
+            duty: bundle.duty?.fileName ?? null,
+          },
+        },
+      });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }
