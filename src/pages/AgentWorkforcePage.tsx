@@ -153,10 +153,8 @@ export function AgentWorkforcePage() {
 
   // Outreach
   const [leads, setLeads] = useState<OutreachLead[]>([]);
-  const [selectedLeadId, setSelectedLeadId] = useState('');
-  const [outreachStartDate, setOutreachStartDate] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [leadMenuOpen, setLeadMenuOpen] = useState(false);
   const [outreachSteps, setOutreachSteps] = useState<EmailStep[]>([
     {
       subject: 'Quick follow-up from Synpath',
@@ -199,13 +197,17 @@ export function AgentWorkforcePage() {
     try {
       const result = await fetchHubspotLeads();
       setLeads(result.leads);
-      if (result.leads.length && !selectedLeadId) setSelectedLeadId(result.leads[0]!.id);
+      setLeadMenuOpen(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [selectedLeadId]);
+  }, []);
+
+  const toggleLeadSelected = (id: string) => {
+    setSelectedLeadIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
 
   const loadSequences = useCallback(async () => {
     try {
@@ -453,27 +455,38 @@ export function AgentWorkforcePage() {
   };
 
   const runOutreach = async () => {
-    const lead = leads.find((l) => l.id === selectedLeadId);
-    if (!lead) {
-      setError('Pick a lead from HubSpot first');
+    const picked = leads.filter((l) => selectedLeadIds.includes(l.id));
+    if (!picked.length) {
+      setError('Check at least one lead from HubSpot first');
       return;
     }
     setBusy(true);
     setError(null);
+    const today = new Date().toISOString().slice(0, 10);
+    const failures: string[] = [];
     try {
-      const result = await createOutreachSequence({
-        lead,
-        steps: outreachSteps,
-        startDate: outreachStartDate,
-      });
-      setSequences((prev) => [result.sequence, ...prev]);
-      activity.push(
-        'Outreach',
-        `${outreachSteps.length}-step sequence scheduled for ${lead.name} (${lead.company}) starting ${outreachStartDate}`,
-        'scheduled',
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      for (const lead of picked) {
+        try {
+          const result = await createOutreachSequence({
+            lead,
+            steps: outreachSteps,
+            startDate: today,
+          });
+          setSequences((prev) => [result.sequence, ...prev]);
+        } catch (e) {
+          failures.push(`${lead.name}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      const sentCount = picked.length - failures.length;
+      if (sentCount) {
+        activity.push(
+          'Outreach',
+          `Initial email sent now to ${sentCount} lead(s); ${outreachSteps.length - 1} follow-up(s) scheduled`,
+          'sent',
+        );
+      }
+      if (failures.length) setError(failures.join(' | '));
+      else setSelectedLeadIds([]);
     } finally {
       setBusy(false);
     }
@@ -653,9 +666,9 @@ export function AgentWorkforcePage() {
                   </span>
                 </div>
 
-                <div>
+                <div className="relative">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-neutral-600">Lead (from HubSpot)</p>
+                    <p className="text-xs font-medium text-neutral-600">Leads (from HubSpot)</p>
                     <button
                       type="button"
                       disabled={busy}
@@ -665,29 +678,40 @@ export function AgentWorkforcePage() {
                       Load leads
                     </button>
                   </div>
-                  <select
-                    value={selectedLeadId}
-                    onChange={(e) => setSelectedLeadId(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                  <button
+                    type="button"
+                    onClick={() => setLeadMenuOpen((o) => !o)}
+                    className="mt-1 flex w-full items-center justify-between rounded-xl border border-neutral-300 px-3 py-2 text-left text-sm"
                   >
-                    <option value="">— pick a lead —</option>
-                    {leads.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name} · {l.company} · {l.email}
-                      </option>
-                    ))}
-                  </select>
+                    <span className={selectedLeadIds.length ? '' : 'text-neutral-400'}>
+                      {selectedLeadIds.length
+                        ? `${selectedLeadIds.length} lead${selectedLeadIds.length > 1 ? 's' : ''} selected`
+                        : leads.length
+                          ? 'Check leads to email'
+                          : 'Load leads first'}
+                    </span>
+                    <span className="text-neutral-400">{leadMenuOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {leadMenuOpen && leads.length ? (
+                    <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg">
+                      {leads.map((l) => (
+                        <label
+                          key={l.id}
+                          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-neutral-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedLeadIds.includes(l.id)}
+                            onChange={() => toggleLeadSelected(l.id)}
+                          />
+                          <span>
+                            {l.name} · {l.company} · <span className="text-neutral-500">{l.email}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-
-                <label className="block text-xs font-medium text-neutral-600">
-                  Start date (initial email)
-                  <input
-                    type="date"
-                    value={outreachStartDate}
-                    onChange={(e) => setOutreachStartDate(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
-                  />
-                </label>
 
                 <div className="space-y-3">
                   {outreachSteps.map((step, i) => (
@@ -784,11 +808,11 @@ export function AgentWorkforcePage() {
 
                 <button
                   type="button"
-                  disabled={busy || !gmail.connected || !selectedLeadId}
+                  disabled={busy || !gmail.connected || !selectedLeadIds.length}
                   onClick={() => void runOutreach()}
                   className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
                 >
-                  <Send size={16} /> Schedule sequence
+                  <Send size={16} /> Send now + schedule follow-ups
                 </button>
 
                 {sequences.length ? (

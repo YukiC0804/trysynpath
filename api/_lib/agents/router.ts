@@ -11,7 +11,8 @@ import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder'
 import { upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
 import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
-import { computeStepSchedule } from '../outreach/scheduler';
+import { computeStepSchedule, todayIso } from '../outreach/scheduler';
+import { sendSequenceStep } from '../outreach/sender';
 import { listOutreachSequences, upsertOutreachSequence } from '../outreach/store';
 import type {
   AcrylicSkuLine,
@@ -278,7 +279,16 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         createdAt: new Date().toISOString(),
       };
       await upsertOutreachSequence(sequence);
-      return json(res, 200, { ok: true, sequence });
+
+      // Step 0 due today (the normal case — startDate defaults to today)? Send it
+      // right now instead of making the user wait for tomorrow's cron run.
+      let finalSequence = sequence;
+      if (sequence.stepState[0]!.scheduledFor <= todayIso()) {
+        const result = await sendSequenceStep(sequence, 0);
+        finalSequence = result.sequence;
+      }
+
+      return json(res, 200, { ok: true, sequence: finalSequence });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }
