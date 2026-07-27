@@ -56,7 +56,7 @@ export function matchAgentFromPrompt(prompt: string): AgentId | null {
 /** Placeholder — no real email tracking/CRM data source wired up yet. */
 export const FAKE_SALES_PIPELINE = [
   {
-    rep: 'Yuki Chu',
+    rep: 'Bob',
     emailsSent: 142,
     deliveryRatePct: 98.6,
     openRatePct: 61.3,
@@ -66,7 +66,7 @@ export const FAKE_SALES_PIPELINE = [
     hitRatePct: 3.5,
   },
   {
-    rep: 'Russ Warner',
+    rep: 'John',
     emailsSent: 96,
     deliveryRatePct: 97.9,
     openRatePct: 54.2,
@@ -76,7 +76,7 @@ export const FAKE_SALES_PIPELINE = [
     hitRatePct: 2.1,
   },
   {
-    rep: 'Cesar Orozco',
+    rep: 'Christine',
     emailsSent: 58,
     deliveryRatePct: 99.1,
     openRatePct: 68.7,
