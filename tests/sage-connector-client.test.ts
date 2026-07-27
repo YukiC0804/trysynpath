@@ -13,6 +13,7 @@ import {
   toSalesOrderPayload,
   upsertCustomer,
   upsertVendor,
+  verifySageReachable,
 } from '../api/_lib/sageConnector/client';
 
 afterEach(() => {
@@ -114,6 +115,29 @@ describe('resetSageSession', () => {
       'http://127.0.0.1:8080/session/reset',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+});
+
+describe('verifySageReachable', () => {
+  it('proves reachability with a real Sage-backed call, not just /health', async () => {
+    process.env.SAGE_CONNECTOR_URL = 'http://127.0.0.1:8080';
+    const fetchMock = vi.fn(async () => new Response('[]', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await verifySageReachable();
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8080/customers',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it('reports not ok when the Sage-backed call fails even if the process is alive', async () => {
+    process.env.SAGE_CONNECTOR_URL = 'http://127.0.0.1:8080';
+    const fetchMock = vi.fn(async () => new Response('session stuck', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await verifySageReachable();
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('500');
   });
 });
 

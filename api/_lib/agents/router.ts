@@ -22,6 +22,7 @@ import {
   sageConnectorConfigured,
   upsertCustomer,
   upsertVendor,
+  verifySageReachable,
 } from '../sageConnector/client';
 import { getValidGmailAccessToken } from '../gmail/auth';
 import { fetchLatestSynpathPricingPoPdfs, fetchLatestSynpathPricingSoPdf } from '../gmail/pricingEmailSource';
@@ -425,11 +426,13 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       await resetSageSession();
     } catch (error) {
       // /session/reset failing is still informative (e.g. the service itself is down) —
-      // fall through to the health re-check rather than erroring out immediately.
+      // fall through to the reachability re-check rather than erroring out immediately.
       console.warn('[sage] session reset failed', errorMessage(error));
     }
-    const health = await pingSageConnector();
-    return json(res, 200, { ok: health.ok, detail: health.detail });
+    // /health only proves the web process is alive, not that Sage itself unstuck — verify
+    // with a real Sage-backed call so this can't report "ok" while still hung.
+    const verified = await verifySageReachable();
+    return json(res, 200, { ok: verified.ok, detail: verified.detail });
   }
 
   if (method === 'GET' && path[0] === 'outreach' && path[1] === 'leads') {

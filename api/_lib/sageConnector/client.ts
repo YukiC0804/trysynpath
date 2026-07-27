@@ -72,6 +72,21 @@ export async function pingSageConnector(): Promise<{ ok: boolean; detail: string
   }
 }
 
+/** `/health` only proves the connector's web process is alive — it never touches Sage.
+ * This calls a real (lightweight) Sage-backed endpoint, so a stuck session that /health
+ * would still report "ok" actually gets caught here. */
+export async function verifySageReachable(): Promise<{ ok: boolean; detail: string }> {
+  if (!sageConnectorConfigured()) {
+    return { ok: false, detail: 'SAGE_CONNECTOR_URL not set — Sage write disabled, preview only' };
+  }
+  try {
+    await connectorFetch('/customers');
+    return { ok: true, detail: `Sage connector reachable at ${baseUrl()} (verified via /customers)` };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 // --- Master data (Customer/Vendor — idempotent create-or-get on `id`) ---
 
 interface PartyPayload {
