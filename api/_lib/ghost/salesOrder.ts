@@ -9,9 +9,6 @@ import { parseThicknessSize } from './mapToExtract';
 import { toMmDdYyyy } from './orchestrator';
 import { findSkuCatalogByCustomerAndThickness } from './skuCatalog';
 
-/** Flag a sold price as unusual once it strays this far from the catalog's landed cost. */
-const UNUSUAL_PRICE_PCT = 0.25;
-
 /**
  * Sales Order PDFs are customer invoices Ghost sends out — `vendor` on the
  * generic extract is the seller (Ghost itself), not the buyer. The buyer is
@@ -62,14 +59,12 @@ export async function buildSalesOrderPlan(doc: DocumentExtract): Promise<SalesOr
     const { thickness } = parseThicknessSize(ln.raw_description);
     let sku: string | null = null;
     let description = ln.raw_description;
-    let costBasis: number | null = null;
     if (thickness != null) {
       const matches = await findSkuCatalogByCustomerAndThickness(customerName, thickness);
       const match = matches[0];
       if (match) {
         sku = match.sku_id;
         description = match.description;
-        costBasis = match.landed_unit_cost;
       }
     }
     if (!sku) {
@@ -78,12 +73,6 @@ export async function buildSalesOrderPlan(doc: DocumentExtract): Promise<SalesOr
     }
 
     if (!qty) reasons.push('missing_data');
-    // Only compare against a real cost basis from the catalog — no fixture price-list fallback.
-    if (costBasis != null && costBasis > 0) {
-      if (Math.abs(rate - costBasis) / costBasis > UNUSUAL_PRICE_PCT) {
-        reasons.push('unusual_price');
-      }
-    }
 
     lines.push({
       sku,

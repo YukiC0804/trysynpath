@@ -1102,9 +1102,36 @@ export function AgentWorkforcePage() {
                 No blocking review flags
               </div>
             )}
-            <pre className="max-h-96 overflow-auto rounded-xl bg-neutral-50 p-3 text-[11px]">
-              {JSON.stringify(salesPlan, null, 2)}
-            </pre>
+            <div className="mb-3 space-y-1 text-sm">
+              <p>
+                Customer: <strong>{salesPlan.customer}</strong>
+              </p>
+              <p>Date: {salesPlan.invoice_date || '—'}</p>
+            </div>
+            <div className="overflow-auto rounded-xl border border-neutral-200">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
+                  <tr>
+                    <th className="px-3 py-2">SKU ID</th>
+                    <th className="px-3 py-2">Description</th>
+                    <th className="px-3 py-2 text-right">Sales price</th>
+                    <th className="px-3 py-2 text-right">Qty</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {salesPlan.lines
+                    .filter((l) => l.line_kind !== 'freight')
+                    .map((l, i) => (
+                      <tr key={`${l.sku}-${i}`}>
+                        <td className="px-3 py-2 font-mono text-xs">{l.sku}</td>
+                        <td className="px-3 py-2">{l.description}</td>
+                        <td className="px-3 py-2 text-right">{money(l.unit_price)}</td>
+                        <td className="px-3 py-2 text-right">{l.quantity}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
             <button
               type="button"
               className="mt-3 rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
