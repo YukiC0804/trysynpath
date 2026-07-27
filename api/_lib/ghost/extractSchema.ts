@@ -19,6 +19,7 @@ Return ONLY a JSON object matching this shape (no markdown):
   "ddp_amount": null,
   "freight_amount": null,
   "duty_amount": null,
+  "ship_to": null,
   "lines": [
     {
       "raw_description": "...",
@@ -34,7 +35,8 @@ Return ONLY a JSON object matching this shape (no markdown):
       "unit_price": 42.5,
       "amount": 425.0,
       "line_kind": "acrylic" | "packing" | "ddp" | "freight" | "duty" | "other",
-      "price_decimals": 3
+      "price_decimals": 3,
+      "customer_name": null
     }
   ],
   "notes": null
@@ -52,6 +54,11 @@ Rules:
   * unit_price ← Unit Price (USD/Sheet); amount ← Amount (USD)
   * Density (~1.20) is NEVER unit_price.
   * Export pallet / packing rows: is_packing_or_misc=true, line_kind="packing".
+  * Some Code cells carry an end-customer name in parentheses under the code
+    itself, e.g. "GK-CAS18T\n(CN LEDGE)" or "Export pallet(For CN LEDGE)" —
+    set customer_name to that parenthetical text (e.g. "CN LEDGE") on that
+    row, both for acrylic rows and for the matching packing/pallet row. Most
+    invoices don't have this at all — leave customer_name null then.
 - CRITICAL — money vs physical specs:
   * unit_price / amount / invoice_total / freight_amount / duty_amount / ddp_amount
     MUST be currency dollars (USD/$), NEVER Density, specific gravity, kg, mm, or qty.
@@ -76,6 +83,11 @@ Rules:
   Unit Price / Amount columns for that line (e.g. "42.50" → 2, "42.500" → 3).
   Use the same integer for every line on one document unless the printed
   precision genuinely differs row to row. Default 3 when not shown explicitly.
+- ship_to: when the document has a "Ship To" (or "Deliver To") block, return its
+  lines in printed order as a string array (e.g. ["Cesar Orozco", "CN Ledge"]).
+  This is the buyer/customer on outgoing sales invoices — do NOT confuse it
+  with vendor, which is always the party that issued/sent the document. Null
+  when there's no such block.
 `.trim();
 
 export const OCR_MARKDOWN_HINT = `

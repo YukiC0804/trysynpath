@@ -4,9 +4,10 @@ import type {
   SalesOrderPlan,
   SalesReviewReason,
 } from '../../../shared/ghost';
-import { buildSkuId, normalizeSheetSize } from './sku';
+import { parseThicknessSize } from './mapToExtract';
+import { findSkuCatalogByCustomerAndThickness } from './skuCatalog';
 
-/** Demo fixture catalog for Sales Order review rules. */
+/** Demo fixture catalog for Sales Order review rules not yet backed by real data. */
 export const SALES_FIXTURE = {
   customers: [
     { id: 'CUST-SPAN', name: 'Spandex', aliases: ['spandex', 'ghost acrylics customer'] },
@@ -31,36 +32,30 @@ function resolveCustomer(name: string | null | undefined): { id: string; name: s
   return hit ? { id: hit.id, name: hit.name } : { id: 'CUST-NEW', name: raw };
 }
 
-function guessSku(description: string, thickness?: number | null, size?: string | null): string {
-  if (thickness != null && size) {
-    try {
-      return buildSkuId({
-        vendorId: 'GOK',
-        productCode: 'ACR',
-        colorCode: /black/i.test(description) ? 'BLK' : 'CLR',
-        thicknessMm: thickness,
-        size: normalizeSheetSize(size),
-      });
-    } catch {
-      /* fall through */
-    }
-  }
+/**
+ * Sales Order PDFs are customer invoices Ghost sends out — `vendor` on the
+ * generic extract is the seller (Ghost itself), not the buyer. The buyer is
+ * the second line under "Ship To" (first line is usually a contact name),
+ * e.g. Ship To "Cesar Orozco / CN Ledge" → customer = "CN Ledge".
+ */
+function customerNameFromShipTo(doc: DocumentExtract): string {
+  const shipTo = (doc.ship_to ?? []).map((l) => l.trim()).filter(Boolean);
+  if (shipTo.length >= 2) return shipTo[1]!;
+  if (shipTo.length === 1) return shipTo[0]!;
+  return doc.vendor?.name?.trim() || 'Unknown Customer';
+}
+
+function fallbackSku(description: string): string {
   const cleaned = description.replace(/[^A-Za-z0-9]/g, '').slice(0, 18).toUpperCase() || 'UNKNOWN';
   return `GHO${cleaned}`;
 }
 
-export function buildSalesOrderPlan(
+export async function buildSalesOrderPlan(
   doc: DocumentExtract,
   opts: { recentKeys?: string[] } = {},
-): SalesOrderPlan {
-  const customerName =
-    doc.vendor?.name ||
-    (doc.notes?.match(/customer[=:]\s*([^|;]+)/i)?.[1] ?? null) ||
-    'Unknown Customer';
-  // For sales docs, receiver/supplier naming varies — prefer explicit vendor then invoice notes.
-  const customer = resolveCustomer(
-    /spandex|acme|customer/i.test(customerName) ? customerName : doc.vendor?.name || customerName,
-  );
+): Promise<SalesOrderPlan> {
+  const customerName = customerNameFromShipTo(doc);
+  const customer = resolveCustomer(customerName);
 
   const lines: SalesOrderLine[] = [];
   const reasons: SalesReviewReason[] = [];
@@ -82,18 +77,42 @@ export function buildSalesOrderPlan(
     }
     if (ln.line_kind === 'packing' || ln.line_kind === 'ddp' || ln.line_kind === 'duty') continue;
 
-    const sku = guessSku(ln.raw_description, ln.thickness_mm, ln.size);
     const qty = Number(ln.quantity || 0);
-    const unit =
-      ln.amount != null && qty > 0 ? Number(ln.amount) / qty : Number(ln.unit_price || 0);
-    const amount = qty * unit;
-    const listPrice = SALES_FIXTURE.priceList.default;
-    const onHand = SALES_FIXTURE.inventory.defaultOnHand;
+    const rate = Number(ln.unit_price || 0);
+    // Deposit / balance-due placeholder rows print with rate 0 — not real product lines.
+    if (rate === 0) continue;
+    const amount = ln.amount != null ? Number(ln.amount) : qty * rate;
 
-    if (!qty || !sku || sku.endsWith('UNKNOWN')) reasons.push('missing_data');
-    if (listPrice > 0 && Math.abs(unit - listPrice) / listPrice > SALES_FIXTURE.unusualPricePct) {
-      reasons.push('unusual_price');
+    const { thickness } = parseThicknessSize(ln.raw_description);
+    let sku: string | null = null;
+    let description = ln.raw_description;
+    let costBasis: number | null = null;
+    if (thickness != null) {
+      const matches = await findSkuCatalogByCustomerAndThickness(customerName, thickness);
+      const match = matches[0];
+      if (match) {
+        sku = match.sku_id;
+        description = match.description;
+        costBasis = match.landed_unit_cost;
+      }
     }
+    if (!sku) {
+      sku = fallbackSku(ln.raw_description);
+      reasons.push('no_catalog_match');
+    }
+
+    if (!qty) reasons.push('missing_data');
+    if (costBasis != null && costBasis > 0) {
+      if (Math.abs(rate - costBasis) / costBasis > SALES_FIXTURE.unusualPricePct) {
+        reasons.push('unusual_price');
+      }
+    } else {
+      const listPrice = SALES_FIXTURE.priceList.default;
+      if (listPrice > 0 && Math.abs(rate - listPrice) / listPrice > SALES_FIXTURE.unusualPricePct) {
+        reasons.push('unusual_price');
+      }
+    }
+    const onHand = SALES_FIXTURE.inventory.defaultOnHand;
     if (qty > onHand) reasons.push('stock_conflict');
 
     const dupKey = `${customer.id}|${doc.invoice_number || ''}|${sku}|${qty}`;
@@ -101,12 +120,12 @@ export function buildSalesOrderPlan(
 
     lines.push({
       sku,
-      description: ln.raw_description,
+      description,
       quantity: qty,
-      unit_price: unit,
+      unit_price: rate,
       amount,
       line_kind: ln.line_kind === 'acrylic' ? 'acrylic' : 'other',
-      list_price: listPrice,
+      list_price: costBasis,
       on_hand: onHand,
     });
   }

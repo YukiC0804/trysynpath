@@ -1,6 +1,6 @@
 /** Ghost Acrylics purchase → landed cost domain types (ported from ai_erp models.py). */
 
-export type ImportCostMethod = 'ddp_on_invoice' | 'freight_and_duty' | 'none';
+export type ImportCostMethod = 'ddp_on_invoice' | 'freight_and_duty' | 'packing_pool_per_customer' | 'none';
 
 export type DocumentRole = 'purchase_invoice' | 'freight' | 'duty' | 'unknown';
 
@@ -35,6 +35,9 @@ export interface InvoiceLineExtract {
   line_kind: LineKind;
   /** Decimal digits the unit price / amount are printed with on the source document. */
   price_decimals?: number | null;
+  /** Customer this line is earmarked for, when the source document bundles multiple
+   * end customers into one purchase invoice (e.g. Gokai "Code (CUSTOMER)" tables). */
+  customer_name?: string | null;
 }
 
 export interface DocumentExtract {
@@ -50,11 +53,17 @@ export interface DocumentExtract {
   duty_amount?: number | null;
   lines: InvoiceLineExtract[];
   notes?: string | null;
+  /** "Ship To" block lines as printed, in order (e.g. ["Cesar Orozco", "CN Ledge"]) — used to
+   * resolve the customer on Sales Order documents, where `vendor` is the seller, not the buyer. */
+  ship_to?: string[] | null;
 }
 
 export interface AcrylicSkuLine {
   sku_id: string;
   description: string;
+  product_code?: string | null;
+  color_code?: string | null;
+  color_name?: string | null;
   thickness_mm: number;
   size: string;
   quantity: number;
@@ -66,6 +75,44 @@ export interface AcrylicSkuLine {
   raw_description?: string | null;
   /** Decimal digits raw_unit_price / landed_unit_cost / land_cost_per_sheet are rounded to. */
   price_decimals: number;
+  /** All end customers this sku_id was seen under in the source invoice(s) — lookup aid only,
+   * the price fields above are the single (possibly blended) value for this sku_id. */
+  customer_names: string[];
+}
+
+export interface SkuCatalogEntry {
+  sku_id: string;
+  description: string;
+  product_code?: string | null;
+  color_code?: string | null;
+  color_name?: string | null;
+  thickness_mm: number;
+  size: string;
+  vendor_id: string;
+  vendor_name?: string | null;
+  vendor_company_name?: string | null;
+  vendor_email?: string | null;
+  vendor_address1?: string | null;
+  vendor_address2?: string | null;
+  vendor_city?: string | null;
+  vendor_state?: string | null;
+  vendor_zip?: string | null;
+  vendor_country?: string | null;
+  quantity: number;
+  raw_unit_price: number;
+  sheet_weight_kg: number;
+  land_cost_per_sheet: number;
+  landed_unit_cost: number;
+  amount: number;
+  raw_description?: string | null;
+  price_decimals: number;
+  freight_cost?: number | null;
+  duty_cost?: number | null;
+  ddp_cost?: number | null;
+  customer_names: string[];
+  invoice_number: string;
+  /** Invoice date as printed on the source document, mm/dd/yyyy. */
+  date: string;
 }
 
 export interface LandedCostBreakdown {
@@ -97,7 +144,8 @@ export type SalesReviewReason =
   | 'missing_data'
   | 'unusual_price'
   | 'stock_conflict'
-  | 'possible_duplicate';
+  | 'possible_duplicate'
+  | 'no_catalog_match';
 
 export interface SalesOrderLine {
   sku: string;

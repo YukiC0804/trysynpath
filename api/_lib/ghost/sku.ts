@@ -132,6 +132,9 @@ export function acrylicLineFromExtract(
   return {
     sku_id: sku,
     description: desc,
+    product_code: product,
+    color_code: colorCode,
+    color_name: colorName,
     thickness_mm: Number(line.thickness_mm),
     size: normalizeSheetSize(line.size),
     quantity: qty,
@@ -142,5 +145,6 @@ export function acrylicLineFromExtract(
     amount: qty * unit,
     raw_description: line.raw_description,
     price_decimals: decimals,
+    customer_names: line.customer_name?.trim() ? [line.customer_name.trim()] : [],
   };
 }

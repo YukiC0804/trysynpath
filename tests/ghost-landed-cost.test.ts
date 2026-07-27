@@ -68,6 +68,84 @@ describe('ghost landed cost (ai_erp port)', () => {
     expect(lines[0]!.landed_unit_cost).toBeGreaterThan(40);
   });
 
+  it('pools packing cost per customer and merges same sku_id across customers', () => {
+    const doc = purchase({
+      includes_ddp: false,
+      invoice_total: null,
+      lines: [
+        {
+          raw_description: 'GK-CAS18T (CN LEDGE)',
+          is_acrylic: true,
+          is_packing_or_misc: false,
+          product_code: 'ACR',
+          color_code: 'CLR',
+          color_name: 'Clear',
+          thickness_mm: 18,
+          size: '4x8',
+          quantity: 72,
+          unit_price: 118.53,
+          amount: 8534.16,
+          line_kind: 'acrylic',
+          price_decimals: 3,
+          customer_name: 'CN LEDGE',
+        },
+        {
+          raw_description: 'Export pallet (For CN LEDGE)',
+          is_acrylic: false,
+          is_packing_or_misc: true,
+          quantity: 3,
+          unit_price: 36,
+          amount: 108,
+          line_kind: 'packing',
+          customer_name: 'CN LEDGE',
+        },
+        {
+          raw_description: 'GK-CAS18T (TROPHY DEPOT)',
+          is_acrylic: true,
+          is_packing_or_misc: false,
+          product_code: 'ACR',
+          color_code: 'CLR',
+          color_name: 'Clear',
+          thickness_mm: 18,
+          size: '4x8',
+          quantity: 40,
+          unit_price: 120.69,
+          amount: 4827.6,
+          line_kind: 'acrylic',
+          price_decimals: 3,
+          customer_name: 'TROPHY DEPOT',
+        },
+        {
+          raw_description: 'Export pallet (for TROPHY DEPOT)',
+          is_acrylic: false,
+          is_packing_or_misc: true,
+          quantity: 1,
+          unit_price: 40,
+          amount: 40,
+          line_kind: 'packing',
+          customer_name: 'TROPHY DEPOT',
+        },
+      ],
+    });
+
+    const { lines, breakdown } = allocateLandedCost(doc, { vendorId: 'GOK', vendorName: 'Gokai' });
+
+    expect(breakdown.method).toBe('packing_pool_per_customer');
+    expect(breakdown.import_pool).toBe(148); // 108 (CN LEDGE pallet) + 40 (TROPHY DEPOT pallet)
+    expect(lines).toHaveLength(1); // same spec → same sku_id → merged
+
+    const merged = lines[0]!;
+    expect(merged.sku_id).toBe('GHOGOKACRCLR18mm4x8');
+    expect(merged.quantity).toBe(112); // 72 + 40
+    // CN LEDGE alone: land = pool/qty = 108/72 = 1.5; TROPHY DEPOT alone: 40/40 = 1.0
+    // merged land = (72*1.5 + 40*1.0)/112
+    expect(merged.land_cost_per_sheet).toBeCloseTo(1.321, 3);
+    // merged raw_unit_price = (72*118.53 + 40*120.69)/112
+    expect(merged.raw_unit_price).toBeCloseTo(119.301, 3);
+    expect(merged.landed_unit_cost).toBeCloseTo(120.622, 3);
+    expect(merged.customer_names).toEqual(['CN LEDGE', 'TROPHY DEPOT']);
+  });
+
   it('errors when DDP and freight/duty both present', () => {
     expect(() =>
       resolveImportPool(

@@ -86,6 +86,10 @@ function mapLine(raw: Record<string, unknown>): InvoiceLineExtract {
     amount,
     line_kind: asKind(raw.line_kind, isAcrylic ? 'acrylic' : 'other'),
     price_decimals: priceDecimalsOrNull(raw.price_decimals),
+    customer_name:
+      raw.customer_name != null && String(raw.customer_name).trim()
+        ? String(raw.customer_name).trim()
+        : null,
   };
 }
 
@@ -130,6 +134,9 @@ export function documentExtractFromLlmJson(
     ddp_amount: numOrNull(data.ddp_amount),
     freight_amount: numOrNull(data.freight_amount),
     duty_amount: numOrNull(data.duty_amount),
+    ship_to: Array.isArray(data.ship_to)
+      ? data.ship_to.map((l) => String(l).trim()).filter(Boolean)
+      : null,
     lines,
     notes:
       [data.notes != null ? String(data.notes) : null, opts.note]

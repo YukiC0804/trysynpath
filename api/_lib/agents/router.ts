@@ -4,8 +4,9 @@ import { errorMessage } from '../sage/config';
 import { documentAiConfigured, pingDocumentAi } from '../ghost/documentAi';
 import { llmEnrichConfigured, resolveParseModel } from '../ghost/enrichAcrylic';
 import { parsePdf, resolveParseBackend } from '../ghost/parsePdf';
-import { buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
+import { buildSkuCatalogEntries, buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
 import { reapplyLandedCost } from '../ghost/landedCost';
+import { upsertSkuCatalogEntries } from '../ghost/skuCatalog';
 import { buildSalesOrderPlan } from '../ghost/salesOrder';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
 import type {
@@ -14,6 +15,7 @@ import type {
   DocumentExtract,
   ImportCostMethod,
   InvoiceLineExtract,
+  PurchaseWritePlan,
 } from '../../../shared/ghost';
 
 function pathSegments(req: VercelRequest): string[] {
@@ -35,6 +37,14 @@ function bodyOf(req: VercelRequest): Record<string, unknown> {
     }
   }
   return (req.body ?? {}) as Record<string, unknown>;
+}
+
+async function saveToSkuCatalog(plan: PurchaseWritePlan): Promise<void> {
+  try {
+    await upsertSkuCatalogEntries(buildSkuCatalogEntries(plan));
+  } catch (error) {
+    console.warn('[sku-catalog] upsert failed', error instanceof Error ? error.message : error);
+  }
 }
 
 function decodePdf(base64: unknown): Buffer {
@@ -90,6 +100,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
 
       try {
         const plan = buildWritePlan(purchase, { freight, duty });
+        await saveToSkuCatalog(plan);
         return json(res, 200, {
           ok: true,
           purchase,
@@ -142,6 +153,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       const freight = (body.freight as DocumentExtract | null) ?? null;
       const duty = (body.duty as DocumentExtract | null) ?? null;
       const plan = buildWritePlan(purchase, { freight, duty });
+      await saveToSkuCatalog(plan);
       return json(res, 200, { ok: true, purchase, freight, duty, plan });
     } catch (error) {
       if (error instanceof MissingAcrylicDimsError) {
@@ -208,7 +220,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       const recentKeys = Array.isArray(body.recentKeys)
         ? body.recentKeys.map(String)
         : [];
-      const plan = buildSalesOrderPlan(doc, { recentKeys });
+      const plan = await buildSalesOrderPlan(doc, { recentKeys });
       return json(res, 200, { ok: true, document: doc, plan });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });

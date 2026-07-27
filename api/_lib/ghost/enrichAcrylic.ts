@@ -72,6 +72,10 @@ function mergeLine(
     amount: original.amount,
     raw_description: original.raw_description,
     price_decimals: priceDecimalsOrNull(upd.price_decimals) ?? original.price_decimals,
+    customer_name:
+      upd.customer_name != null && String(upd.customer_name).trim()
+        ? String(upd.customer_name).trim()
+        : original.customer_name,
   };
 
   const qty = original.quantity || Number(upd.quantity ?? 0) || candidate.quantity;
@@ -119,6 +123,10 @@ function lineFromLlm(upd: Record<string, unknown>): InvoiceLineExtract {
     amount,
     line_kind: asLineKind(upd.line_kind, isAcrylic ? 'acrylic' : 'other'),
     price_decimals: priceDecimalsOrNull(upd.price_decimals),
+    customer_name:
+      upd.customer_name != null && String(upd.customer_name).trim()
+        ? String(upd.customer_name).trim()
+        : null,
   };
 }
 
