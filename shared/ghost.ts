@@ -140,11 +140,7 @@ export interface PurchaseWritePlan {
   sageWrite: 'preview_only';
 }
 
-export type SalesReviewReason =
-  | 'missing_data'
-  | 'unusual_price'
-  | 'possible_duplicate'
-  | 'no_catalog_match';
+export type SalesReviewReason = 'missing_data' | 'unusual_price' | 'no_catalog_match';
 
 export interface SalesOrderLine {
   sku: string;

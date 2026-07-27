@@ -7,7 +7,7 @@ import type {
 } from '../../../shared/ghost';
 import { parseThicknessSize } from './mapToExtract';
 import { toMmDdYyyy } from './orchestrator';
-import { findSkuCatalogByCustomerAndThickness, normalizeCustomerName } from './skuCatalog';
+import { findSkuCatalogByCustomerAndThickness } from './skuCatalog';
 
 /** Flag a sold price as unusual once it strays this far from the catalog's landed cost. */
 const UNUSUAL_PRICE_PCT = 0.25;
@@ -30,10 +30,7 @@ function fallbackSku(description: string): string {
   return `GHO${cleaned}`;
 }
 
-export async function buildSalesOrderPlan(
-  doc: DocumentExtract,
-  opts: { recentKeys?: string[] } = {},
-): Promise<SalesOrderPlan> {
+export async function buildSalesOrderPlan(doc: DocumentExtract): Promise<SalesOrderPlan> {
   const customerName = customerNameFromShipTo(doc);
 
   const lines: SalesOrderLine[] = [];
@@ -87,9 +84,6 @@ export async function buildSalesOrderPlan(
         reasons.push('unusual_price');
       }
     }
-
-    const dupKey = `${normalizeCustomerName(customerName)}|${doc.invoice_number || ''}|${sku}|${qty}`;
-    if (opts.recentKeys?.includes(dupKey)) reasons.push('possible_duplicate');
 
     lines.push({
       sku,

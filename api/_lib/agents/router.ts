@@ -229,10 +229,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         hintRole: 'purchase_invoice',
       });
       // Sales PDFs often look like invoices; keep extracted customer/lines.
-      const recentKeys = Array.isArray(body.recentKeys)
-        ? body.recentKeys.map(String)
-        : [];
-      const plan = await buildSalesOrderPlan(doc, { recentKeys });
+      const plan = await buildSalesOrderPlan(doc);
       await saveToSalesOrderStore(plan);
       return json(res, 200, { ok: true, document: doc, plan });
     } catch (error) {

@@ -148,10 +148,7 @@ export async function approveSupply(plan: PurchaseWritePlan, user = 'demo-cfo') 
   return parseJson<{ ok: boolean; audit: CfoAuditRecord; message: string }>(res);
 }
 
-export async function processSales(input: {
-  pdfBase64: string;
-  recentKeys?: string[];
-}) {
+export async function processSales(input: { pdfBase64: string }) {
   const res = await fetch('/api/agents/sales/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
