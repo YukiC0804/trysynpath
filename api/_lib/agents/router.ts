@@ -6,9 +6,9 @@ import { llmEnrichConfigured, resolveParseModel } from '../ghost/enrichAcrylic';
 import { parsePdf, resolveParseBackend } from '../ghost/parsePdf';
 import { buildSkuCatalogEntries, buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
 import { reapplyLandedCost } from '../ghost/landedCost';
-import { upsertSkuCatalogEntries } from '../ghost/skuCatalog';
+import { clearSkuCatalog, upsertSkuCatalogEntries } from '../ghost/skuCatalog';
 import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder';
-import { upsertSalesOrderRecord } from '../ghost/salesOrderStore';
+import { clearSalesOrderRecords, upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { propagateAcrylicDims } from '../ghost/mapToExtract';
 import { computePnlSummary } from '../ghost/pnl';
 import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
@@ -363,6 +363,22 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     try {
       const pnl = await computePnlSummary();
       return json(res, 200, { ok: true, pnl });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'POST' && path[0] === 'admin' && path[1] === 'reset-data') {
+    try {
+      const body = bodyOf(req);
+      if (body.confirm !== true) {
+        return json(res, 400, {
+          ok: false,
+          error: 'Pass { "confirm": true } to actually wipe the SKU catalog and Sales Order store.',
+        });
+      }
+      await Promise.all([clearSkuCatalog(), clearSalesOrderRecords()]);
+      return json(res, 200, { ok: true, cleared: ['sku-catalog', 'sales-orders'] });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }

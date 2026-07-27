@@ -45,6 +45,7 @@ import {
   processSales,
   processSupply,
   recalculateSupply,
+  resetSupplyAndSalesData,
 } from '../lib/agentsApi';
 
 function numInputValue(n: number): string {
@@ -592,6 +593,27 @@ export function AgentWorkforcePage() {
     }
   };
 
+  const runResetData = async () => {
+    if (
+      !window.confirm(
+        'This permanently deletes every stored Supply & Costing SKU record and every Sales Order record. This cannot be undone. Continue?',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await resetSupplyAndSalesData();
+      setPnl(null);
+      activity.push('Intelligence', 'Cleared all Supply & Costing and Sales Order data', 'reset');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runSourcing = () => {
     activity.push(
       'Smart Sourcing',
@@ -990,13 +1012,23 @@ export function AgentWorkforcePage() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-display text-base font-semibold">P&L</h4>
-                    <button
-                      type="button"
-                      onClick={() => void runIntelligence()}
-                      className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white"
-                    >
-                      <Sparkles size={16} /> Refresh P&L
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void runResetData()}
+                        className="rounded-xl border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 disabled:opacity-50"
+                      >
+                        Clear all SO & Supply data
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runIntelligence()}
+                        className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white"
+                      >
+                        <Sparkles size={16} /> Refresh P&L
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-3">

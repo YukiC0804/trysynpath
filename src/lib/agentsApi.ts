@@ -214,3 +214,13 @@ export async function fetchPnl() {
   const res = await fetch('/api/agents/intelligence/pnl');
   return parseJson<{ ok: boolean; pnl: PnlSummary }>(res);
 }
+
+/** Irreversibly wipes the SKU catalog and Sales Order store. */
+export async function resetSupplyAndSalesData() {
+  const res = await fetch('/api/agents/admin/reset-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  });
+  return parseJson<{ ok: boolean; cleared: string[] }>(res);
+}

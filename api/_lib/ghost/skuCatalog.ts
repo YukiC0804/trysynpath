@@ -150,6 +150,21 @@ export async function listSkuCatalog(): Promise<SkuCatalogEntry[]> {
   return Object.values(await readCatalog()).flat();
 }
 
+/** Wipes the entire catalog — every invoice's entries, no way back. */
+export async function clearSkuCatalog(): Promise<void> {
+  if (kvConfigured()) {
+    await upstash(['DEL', CATALOG_KEY]);
+    return;
+  }
+  if (useMemoryStore()) {
+    memory.delete(CATALOG_KEY);
+    return;
+  }
+  throw new Error(
+    'SKU catalog storage is not configured. Set KV_REST_API_URL and KV_REST_API_TOKEN.',
+  );
+}
+
 export function __resetMemorySkuCatalog(): void {
   memory.clear();
 }

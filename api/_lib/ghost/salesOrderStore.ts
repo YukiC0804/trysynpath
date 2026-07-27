@@ -98,6 +98,21 @@ export async function listSalesOrderRecords(): Promise<SalesOrderRecord[]> {
   return Object.values(await readStore());
 }
 
+/** Wipes every Sales Order record — no way back. */
+export async function clearSalesOrderRecords(): Promise<void> {
+  if (kvConfigured()) {
+    await upstash(['DEL', STORE_KEY]);
+    return;
+  }
+  if (useMemoryStore()) {
+    memory.delete(STORE_KEY);
+    return;
+  }
+  throw new Error(
+    'Sales order storage is not configured. Set KV_REST_API_URL and KV_REST_API_TOKEN.',
+  );
+}
+
 export function __resetMemorySalesOrderStore(): void {
   memory.clear();
 }
