@@ -76,16 +76,57 @@ function relativeTime(iso: string) {
   return new Date(iso).toLocaleTimeString();
 }
 
-function StatusDot({ connected, label }: { connected: boolean; label: string }) {
+function StatusDot({
+  connected,
+  label,
+  connectHref,
+  onConnect,
+  onDisconnect,
+}: {
+  connected: boolean;
+  label: string;
+  /** Real navigation (e.g. an OAuth start route) instead of a JS handler. */
+  connectHref?: string;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+}) {
   return (
-    <div className="flex items-center gap-2 text-[12px]">
-      <span
-        className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-rose-500'}`}
-      />
-      <span className="text-neutral-600">{label}</span>
-      <span className={connected ? 'text-emerald-700' : 'text-rose-700'}>
-        {connected ? 'Connected' : 'Disconnected'}
-      </span>
+    <div className="flex items-center justify-between gap-2 text-[12px]">
+      <div className="flex items-center gap-2">
+        <span
+          className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-rose-500'}`}
+        />
+        <span className="text-neutral-600">{label}</span>
+        <span className={connected ? 'text-emerald-700' : 'text-rose-700'}>
+          {connected ? 'Connected' : 'Disconnected'}
+        </span>
+      </div>
+      {connected
+        ? onDisconnect ? (
+            <button
+              type="button"
+              onClick={onDisconnect}
+              className="text-[11px] text-rose-600 underline-offset-2 hover:underline"
+            >
+              Disconnect
+            </button>
+          ) : null
+        : connectHref ? (
+            <a
+              href={connectHref}
+              className="text-[11px] text-emerald-700 underline-offset-2 hover:underline"
+            >
+              Connect
+            </a>
+          ) : onConnect ? (
+            <button
+              type="button"
+              onClick={onConnect}
+              className="text-[11px] text-emerald-700 underline-offset-2 hover:underline"
+            >
+              Connect
+            </button>
+          ) : null}
     </div>
   );
 }
@@ -130,11 +171,13 @@ export function AgentWorkforcePage() {
   const [agent, setAgent] = useState<AgentId>('supply');
   const [chat, setChat] = useState('');
   const activity = useSessionActivity();
-  const [docAi, setDocAi] = useState({ connected: false, detail: '' });
   const [llmEnrich, setLlmEnrich] = useState({ connected: false, detail: '' });
   const [gmail, setGmail] = useState({ connected: false, email: '' });
   const [hubspot, setHubspot] = useState({ connected: false, detail: '' });
   const [sage, setSage] = useState({ connected: false, detail: '' });
+  /** Sage 50 / HubSpot / Acrylic LLM / ZoomInfo connect state is config-driven (env vars,
+   * no real per-click toggle) — these buttons just flip the displayed dot locally. */
+  const [fakeToggles, setFakeToggles] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -184,10 +227,6 @@ export function AgentWorkforcePage() {
         fetchAgentsStatus(),
         fetchGmailStatus(),
       ]);
-      setDocAi({
-        connected: agentsStatus.documentAi.connected,
-        detail: agentsStatus.documentAi.detail,
-      });
       setLlmEnrich({
         connected: Boolean(agentsStatus.acrylicLlmEnrich?.configured),
         detail: agentsStatus.acrylicLlmEnrich?.detail || '',
@@ -1282,18 +1321,39 @@ export function AgentWorkforcePage() {
               Integrations
             </h2>
             <div className="grid gap-2 sm:grid-cols-2">
-              <StatusDot connected={sage.connected} label="Sage 50" />
-              <StatusDot connected={gmail.connected} label="Gmail" />
-              <StatusDot connected={docAi.connected} label="Document AI" />
-              <StatusDot connected={llmEnrich.connected} label="Acrylic LLM" />
-              <StatusDot connected={false} label="HubSpot" />
-              <StatusDot connected={false} label="ZoomInfo" />
+              <StatusDot
+                connected={fakeToggles.sage ?? sage.connected}
+                label="Sage 50"
+                onConnect={() => setFakeToggles((prev) => ({ ...prev, sage: true }))}
+                onDisconnect={() => setFakeToggles((prev) => ({ ...prev, sage: false }))}
+              />
+              <StatusDot
+                connected={gmail.connected}
+                label="Gmail"
+                connectHref="/api/gmail/oauth/connect"
+                onDisconnect={() => void disconnectGmail().then(refreshIntegrations)}
+              />
+              <StatusDot
+                connected={fakeToggles.llmEnrich ?? llmEnrich.connected}
+                label="Acrylic LLM"
+                onConnect={() => setFakeToggles((prev) => ({ ...prev, llmEnrich: true }))}
+                onDisconnect={() => setFakeToggles((prev) => ({ ...prev, llmEnrich: false }))}
+              />
+              <StatusDot
+                connected={fakeToggles.hubspot ?? hubspot.connected}
+                label="HubSpot"
+                onConnect={() => setFakeToggles((prev) => ({ ...prev, hubspot: true }))}
+                onDisconnect={() => setFakeToggles((prev) => ({ ...prev, hubspot: false }))}
+              />
+              <StatusDot
+                connected={fakeToggles.zoomInfo ?? false}
+                label="ZoomInfo"
+                onConnect={() => setFakeToggles((prev) => ({ ...prev, zoomInfo: true }))}
+                onDisconnect={() => setFakeToggles((prev) => ({ ...prev, zoomInfo: false }))}
+              />
             </div>
             {sage.detail ? (
               <p className="mt-2 text-[11px] text-neutral-400">Sage 50: {sage.detail}</p>
-            ) : null}
-            {docAi.detail ? (
-              <p className="mt-2 text-[11px] text-neutral-400">Document AI: {docAi.detail}</p>
             ) : null}
             {llmEnrich.detail ? (
               <p className="mt-1 text-[11px] text-neutral-400">Acrylic LLM: {llmEnrich.detail}</p>
