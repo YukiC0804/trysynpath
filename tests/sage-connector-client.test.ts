@@ -179,12 +179,12 @@ describe('purchase order / receive payload builders', () => {
     });
   });
 
-  it('toReceivePayload matches sage_client.py _receive_payload shape', () => {
+  it('toReceivePayload omits purchase_order_reference (connector SDK build cannot link invoice to PO)', () => {
     const payload = toReceivePayload(purchasePlan);
+    expect(payload).not.toHaveProperty('purchase_order_reference');
     expect(payload).toEqual({
       vendor_id: 'JMK',
       reference_number: 'INV-100',
-      purchase_order_reference: 'PO-INV-100',
       date: '2026-07-21T00:00:00',
       gl_account_id: '1200',
       lines: [
@@ -256,13 +256,13 @@ describe('sales order payload builder', () => {
 });
 
 describe('sales invoice payload builder', () => {
-  it('toSalesInvoicePayload mirrors the sales order shape, minus type/customer_po_number', () => {
-    const payload = toSalesInvoicePayload(salesPlan, 'CNLEDGE', 'SO-500', 'SO-SO-500');
+  it('toSalesInvoicePayload omits sales_order_reference (same SDK-link limitation as purchases)', () => {
+    const payload = toSalesInvoicePayload(salesPlan, 'CNLEDGE', 'SO-500');
+    expect(payload).not.toHaveProperty('sales_order_reference');
     expect(payload).toEqual({
       customer_id: 'CNLEDGE',
       reference_number: 'SO-500',
       date: '2026-07-21T00:00:00',
-      sales_order_reference: 'SO-SO-500',
       lines: [
         { description: 'Acrylic 3mm 18x24', quantity: 5, unit_price: 25, amount: 125, item_id: '3ACR18X24' },
         { description: 'Freight', quantity: 1, unit_price: 15, amount: 15, item_id: null },
@@ -274,7 +274,7 @@ describe('sales invoice payload builder', () => {
     process.env.SAGE_CONNECTOR_URL = 'http://127.0.0.1:8080';
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ reference_number: 'SO-500' }), { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
-    const result = await createSalesInvoice(salesPlan, 'CNLEDGE', 'SO-500', 'SO-SO-500');
+    const result = await createSalesInvoice(salesPlan, 'CNLEDGE', 'SO-500');
     expect(result.reference_number).toBe('SO-500');
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:8080/sales/invoice',

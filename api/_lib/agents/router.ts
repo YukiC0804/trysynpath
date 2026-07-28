@@ -325,6 +325,7 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         const receive = await createPurchaseReceive(plan);
         receiveReference = receive?.reference_number || plan.receive_reference_number;
       } catch (error) {
+        console.error('[sage] purchase receive failed', poReference, errorMessage(error));
         warnings.push(
           `Purchase Order ${poReference} was created, but Purchase Invoice / Receive failed: ${errorMessage(error)}. Retry the receive once fixed — the PO already exists in Sage.`,
         );
@@ -414,9 +415,10 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       const warnings: string[] = [];
       let invoiceReference: string | null = null;
       try {
-        const invoice = await createSalesInvoice(plan, customerId, invoiceReferenceNumber, soReference);
+        const invoice = await createSalesInvoice(plan, customerId, invoiceReferenceNumber);
         invoiceReference = invoice?.reference_number || invoiceReferenceNumber;
       } catch (error) {
+        console.error('[sage] sales invoice failed', soReference, errorMessage(error));
         warnings.push(
           `Sales Order ${soReference} was created, but the Sales Invoice failed: ${errorMessage(error)}. Retry once fixed — the order already exists in Sage.`,
         );

@@ -197,7 +197,11 @@ export function toReceivePayload(plan: PurchaseWritePlan) {
   return {
     vendor_id: plan.vendor.id,
     reference_number: plan.receive_reference_number,
-    purchase_order_reference: plan.po_reference_number,
+    // Deliberately omitting purchase_order_reference: the connector's
+    // _link_purchase_invoice_to_po throws "no known Apply/Reference API on this SDK
+    // build" *before* it gets to lines/Save() — sending this field makes the whole
+    // receive fail (confirmed live: PO created, receive 422'd, inventory never moved).
+    // Re-add once ai_erp fixes _link_purchase_invoice_to_po (sage_sdk.py).
     date: isoDate(plan.invoice_date),
     gl_account_id: plan.gl_account_id,
     lines: plan.lines.map((ln) => purchaseLine(ln, plan.gl_account_id)),
@@ -261,19 +265,16 @@ export async function createSalesOrder(
 /** Sales Invoice via .NET SalesInvoiceFactory — the sales-side counterpart of
  * toReceivePayload/createPurchaseReceive. This is what actually posts revenue and reduces
  * inventory (POST /sales/invoice, added to the connector in commit "Add Sales Invoice
- * endpoint to Sage connector" — not yet exercised against the real company as of that
- * commit, so treat the first real write here as the live test). */
-export function toSalesInvoicePayload(
-  plan: SalesOrderPlan,
-  customerId: string,
-  referenceNumber: string,
-  salesOrderReference?: string | null,
-) {
+ * endpoint to Sage connector"). Deliberately never sends sales_order_reference: the
+ * purchase side's identically-shaped _link_purchase_invoice_to_po confirmed live that
+ * this SDK build has "no known Apply/Reference API" and throws *before* lines/Save() —
+ * _link_sales_invoice_to_so has the exact same shape, so sending sales_order_reference
+ * would fail the same way. Re-add once ai_erp fixes the link functions (sage_sdk.py). */
+export function toSalesInvoicePayload(plan: SalesOrderPlan, customerId: string, referenceNumber: string) {
   return {
     customer_id: customerId,
     reference_number: referenceNumber,
     date: salesDate(plan),
-    sales_order_reference: salesOrderReference ?? null,
     lines: plan.lines.map(salesLine),
   };
 }
@@ -282,10 +283,9 @@ export async function createSalesInvoice(
   plan: SalesOrderPlan,
   customerId: string,
   referenceNumber: string,
-  salesOrderReference?: string | null,
 ): Promise<{ reference_number?: string }> {
   return connectorFetch('/sales/invoice', {
     method: 'POST',
-    body: JSON.stringify(toSalesInvoicePayload(plan, customerId, referenceNumber, salesOrderReference)),
+    body: JSON.stringify(toSalesInvoicePayload(plan, customerId, referenceNumber)),
   });
 }
