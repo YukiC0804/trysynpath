@@ -18,6 +18,7 @@ import {
   createSalesInvoice,
   createSalesOrder,
   findMissingSkuIds,
+  listInventoryItems,
   pingSageConnector,
   resetSageSession,
   sageConnectorConfigured,
@@ -448,6 +449,18 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     // with a real Sage-backed call so this can't report "ok" while still hung.
     const verified = await verifySageReachable();
     return json(res, 200, { ok: verified.ok, detail: verified.detail });
+  }
+
+  if (method === 'GET' && path[0] === 'sage' && path[1] === 'inventory-items') {
+    if (!sageConnectorConfigured()) {
+      return json(res, 200, { ok: false, error: 'SAGE_CONNECTOR_URL not set' });
+    }
+    try {
+      const items = await listInventoryItems();
+      return json(res, 200, { ok: true, count: items.length, items });
+    } catch (error) {
+      return json(res, 502, { ok: false, error: `Sage connector read failed: ${errorMessage(error)}` });
+    }
   }
 
   if (method === 'GET' && path[0] === 'outreach' && path[1] === 'leads') {
