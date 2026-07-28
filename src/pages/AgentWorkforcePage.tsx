@@ -66,15 +66,28 @@ function csvEscape(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
+/** Compact form of ln.description for the CSV only — e.g. "Ghost Gokai Acrylic 18mm x
+ * 4' x 8' Clear." (41 chars, over Sage's 30-char Item Description limit) becomes
+ * "GhostGokaiAcrylic 18 4x8 Clear" (30 chars). Pulls the vendor word back out of the
+ * already-built description rather than re-deriving it, so it can't drift from
+ * buildDescription()'s brand-word logic. */
+function shortInventoryDescription(ln: AcrylicSkuLine): string {
+  const vendorWord = ln.description.match(/^Ghost (\S+)/)?.[1] ?? '';
+  const color = ln.color_name?.trim() || 'Clear';
+  return `Ghost${vendorWord}Acrylic ${ln.thickness_mm} ${ln.size} ${color}`;
+}
+
 /** Item ID / Item Description columns, matching Sage 50's Inventory Item List import
  * fields — enough to batch-create new SKUs via File → Import/Export → Import Records,
- * mapping column 1 → Item ID and column 2 → Item Description in the wizard. Description
- * truncated to 30 chars, Sage's field limit. */
+ * mapping column 1 → Item ID and column 2 → Item Description in the wizard. No header
+ * row — Sage's import wizard maps columns by position, not by name. Description is the
+ * compact form (see shortInventoryDescription), truncated to 30 chars as a safety net —
+ * Sage's field limit. */
 function downloadInventoryCsv(plan: PurchaseWritePlan) {
   const rows = plan.lines.map(
-    (ln) => `${csvEscape(ln.sku_id)},${csvEscape(ln.description.slice(0, 30))}`,
+    (ln) => `${csvEscape(ln.sku_id)},${csvEscape(shortInventoryDescription(ln).slice(0, 30))}`,
   );
-  const csv = ['Item ID,Item Description', ...rows].join('\r\n');
+  const csv = rows.join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
