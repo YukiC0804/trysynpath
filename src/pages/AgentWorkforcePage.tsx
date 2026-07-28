@@ -383,7 +383,7 @@ export function AgentWorkforcePage() {
   const [outreachSteps, setOutreachSteps] = useState<EmailStep[]>([
     {
       subject: 'Quick follow-up from Synpath',
-      body: 'Hi {{name}} — following up on acrylic sheet pricing and lead times for {{company}}. Happy to send a quote this week.',
+      body: 'Hi {{first_name}} — following up on acrylic sheet pricing and lead times for {{company}}. Happy to send a quote this week.',
       delayDays: 0,
     },
   ]);
@@ -867,7 +867,11 @@ export function AgentWorkforcePage() {
     setOutreachSteps((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   };
 
-  const insertVariable = (index: number, field: 'subject' | 'body', variable: 'name' | 'company') => {
+  const insertVariable = (
+    index: number,
+    field: 'subject' | 'body',
+    variable: 'first_name' | 'last_name' | 'company',
+  ) => {
     setOutreachSteps((prev) =>
       prev.map((s, i) => (i === index ? { ...s, [field]: `${s[field]}{{${variable}}}` } : s)),
     );
@@ -1269,10 +1273,17 @@ export function AgentWorkforcePage() {
                       <div className="mt-1 flex gap-1">
                         <button
                           type="button"
-                          onClick={() => insertVariable(i, 'subject', 'name')}
+                          onClick={() => insertVariable(i, 'subject', 'first_name')}
                           className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
                         >
-                          + name
+                          + first_name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(i, 'subject', 'last_name')}
+                          className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
+                        >
+                          + last_name
                         </button>
                         <button
                           type="button"
@@ -1294,10 +1305,17 @@ export function AgentWorkforcePage() {
                       <div className="mt-1 flex gap-1">
                         <button
                           type="button"
-                          onClick={() => insertVariable(i, 'body', 'name')}
+                          onClick={() => insertVariable(i, 'body', 'first_name')}
                           className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
                         >
-                          + name
+                          + first_name
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(i, 'body', 'last_name')}
+                          className="rounded border border-neutral-300 px-1.5 py-0.5 text-[10px] text-neutral-600"
+                        >
+                          + last_name
                         </button>
                         <button
                           type="button"
