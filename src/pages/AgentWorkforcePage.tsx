@@ -77,15 +77,28 @@ function shortInventoryDescription(ln: AcrylicSkuLine): string {
   return `Ghost${vendorWord}Acrylic ${ln.thickness_mm} ${ln.size} ${color}`;
 }
 
-/** Item ID / Item Description columns, matching Sage 50's Inventory Item List import
- * fields — enough to batch-create new SKUs via File → Import/Export → Import Records,
- * mapping column 1 → Item ID and column 2 → Item Description in the wizard. No header
- * row — Sage's import wizard maps columns by position, not by name. Description is the
+// Ghost Acrylics' standard GL accounts for a Stock item (confirmed against the real Sage
+// company's item defaults) — StockItem.SalesAccountReference / InventoryAccountReference /
+// COGSAccountReference are the ONLY place Sage resolves an account for a PurchaseInvoice
+// line that carries an InventoryItemReference (confirmed via probe_purchase_invoice.py
+// reflection: PurchaseInvoicePurchasesLine has no AccountReference property at all).
+// Without these set on the item itself, Sage rejects the transaction with "missing a
+// valid account" regardless of anything sent on the invoice/line.
+const GL_SALES_ACCT = '4000';
+const GL_INVENTORY_ACCT = '1200';
+const GL_COGS_ACCT = '5000';
+
+/** Item ID / Item Description / G/L Sales / G/L Inventory / G/L COGS columns, matching
+ * Sage 50's Inventory Item List import fields — enough to batch-create new SKUs via
+ * File → Import/Export → Import Records. No header row — Sage's import wizard maps
+ * columns by position (map them to Item ID, Item Description, G/L Sales Account, G/L
+ * Inventory Account, G/L COGS/Salary Acct respectively), not by name. Description is the
  * compact form (see shortInventoryDescription), truncated to 30 chars as a safety net —
  * Sage's field limit. */
 function downloadInventoryCsv(plan: PurchaseWritePlan) {
   const rows = plan.lines.map(
-    (ln) => `${csvEscape(ln.sku_id)},${csvEscape(shortInventoryDescription(ln).slice(0, 30))}`,
+    (ln) =>
+      `${csvEscape(ln.sku_id)},${csvEscape(shortInventoryDescription(ln).slice(0, 30))},${GL_SALES_ACCT},${GL_INVENTORY_ACCT},${GL_COGS_ACCT}`,
   );
   const csv = rows.join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
