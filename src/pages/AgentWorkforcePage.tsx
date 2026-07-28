@@ -46,7 +46,9 @@ import {
   fetchOutreachSequences,
   fetchPnl,
   fetchSalesFromEmail,
+  fetchSalesFromEmailPreview,
   fetchSupplyFromEmail,
+  fetchSupplyFromEmailPreview,
   fileToBase64,
   processSales,
   processSupply,
@@ -129,6 +131,37 @@ function money(n: number, currency = 'USD') {
  * 20), paginated beyond that. */
 const ACTIVITY_PAGE_SIZE = 20;
 
+const SUPPLY_PROCESSING_STAGES = [
+  'Downloading PDF attachments…',
+  'Reading purchase invoice…',
+  'Extracting SKU lines…',
+  'Calculating landed cost…',
+];
+
+const SALES_PROCESSING_STAGES = [
+  'Downloading PDF attachment…',
+  'Reading sales order…',
+  'Extracting line items…',
+  'Checking price & stock…',
+];
+
+/** Advances through `stages` on a timer (looping on the last one) until the
+ * returned cleanup fn is called — used to show rough progress during a
+ * single long-running fetch that has no real step-by-step signal. */
+function startStageCycle(stages: string[], setStage: (s: string | null) => void): () => void {
+  if (!stages.length) return () => {};
+  let i = 0;
+  setStage(stages[0] ?? null);
+  const id = window.setInterval(() => {
+    i = Math.min(i + 1, stages.length - 1);
+    setStage(stages[i] ?? null);
+  }, 1400);
+  return () => {
+    window.clearInterval(id);
+    setStage(null);
+  };
+}
+
 function relativeTime(iso: string) {
   const ms = Date.now() - new Date(iso).getTime();
   if (ms < 15_000) return 'just now';
@@ -145,7 +178,7 @@ interface EmailPreview {
   attachments: string[];
 }
 
-function EmailPreviewCard({ preview }: { preview: EmailPreview }) {
+function EmailPreviewCard({ preview, stage }: { preview: EmailPreview; stage?: string | null }) {
   const nameOnly = preview.from.split('<')[0]?.trim() || preview.from;
   const initial = nameOnly.charAt(0).toUpperCase() || '?';
   return (
@@ -174,6 +207,11 @@ function EmailPreviewCard({ preview }: { preview: EmailPreview }) {
                 </span>
               ))}
             </div>
+          ) : null}
+          {stage ? (
+            <p className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-indigo-600">
+              <Loader2 size={12} className="animate-spin" /> {stage}
+            </p>
           ) : null}
         </div>
       </div>
@@ -308,6 +346,7 @@ export function AgentWorkforcePage() {
   const [poolEdit, setPoolEdit] = useState('');
   const [audit, setAudit] = useState<CfoAuditRecord | null>(null);
   const [supplyEmailPreview, setSupplyEmailPreview] = useState<EmailPreview | null>(null);
+  const [supplyEmailStage, setSupplyEmailStage] = useState<string | null>(null);
   const [sageResult, setSageResult] = useState<SageWriteResult | null>(null);
 
   // Sales
@@ -317,6 +356,7 @@ export function AgentWorkforcePage() {
   const [salesSageResult, setSalesSageResult] = useState<SageWriteResult | null>(null);
   const [salesConfirmed, setSalesConfirmed] = useState(false);
   const [salesEmailPreview, setSalesEmailPreview] = useState<EmailPreview | null>(null);
+  const [salesEmailStage, setSalesEmailStage] = useState<string | null>(null);
 
   // Outreach
   const [leads, setLeads] = useState<OutreachLead[]>([]);
@@ -527,26 +567,27 @@ export function AgentWorkforcePage() {
     setBusy(true);
     setError(null);
     setAudit(null);
+    setSupplyEmailPreview(null);
+    let stopStages: (() => void) | null = null;
     try {
-      const result = await fetchSupplyFromEmail();
+      const preview = await fetchSupplyFromEmailPreview();
+      if (!preview.ok || !preview.emailSource) {
+        throw new Error(preview.error || 'No matching email found');
+      }
+      const messageId = preview.emailSource.messageId;
+      setSupplyEmailPreview({
+        from: preview.emailSource.from,
+        subject: preview.emailSource.subject,
+        receivedAt: preview.emailSource.receivedAt,
+        snippet: preview.emailSource.snippet,
+        attachments: preview.emailSource.fileNames,
+      });
+
+      stopStages = startStageCycle(SUPPLY_PROCESSING_STAGES, setSupplyEmailStage);
+      const result = await fetchSupplyFromEmail(messageId);
       setSupplyPurchase(result.purchase ?? null);
       setSupplyFreight(result.freight ?? null);
       setSupplyDuty(result.duty ?? null);
-      setSupplyEmailPreview(
-        result.emailSource
-          ? {
-              from: result.emailSource.from,
-              subject: result.emailSource.subject,
-              receivedAt: result.emailSource.receivedAt,
-              snippet: result.emailSource.snippet,
-              attachments: [
-                result.emailSource.fileNames.purchase,
-                result.emailSource.fileNames.freight,
-                result.emailSource.fileNames.duty,
-              ].filter((name): name is string => Boolean(name)),
-            }
-          : null,
-      );
 
       if (result.code === 'MISSING_ACRYLIC_DIMS' && result.purchase) {
         const edits: Record<number, { thickness_mm: string; size: string; quantity: string }> =
@@ -581,6 +622,7 @@ export function AgentWorkforcePage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      stopStages?.();
       setBusy(false);
     }
   };
@@ -735,21 +777,26 @@ export function AgentWorkforcePage() {
     setError(null);
     setSalesSageResult(null);
     setSalesConfirmed(false);
+    setSalesEmailPreview(null);
+    let stopStages: (() => void) | null = null;
     try {
-      const result = await fetchSalesFromEmail();
+      const preview = await fetchSalesFromEmailPreview();
+      if (!preview.ok || !preview.emailSource) {
+        throw new Error(preview.error || 'No matching email found');
+      }
+      const messageId = preview.emailSource.messageId;
+      setSalesEmailPreview({
+        from: preview.emailSource.from,
+        subject: preview.emailSource.subject,
+        receivedAt: preview.emailSource.receivedAt,
+        snippet: preview.emailSource.snippet,
+        attachments: preview.emailSource.fileNames,
+      });
+
+      stopStages = startStageCycle(SALES_PROCESSING_STAGES, setSalesEmailStage);
+      const result = await fetchSalesFromEmail(messageId);
       setSalesPlan(result.plan);
       setSalesModal(true);
-      setSalesEmailPreview(
-        result.emailSource
-          ? {
-              from: result.emailSource.from,
-              subject: result.emailSource.subject,
-              receivedAt: result.emailSource.receivedAt,
-              snippet: result.emailSource.snippet,
-              attachments: [result.emailSource.fileName].filter(Boolean),
-            }
-          : null,
-      );
       const src = result.emailSource;
       activity.push(
         'Sales Order',
@@ -761,6 +808,7 @@ export function AgentWorkforcePage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      stopStages?.();
       setBusy(false);
     }
   };
@@ -1030,7 +1078,9 @@ export function AgentWorkforcePage() {
                     the subject.
                     {gmail.connected ? null : ' Connect Gmail on the Outreach tab first.'}
                   </p>
-                  {supplyEmailPreview ? <EmailPreviewCard preview={supplyEmailPreview} /> : null}
+                  {supplyEmailPreview ? (
+                    <EmailPreviewCard preview={supplyEmailPreview} stage={supplyEmailStage} />
+                  ) : null}
                 </div>
 
                 <div className="mt-2 border-t border-neutral-200 pt-4">
@@ -1086,7 +1136,9 @@ export function AgentWorkforcePage() {
                     subject.
                     {gmail.connected ? null : ' Connect Gmail on the Outreach tab first.'}
                   </p>
-                  {salesEmailPreview ? <EmailPreviewCard preview={salesEmailPreview} /> : null}
+                  {salesEmailPreview ? (
+                    <EmailPreviewCard preview={salesEmailPreview} stage={salesEmailStage} />
+                  ) : null}
                 </div>
               </div>
             ) : null}

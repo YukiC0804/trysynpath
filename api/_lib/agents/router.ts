@@ -28,7 +28,12 @@ import {
   verifySageReachable,
 } from '../sageConnector/client';
 import { getValidGmailAccessToken } from '../gmail/auth';
-import { fetchLatestSynpathPricingPoPdfs, fetchLatestSynpathPricingSoPdf } from '../gmail/pricingEmailSource';
+import {
+  fetchLatestSynpathPricingPoPdfs,
+  fetchLatestSynpathPricingSoPdf,
+  previewLatestSynpathPricingPoEmail,
+  previewLatestSynpathPricingSoEmail,
+} from '../gmail/pricingEmailSource';
 import { computeStepSchedule, todayIso } from '../outreach/scheduler';
 import { sendSequenceStep } from '../outreach/sender';
 import { listOutreachSequences, upsertOutreachSequence } from '../outreach/store';
@@ -185,12 +190,34 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     }
   }
 
+  if ((method === 'GET' || method === 'POST') && path[0] === 'supply' && path[1] === 'from-email' && path[2] === 'preview') {
+    try {
+      const auth = await getValidGmailAccessToken(req, res);
+      if (!auth) return json(res, 401, { ok: false, error: 'Gmail is not connected' });
+      const preview = await previewLatestSynpathPricingPoEmail(auth.accessToken);
+      return json(res, 200, {
+        ok: true,
+        emailSource: {
+          messageId: preview.messageId,
+          subject: preview.subject,
+          from: preview.from,
+          receivedAt: preview.receivedAt,
+          snippet: preview.snippet,
+          fileNames: preview.fileNames,
+        },
+      });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
   if ((method === 'GET' || method === 'POST') && path[0] === 'supply' && path[1] === 'from-email') {
     try {
       const auth = await getValidGmailAccessToken(req, res);
       if (!auth) return json(res, 401, { ok: false, error: 'Gmail is not connected' });
 
-      const bundle = await fetchLatestSynpathPricingPoPdfs(auth.accessToken);
+      const messageId = bodyOf(req).messageId as string | undefined;
+      const bundle = await fetchLatestSynpathPricingPoPdfs(auth.accessToken, messageId);
       const result = await processSupplyPdfs(
         bundle.purchase.content,
         bundle.freight?.content ?? null,
@@ -356,12 +383,34 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     }
   }
 
+  if ((method === 'GET' || method === 'POST') && path[0] === 'sales' && path[1] === 'from-email' && path[2] === 'preview') {
+    try {
+      const auth = await getValidGmailAccessToken(req, res);
+      if (!auth) return json(res, 401, { ok: false, error: 'Gmail is not connected' });
+      const preview = await previewLatestSynpathPricingSoEmail(auth.accessToken);
+      return json(res, 200, {
+        ok: true,
+        emailSource: {
+          messageId: preview.messageId,
+          subject: preview.subject,
+          from: preview.from,
+          receivedAt: preview.receivedAt,
+          snippet: preview.snippet,
+          fileNames: preview.fileNames,
+        },
+      });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
   if ((method === 'GET' || method === 'POST') && path[0] === 'sales' && path[1] === 'from-email') {
     try {
       const auth = await getValidGmailAccessToken(req, res);
       if (!auth) return json(res, 401, { ok: false, error: 'Gmail is not connected' });
 
-      const found = await fetchLatestSynpathPricingSoPdf(auth.accessToken);
+      const messageId = bodyOf(req).messageId as string | undefined;
+      const found = await fetchLatestSynpathPricingSoPdf(auth.accessToken, messageId);
       const result = await processSalesPdf(found.content);
       return json(res, 200, {
         ...result,

@@ -132,8 +132,30 @@ export async function processSupply(input: {
   return data;
 }
 
-export async function fetchSupplyFromEmail() {
-  const res = await fetch('/api/agents/supply/from-email');
+export interface EmailPreviewSource {
+  messageId: string;
+  subject: string;
+  from: string;
+  receivedAt: string;
+  snippet: string;
+  fileNames: string[];
+}
+
+/** Fast lookup (metadata only, no PDF download/parse) — call before fetchSupplyFromEmail
+ * so the source email can be shown right away, and pass its messageId back in to skip
+ * re-searching for it. */
+export async function fetchSupplyFromEmailPreview() {
+  const res = await fetch('/api/agents/supply/from-email/preview');
+  return parseJson<{ ok: boolean; error?: string; emailSource?: EmailPreviewSource }>(res);
+}
+
+export async function fetchSupplyFromEmail(messageId?: string) {
+  const res = await fetch(
+    '/api/agents/supply/from-email',
+    messageId
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId }) }
+      : undefined,
+  );
   const data = (await res.json()) as {
     ok: boolean;
     error?: string;
@@ -258,8 +280,21 @@ export async function confirmSales(plan: SalesOrderPlan, opts: { confirmSageWrit
   return parseJson<{ ok: boolean; message: string; sageResult?: SageWriteResult }>(res);
 }
 
-export async function fetchSalesFromEmail() {
-  const res = await fetch('/api/agents/sales/from-email');
+/** Fast lookup (metadata only, no PDF download/parse) — call before fetchSalesFromEmail
+ * so the source email can be shown right away, and pass its messageId back in to skip
+ * re-searching for it. */
+export async function fetchSalesFromEmailPreview() {
+  const res = await fetch('/api/agents/sales/from-email/preview');
+  return parseJson<{ ok: boolean; error?: string; emailSource?: EmailPreviewSource }>(res);
+}
+
+export async function fetchSalesFromEmail(messageId?: string) {
+  const res = await fetch(
+    '/api/agents/sales/from-email',
+    messageId
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId }) }
+      : undefined,
+  );
   return parseJson<{
     ok: boolean;
     document: DocumentExtract;

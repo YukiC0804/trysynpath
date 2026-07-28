@@ -3,9 +3,15 @@
  * the user uploading files, pull them from the latest email under the
  * "synpath pricing" Gmail label matching a subject keyword ("PO" for
  * purchase invoices, "SO" for sales orders).
+ *
+ * Split into a fast preview (metadata only, no attachment download) and the
+ * full fetch (downloads + returns PDF bytes) so the UI can show the source
+ * email immediately, before the slower download/parse work runs. The full
+ * fetch accepts the preview's `messageId` to load that exact message
+ * directly instead of re-running the search.
  */
-import { getGmailAttachment, getGmailMessage, listGmailMessageIds } from './client';
-import { headerValue, parseGmailMime } from './mime';
+import { getGmailAttachment, getGmailMessage, listGmailMessageIds, type GmailApiMessage } from './client';
+import { headerValue, parseGmailMime, type ParsedGmailAttachment } from './mime';
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 const LABEL = 'label:"synpath pricing"';
@@ -15,36 +21,96 @@ export interface RolePdf {
   content: Buffer;
 }
 
-interface LatestEmailPdfs {
+export interface EmailMeta {
   messageId: string;
   subject: string;
   from: string;
   receivedAt: string;
   snippet: string;
-  pdfs: RolePdf[];
 }
 
-/** Most recent (by actual internalDate, not list order) email matching `label:"synpath pricing" subject:<keyword> has:attachment`, with its PDF attachments downloaded. */
-async function fetchLatestMatchingPdfs(accessToken: string, subjectKeyword: string): Promise<LatestEmailPdfs> {
+async function findLatestMatchingMessage(
+  accessToken: string,
+  subjectKeyword: string,
+): Promise<GmailApiMessage> {
   const query = `${LABEL} subject:${subjectKeyword} has:attachment`;
   const { messages } = await listGmailMessageIds(accessToken, query, 10);
   if (!messages.length) {
     throw new Error(`No email found matching: ${query}`);
   }
-
   const full = await Promise.all(messages.map((m) => getGmailMessage(accessToken, m.id)));
   full.sort((a, b) => Number(b.internalDate ?? 0) - Number(a.internalDate ?? 0));
-  const latest = full[0]!;
-  const headers = latest.payload?.headers;
-  const subject = headerValue(headers, 'Subject');
-  const from = headerValue(headers, 'From');
+  return full[0]!;
+}
 
-  const parsed = parseGmailMime(latest.payload);
-  const pdfAttachments = parsed.attachments.filter(
+function messageMeta(message: GmailApiMessage): EmailMeta {
+  const headers = message.payload?.headers;
+  const subject = headerValue(headers, 'Subject');
+  return {
+    messageId: message.id,
+    subject,
+    from: headerValue(headers, 'From'),
+    receivedAt: message.internalDate
+      ? new Date(Number(message.internalDate)).toISOString()
+      : headerValue(headers, 'Date'),
+    snippet: message.snippet ?? parseGmailMime(message.payload).text.slice(0, 180),
+  };
+}
+
+function pdfAttachmentsOf(message: GmailApiMessage): ParsedGmailAttachment[] {
+  return parseGmailMime(message.payload).attachments.filter(
     (a) => a.mimeType === 'application/pdf' || /\.pdf$/i.test(a.fileName),
   );
+}
+
+export interface EmailPreview extends EmailMeta {
+  fileNames: string[];
+}
+
+/** Fast lookup: latest matching email's metadata + PDF attachment names — no download. */
+async function previewLatestMatchingEmail(
+  accessToken: string,
+  subjectKeyword: string,
+): Promise<EmailPreview> {
+  const message = await findLatestMatchingMessage(accessToken, subjectKeyword);
+  const meta = messageMeta(message);
+  const pdfAttachments = pdfAttachmentsOf(message);
   if (!pdfAttachments.length) {
-    throw new Error(`Latest matching email ("${subject}") has no PDF attachments`);
+    throw new Error(`Latest matching email ("${meta.subject}") has no PDF attachments`);
+  }
+  return { ...meta, fileNames: pdfAttachments.map((a) => a.fileName) };
+}
+
+export function previewLatestSynpathPricingPoEmail(accessToken: string): Promise<EmailPreview> {
+  return previewLatestMatchingEmail(accessToken, 'PO');
+}
+
+export function previewLatestSynpathPricingSoEmail(accessToken: string): Promise<EmailPreview> {
+  return previewLatestMatchingEmail(accessToken, 'SO');
+}
+
+interface LatestEmailPdfs extends EmailMeta {
+  pdfs: RolePdf[];
+}
+
+/**
+ * Full fetch: the matching email's metadata + downloaded PDF bytes. Pass
+ * `messageId` (from a prior preview call) to load that exact message
+ * instead of re-running the search — cheaper and avoids a race against a
+ * newer matching email arriving between the preview and this call.
+ */
+async function fetchLatestMatchingPdfs(
+  accessToken: string,
+  subjectKeyword: string,
+  messageId?: string,
+): Promise<LatestEmailPdfs> {
+  const message = messageId
+    ? await getGmailMessage(accessToken, messageId)
+    : await findLatestMatchingMessage(accessToken, subjectKeyword);
+  const meta = messageMeta(message);
+  const pdfAttachments = pdfAttachmentsOf(message);
+  if (!pdfAttachments.length) {
+    throw new Error(`Latest matching email ("${meta.subject}") has no PDF attachments`);
   }
 
   const pdfs = await Promise.all(
@@ -52,7 +118,7 @@ async function fetchLatestMatchingPdfs(accessToken: string, subjectKeyword: stri
       const content =
         a.inlineData ??
         (a.attachmentId
-          ? await getGmailAttachment(accessToken, latest.id, a.attachmentId)
+          ? await getGmailAttachment(accessToken, message.id, a.attachmentId)
           : Buffer.alloc(0));
       if (content.byteLength > MAX_ATTACHMENT_BYTES) {
         throw new Error(`${a.fileName} exceeds the attachment size limit`);
@@ -61,16 +127,7 @@ async function fetchLatestMatchingPdfs(accessToken: string, subjectKeyword: stri
     }),
   );
 
-  return {
-    messageId: latest.id,
-    subject,
-    from,
-    receivedAt: latest.internalDate
-      ? new Date(Number(latest.internalDate)).toISOString()
-      : headerValue(headers, 'Date'),
-    snippet: latest.snippet ?? parsed.text.slice(0, 180),
-    pdfs,
-  };
+  return { ...meta, pdfs };
 }
 
 export type PdfRole = 'purchase' | 'freight' | 'duty';
@@ -82,12 +139,7 @@ export function classifyPdfRole(fileName: string): PdfRole {
   return 'purchase';
 }
 
-export interface PoPdfBundle {
-  messageId: string;
-  subject: string;
-  from: string;
-  receivedAt: string;
-  snippet: string;
+export interface PoPdfBundle extends EmailMeta {
   purchase: RolePdf;
   freight?: RolePdf;
   duty?: RolePdf;
@@ -98,13 +150,14 @@ export interface PoPdfBundle {
  * purchase/freight/duty by filename keyword. Throws when the role
  * assignment is ambiguous (0 or 2+ candidates for a role) instead of
  * guessing — the caller should ask the user to upload manually or rename
- * the attachments.
+ * the attachments. Pass `messageId` from a prior preview call to skip
+ * re-searching for the email.
  */
-export async function fetchLatestSynpathPricingPoPdfs(accessToken: string): Promise<PoPdfBundle> {
-  const { messageId, subject, from, receivedAt, snippet, pdfs } = await fetchLatestMatchingPdfs(
-    accessToken,
-    'PO',
-  );
+export async function fetchLatestSynpathPricingPoPdfs(
+  accessToken: string,
+  messageId?: string,
+): Promise<PoPdfBundle> {
+  const { pdfs, ...meta } = await fetchLatestMatchingPdfs(accessToken, 'PO', messageId);
   const classified = pdfs.map((p) => ({ ...p, role: classifyPdfRole(p.fileName) }));
 
   const purchase = classified.filter((d) => d.role === 'purchase');
@@ -127,23 +180,14 @@ export async function fetchLatestSynpathPricingPoPdfs(accessToken: string): Prom
   }
 
   return {
-    messageId,
-    subject,
-    from,
-    receivedAt,
-    snippet,
+    ...meta,
     purchase: { fileName: purchase[0]!.fileName, content: purchase[0]!.content },
     freight: freight[0] ? { fileName: freight[0].fileName, content: freight[0].content } : undefined,
     duty: duty[0] ? { fileName: duty[0].fileName, content: duty[0].content } : undefined,
   };
 }
 
-export interface SoPdf {
-  messageId: string;
-  subject: string;
-  from: string;
-  receivedAt: string;
-  snippet: string;
+export interface SoPdf extends EmailMeta {
   fileName: string;
   content: Buffer;
 }
@@ -152,20 +196,21 @@ export interface SoPdf {
  * Latest "...subject:SO..." email's PDF attachment. Sales Order processes
  * one PDF per document — unlike PO there's no freight/duty role to sort
  * into, so more than one attachment is ambiguous rather than something to
- * guess at.
+ * guess at. Pass `messageId` from a prior preview call to skip re-searching
+ * for the email.
  */
-export async function fetchLatestSynpathPricingSoPdf(accessToken: string): Promise<SoPdf> {
-  const { messageId, subject, from, receivedAt, snippet, pdfs } = await fetchLatestMatchingPdfs(
-    accessToken,
-    'SO',
-  );
+export async function fetchLatestSynpathPricingSoPdf(
+  accessToken: string,
+  messageId?: string,
+): Promise<SoPdf> {
+  const { pdfs, ...meta } = await fetchLatestMatchingPdfs(accessToken, 'SO', messageId);
   if (pdfs.length !== 1) {
     const names = pdfs.map((p) => p.fileName).join(', ');
     throw new Error(
       pdfs.length > 1
-        ? `Ambiguous: ${pdfs.length} PDFs attached to the latest matching email ("${subject}": ${names}) — Sales Order expects exactly one PDF; upload manually instead.`
-        : `Latest matching email ("${subject}") has no PDF attachments`,
+        ? `Ambiguous: ${pdfs.length} PDFs attached to the latest matching email ("${meta.subject}": ${names}) — Sales Order expects exactly one PDF; upload manually instead.`
+        : `Latest matching email ("${meta.subject}") has no PDF attachments`,
     );
   }
-  return { messageId, subject, from, receivedAt, snippet, fileName: pdfs[0]!.fileName, content: pdfs[0]!.content };
+  return { ...meta, fileName: pdfs[0]!.fileName, content: pdfs[0]!.content };
 }
