@@ -48,7 +48,6 @@ import {
   processSupply,
   recalculateSupply,
   reconnectSage,
-  resetDemoData,
   resetSupplyAndSalesData,
   type SageWriteResult,
 } from '../lib/agentsApi';
@@ -765,31 +764,6 @@ export function AgentWorkforcePage() {
     }
   };
 
-  const runResetForDemo = async () => {
-    if (
-      !window.confirm(
-        'This clears all Sales Order records and resets every SKU\'s quantity, price, and invoice/customer history to zero — but keeps each SKU\'s id, description, spec, and vendor info. Continue?',
-      )
-    ) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await resetDemoData();
-      setPnl(null);
-      activity.push(
-        'Intelligence',
-        `Reset for demo — kept ${result.skusKept} SKU(s), cleared Sales Order data`,
-        'reset',
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const runSourcing = () => {
     activity.push(
       'Smart Sourcing',
@@ -1189,14 +1163,6 @@ export function AgentWorkforcePage() {
                   <div className="flex items-center justify-between">
                     <h4 className="font-display text-base font-semibold">P&L</h4>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void runResetForDemo()}
-                        className="rounded-xl border border-amber-300 px-3 py-2 text-xs font-medium text-amber-700 disabled:opacity-50"
-                      >
-                        Reset for demo (keep inventory)
-                      </button>
                       <button
                         type="button"
                         disabled={busy}
