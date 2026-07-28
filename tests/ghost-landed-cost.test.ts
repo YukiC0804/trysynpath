@@ -332,8 +332,16 @@ describe('document AI map', () => {
     expect(doc.due_date).toBeNull();
   });
 
-  it('parses cut-to inch sizes and propagates dims across acrylic rows', () => {
-    expect(parseThicknessSize('(cut to 18" x 24")').size).toBe('18x24');
+  it('never treats a cutting instruction as the sold sheet size', () => {
+    // Confirmed against a real Gokai invoice: every line's actual width(mm)/
+    // length(mm) columns were 1220x2440 regardless of what a "(cut to ...)"
+    // note said — that note describes what the customer will do with the
+    // sheet after receiving it, not what's being sold.
+    expect(parseThicknessSize('(cut to 18" x 24")').size).toBeNull();
+    expect(parseThicknessSize('(cut 4pcs near 24" x 48")').size).toBeNull();
+    // Thickness is still picked up even when size is unreliable.
+    expect(parseThicknessSize('9mm clear (cut to 18" x 24")').thickness).toBe(9);
+
     const doc = propagateAcrylicDims({
       document_role: 'purchase_invoice',
       includes_ddp: false,
@@ -353,17 +361,19 @@ describe('document AI map', () => {
           raw_description: 'clear,GK-000 (cut to 18" x 24")',
           is_acrylic: true,
           is_packing_or_misc: false,
-          quantity: 0,
-          unit_price: 0,
-          amount: null,
+          quantity: 26,
+          unit_price: 61.42,
+          amount: 1596.92,
           line_kind: 'acrylic',
-          thickness_mm: 3,
-          size: '18x24',
+          thickness_mm: 9,
+          size: null,
         },
       ],
       notes: null,
     });
-    expect(doc.lines[0]!.size).toBe('18x24');
-    expect(doc.lines[0]!.thickness_mm).toBe(3);
+    // No trustworthy size anywhere in the document — must NOT fall back to
+    // the "cut to" phrase found in the second line's own description.
+    expect(doc.lines[0]!.size).toBeNull();
+    expect(doc.lines[1]!.size).toBeNull();
   });
 });

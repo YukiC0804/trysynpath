@@ -19,8 +19,13 @@ const THICKNESS_RE = /(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mm(?![A-Za-z])/i;
 const THICKNESS_COL_RE = /(?:thick(?:ness)?|thk)[:\s]*(\d+(?:\.\d+)?)\s*(?:mm)?/i;
 const SIZE_RE =
   /(?<![A-Za-z])(\d+(?:\.\d+)?)\s*['"]?\s*[x×]\s*(\d+(?:\.\d+)?)\s*['"]?(?![A-Za-z])/i;
-const CUT_TO_SIZE_RE =
-  /cut\s*to\s*[:\s]*(\d+(?:\.\d+)?)\s*['"]?\s*[x×]\s*(\d+(?:\.\d+)?)\s*['"]?/i;
+/** A "cut to WxH" / "cut Npcs near WxH" phrase describes how the customer will
+ * subdivide the sheet after receiving it — never the sheet's own sold size
+ * (confirmed against a real Gokai invoice: every line's actual width(mm)/
+ * length(mm) columns were 1220x2440 regardless of what any cut note said).
+ * Any NxM pattern found in cut-mentioning text is unreliable — don't guess a
+ * size from it at all. */
+const CUT_INSTRUCTION_RE = /\bcut\b/i;
 const SKU_SIZE_RE = /(\d+(?:\.\d+)?)mm(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)/i;
 /** Match ai_erp map_to_extract._ACRYLIC_HINT_RE (+ GK product codes common on JM invoices). */
 const ACRYLIC_HINT_RE =
@@ -83,10 +88,13 @@ export function parseThicknessSize(text: string): {
   const sku = SKU_SIZE_RE.exec(compact.replace(/ /g, ''));
   if (sku) return { thickness: Number(sku[1]), size: `${sku[2]}x${sku[3]}` };
 
-  const cut = CUT_TO_SIZE_RE.exec(compact);
-  const sizeM = cut ?? SIZE_RE.exec(compact);
   const thickM = THICKNESS_RE.exec(compact) ?? THICKNESS_COL_RE.exec(compact);
 
+  if (CUT_INSTRUCTION_RE.test(compact)) {
+    return { thickness: thickM ? Number(thickM[1]) : null, size: null };
+  }
+
+  const sizeM = SIZE_RE.exec(compact);
   return {
     thickness: thickM ? Number(thickM[1]) : null,
     size: sizeM ? `${sizeM[1]}x${sizeM[2]}` : null,
@@ -156,11 +164,6 @@ export function propagateAcrylicDims(
     '\n',
   );
   const global = parseThicknessSize(corpus);
-  const sizes = [
-    ...corpus.matchAll(
-      /cut\s*to\s*[:\s]*(\d+(?:\.\d+)?)\s*['"]?\s*[x×]\s*(\d+(?:\.\d+)?)\s*['"]?/gi,
-    ),
-  ].map((m) => `${m[1]}x${m[2]}`);
   const thicks = [
     ...corpus.matchAll(/(?<![A-Za-z])(\d+(?:\.\d+)?)\s*mm(?![A-Za-z])/gi),
   ].map((m) => Number(m[1]));
@@ -172,7 +175,10 @@ export function propagateAcrylicDims(
     .map((l) => l.thickness_mm)
     .filter((t): t is number => t != null && Number.isFinite(t));
 
-  const fallbackSize = global.size || sizes[0] || sizesFromLines[0] || null;
+  // No corpus-wide "cut to WxH" fallback here — that phrase is a customer
+  // cutting instruction, never the sold sheet size (see CUT_INSTRUCTION_RE).
+  // Only propagate a size actually derived from some other line's own text.
+  const fallbackSize = global.size || sizesFromLines[0] || null;
   const fallbackThick =
     global.thickness ??
     (thicks.length === 1 ? thicks[0]! : null) ??

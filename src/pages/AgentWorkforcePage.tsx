@@ -1647,22 +1647,26 @@ export function AgentWorkforcePage() {
           <p className="mt-1 text-xs text-neutral-500">
             Ask a question — opens the matching agent workspace.
           </p>
-          <div className="mt-3 flex gap-2">
-            <input
+          <div className="relative mt-3">
+            <textarea
               value={chat}
               onChange={(e) => setChat(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') openFromChat();
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  openFromChat();
+                }
               }}
               placeholder="Ask a question, use @ to add context."
-              className="flex-1 rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+              rows={3}
+              className="w-full resize-none rounded-2xl border border-neutral-300 px-3 py-3 pr-12 text-sm"
             />
             <button
               type="button"
               onClick={openFromChat}
-              className="rounded-xl bg-neutral-900 px-3 text-white"
+              className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-white"
             >
-              <Send size={16} />
+              <Send size={14} />
             </button>
           </div>
 

@@ -51,6 +51,12 @@ Rules:
   * thickness_mm ← Thick(mm) column (e.g. 18.00)
   * size ← convert width×length mm to feet SKU size: 1220×2440 → "4x8"
     (approx mm/305). NEVER leave size as "1220x2440" when it is a full sheet.
+  * Descriptions sometimes carry a customer's downstream cutting instruction
+    in parentheses, e.g. "(cut to 18 x 24 inches)" or "(cut 4pcs near 24 x
+    48 inches)". This is NOT the sheet being sold — it's a note about how
+    the customer will subdivide the sheet after receiving it. IGNORE these
+    phrases for size. size always comes from that row's width(mm)/length(mm)
+    columns converted to feet, never from a cut-to-size/cut-Npcs-near phrase.
   * unit_price ← Unit Price (USD/Sheet); amount ← Amount (USD)
   * Density (~1.20) is NEVER unit_price.
   * Export pallet / packing rows: is_packing_or_misc=true, line_kind="packing".

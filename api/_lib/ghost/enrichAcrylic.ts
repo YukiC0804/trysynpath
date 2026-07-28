@@ -172,9 +172,13 @@ export async function enrichAcrylicAttrsWithLlm(
             'quantity, unit_price, amount, raw_description, price_decimals ' +
             '(digits printed after the decimal point on the unit price, default 3). ' +
             'Acrylic sheets need thickness_mm + size. ' +
-            'Infer thickness_mm and size from OCR text and product codes (GK-*). ' +
-            'Fragmented line text may state size as inches after a cut/trim ' +
-            'instruction (e.g. \'cut to W" x L"\') — convert inches to feet. ' +
+            'Infer thickness_mm and size from OCR text and product codes (GK-*), ' +
+            'preferring an explicit width(mm) x length(mm) table pair for that row ' +
+            '(convert mm to feet, e.g. 1220x2440 -> 4x8). ' +
+            'Descriptions sometimes carry a customer cutting instruction in ' +
+            'parentheses, e.g. "(cut to 18 x 24 inches)" or "(cut 4pcs near 24 x ' +
+            '48 inches)" — this is NOT the sheet size, just a note on how the ' +
+            'customer will subdivide the sheet later. Never use it for size. ' +
             'Do NOT invent money — keep quantity/unit_price/amount from ' +
             'input when present. Density/kg/mm are NOT prices.',
         },
