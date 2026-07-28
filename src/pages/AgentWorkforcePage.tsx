@@ -4,6 +4,7 @@ import {
   Bot,
   CheckCircle2,
   Circle,
+  Download,
   Loader2,
   Mail,
   Send,
@@ -59,6 +60,30 @@ function parseNumInput(raw: string): number {
   if (raw.trim() === '') return 0;
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
+}
+
+function csvEscape(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/** Item ID / Item Description columns, matching Sage 50's Inventory Item List import
+ * fields — enough to batch-create new SKUs via File → Import/Export → Import Records,
+ * mapping column 1 → Item ID and column 2 → Item Description in the wizard. Description
+ * truncated to 30 chars, Sage's field limit. */
+function downloadInventoryCsv(plan: PurchaseWritePlan) {
+  const rows = plan.lines.map(
+    (ln) => `${csvEscape(ln.sku_id)},${csvEscape(ln.description.slice(0, 30))}`,
+  );
+  const csv = ['Item ID,Item Description', ...rows].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `sage-inventory-items-${plan.invoice_number || 'export'}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function money(n: number, currency = 'USD') {
@@ -609,7 +634,7 @@ export function AgentWorkforcePage() {
       activity.push(
         'Sales Order',
         writeToSage && result.sageResult
-          ? `${salesPlan.customer} · Sales Order ${result.sageResult.referenceNumber ?? '—'} · written to Sage 50 (order only — no invoice/inventory yet)`
+          ? `${salesPlan.customer} · SO ${result.sageResult.soReference ?? '—'} / Invoice ${result.sageResult.invoiceReference ?? '—'} · written to Sage 50`
           : `${salesPlan.customer} · confirmed (preview only)`,
         writeToSage && result.sageResult ? 'written' : 'confirmed',
       );
@@ -1677,9 +1702,17 @@ export function AgentWorkforcePage() {
                 </pre>
                 <button
                   type="button"
+                  onClick={() => downloadInventoryCsv(supplyPlan)}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+                  title="Item ID + Item Description for every SKU on this PO — import via Sage's File → Import/Export → Import Records before writing to Sage, so new SKUs exist first."
+                >
+                  <Download size={16} /> Download inventory CSV for Sage import
+                </button>
+                <button
+                  type="button"
                   disabled={busy}
                   onClick={() => void cfoApprove(false)}
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
                 >
                   <CheckCircle2 size={16} /> CFO Approve (audit only)
                 </button>
@@ -1726,7 +1759,7 @@ export function AgentWorkforcePage() {
           >
             <p className="mb-3 text-xs text-amber-700">
               {sage.connected
-                ? 'Sage 50 connected — confirming can write a real Sales Order (order only, no invoice/inventory move yet).'
+                ? 'Sage 50 connected — confirming writes a real Sales Order + Sales Invoice (posts revenue and reduces inventory).'
                 : 'Sage write disabled — preview only.'}
             </p>
             {salesPlan.needs_review ? (
@@ -1742,7 +1775,8 @@ export function AgentWorkforcePage() {
               <p>
                 Customer: <strong>{salesPlan.customer}</strong>
               </p>
-              <p>Date: {salesPlan.invoice_date || '—'}</p>
+              <p>Invoice date: {salesPlan.invoice_date || '—'}</p>
+              <p>Due date (used for the Sage transaction date): {salesPlan.due_date || '—'}</p>
             </div>
             <div className="overflow-auto rounded-xl border border-neutral-200">
               <table className="w-full text-left text-sm">
@@ -1784,14 +1818,20 @@ export function AgentWorkforcePage() {
                   className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
                   onClick={() => void confirmSalesOrder(true)}
                 >
-                  <Zap size={16} /> Write Sales Order to Sage 50
+                  <Zap size={16} /> Write Sales Order + Invoice to Sage 50
                 </button>
               ) : null}
             </div>
             {salesConfirmed ? (
               <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 p-2 text-[11px] text-neutral-700">
                 {salesSageResult ? (
-                  <p>Sales Order: {salesSageResult.referenceNumber ?? '—'}</p>
+                  <>
+                    <p>Sales Order: {salesSageResult.soReference ?? '—'}</p>
+                    <p>Sales Invoice: {salesSageResult.invoiceReference ?? '—'}</p>
+                    {salesSageResult.warnings?.length ? (
+                      <p className="mt-1 text-amber-700">{salesSageResult.warnings.join(' ')}</p>
+                    ) : null}
+                  </>
                 ) : (
                   <p>Confirmed (preview only — nothing written to Sage).</p>
                 )}

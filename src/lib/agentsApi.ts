@@ -188,7 +188,8 @@ export async function recalculateSupply(input: {
 export interface SageWriteResult {
   poReference?: string | null;
   receiveReference?: string | null;
-  referenceNumber?: string | null;
+  soReference?: string | null;
+  invoiceReference?: string | null;
   warnings?: string[];
 }
 

@@ -215,9 +215,8 @@ export async function createPurchaseReceive(plan: PurchaseWritePlan): Promise<{ 
   });
 }
 
-// --- Sales order (no ai_erp Python precedent — shape per sage_connector/api/README.md).
-// Creates the order document only. The connector has no Sales Invoice endpoint yet, so
-// this does not post revenue or reduce inventory (see HANDOFF_27_July.md §3/plan Phase 4). ---
+// --- Sales order + invoice (shape per sage_connector/api/README.md). The order alone is
+// a commitment — it doesn't post revenue or move inventory. createSalesInvoice does. ---
 
 function salesLine(ln: SalesOrderLine) {
   return {
@@ -231,12 +230,18 @@ function salesLine(ln: SalesOrderLine) {
   };
 }
 
+/** Sales Order / Sales Invoice both key off due_date (falls back to invoice_date when a
+ * document has no due date) rather than the invoice date itself. */
+function salesDate(plan: SalesOrderPlan): string {
+  return isoDate(plan.due_date ?? plan.invoice_date);
+}
+
 export function toSalesOrderPayload(plan: SalesOrderPlan, customerId: string, referenceNumber: string) {
   return {
     type: 'sales_order' as const,
     customer_id: customerId,
     reference_number: referenceNumber,
-    date: isoDate(plan.invoice_date),
+    date: salesDate(plan),
     customer_po_number: plan.po_number ?? null,
     lines: plan.lines.map(salesLine),
   };
@@ -250,5 +255,37 @@ export async function createSalesOrder(
   return connectorFetch('/orders', {
     method: 'POST',
     body: JSON.stringify(toSalesOrderPayload(plan, customerId, referenceNumber)),
+  });
+}
+
+/** Sales Invoice via .NET SalesInvoiceFactory — the sales-side counterpart of
+ * toReceivePayload/createPurchaseReceive. This is what actually posts revenue and reduces
+ * inventory (POST /sales/invoice, added to the connector in commit "Add Sales Invoice
+ * endpoint to Sage connector" — not yet exercised against the real company as of that
+ * commit, so treat the first real write here as the live test). */
+export function toSalesInvoicePayload(
+  plan: SalesOrderPlan,
+  customerId: string,
+  referenceNumber: string,
+  salesOrderReference?: string | null,
+) {
+  return {
+    customer_id: customerId,
+    reference_number: referenceNumber,
+    date: salesDate(plan),
+    sales_order_reference: salesOrderReference ?? null,
+    lines: plan.lines.map(salesLine),
+  };
+}
+
+export async function createSalesInvoice(
+  plan: SalesOrderPlan,
+  customerId: string,
+  referenceNumber: string,
+  salesOrderReference?: string | null,
+): Promise<{ reference_number?: string }> {
+  return connectorFetch('/sales/invoice', {
+    method: 'POST',
+    body: JSON.stringify(toSalesInvoicePayload(plan, customerId, referenceNumber, salesOrderReference)),
   });
 }

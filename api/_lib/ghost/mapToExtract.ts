@@ -48,6 +48,13 @@ export function vendorIdFromName(name: string): string {
   return (words.map((w) => w[0]).join('').slice(0, 4) || 'UNK').toUpperCase();
 }
 
+/** Customer id: strip spaces from the full name, take the first 3 characters —
+ * deliberately simpler than vendorIdFromName's brand-word logic (e.g. "CN Ledge" → "CNL"). */
+export function customerIdFromName(name: string): string {
+  const compact = name.replace(/\s+/g, '');
+  return (compact.slice(0, 3) || 'UNK').toUpperCase();
+}
+
 function parseInvoiceDate(raw: string): string | null {
   if (!raw?.trim()) return null;
   const s = raw.trim();
@@ -294,6 +301,7 @@ export function documentAiToExtract(
     vendor,
     invoice_number: invoice.invoice_id || null,
     invoice_date: parseInvoiceDate(invoice.invoice_date),
+    due_date: parseInvoiceDate(invoice.due_date),
     currency: invoice.currency || 'USD',
     invoice_total: total,
     includes_ddp: includesDdp,

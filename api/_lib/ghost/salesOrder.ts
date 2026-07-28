@@ -93,6 +93,7 @@ export async function buildSalesOrderPlan(doc: DocumentExtract): Promise<SalesOr
     po_number: doc.invoice_number,
     invoice_number: doc.invoice_number,
     invoice_date: doc.invoice_date,
+    due_date: doc.due_date,
     currency: doc.currency || 'USD',
     lines,
     totals: { subtotal, freight, total: subtotal + freight },

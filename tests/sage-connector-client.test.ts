@@ -3,6 +3,7 @@ import type { AcrylicSkuLine, PurchaseWritePlan, SalesOrderPlan, VendorExtract }
 import {
   createPurchaseOrder,
   createPurchaseReceive,
+  createSalesInvoice,
   createSalesOrder,
   findMissingSkuIds,
   pingSageConnector,
@@ -10,6 +11,7 @@ import {
   sageConnectorConfigured,
   toPurchaseOrderPayload,
   toReceivePayload,
+  toSalesInvoicePayload,
   toSalesOrderPayload,
   upsertCustomer,
   upsertVendor,
@@ -244,6 +246,40 @@ describe('sales order payload builder', () => {
     const result = await createSalesOrder(salesPlan, 'CNLEDGE', 'SO-SO-500');
     expect(result.reference_number).toBe('SO-SO-500');
     expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:8080/orders', expect.objectContaining({ method: 'POST' }));
+  });
+
+  it('prefers due_date over invoice_date for the Sage transaction date when present', () => {
+    const withDueDate: SalesOrderPlan = { ...salesPlan, due_date: '2026-08-01' };
+    const payload = toSalesOrderPayload(withDueDate, 'CNLEDGE', 'SO-SO-500');
+    expect(payload.date).toBe('2026-08-01T00:00:00');
+  });
+});
+
+describe('sales invoice payload builder', () => {
+  it('toSalesInvoicePayload mirrors the sales order shape, minus type/customer_po_number', () => {
+    const payload = toSalesInvoicePayload(salesPlan, 'CNLEDGE', 'SO-500', 'SO-SO-500');
+    expect(payload).toEqual({
+      customer_id: 'CNLEDGE',
+      reference_number: 'SO-500',
+      date: '2026-07-21T00:00:00',
+      sales_order_reference: 'SO-SO-500',
+      lines: [
+        { description: 'Acrylic 3mm 18x24', quantity: 5, unit_price: 25, amount: 125, item_id: '3ACR18X24' },
+        { description: 'Freight', quantity: 1, unit_price: 15, amount: 15, item_id: null },
+      ],
+    });
+  });
+
+  it('createSalesInvoice POSTs to /sales/invoice', async () => {
+    process.env.SAGE_CONNECTOR_URL = 'http://127.0.0.1:8080';
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ reference_number: 'SO-500' }), { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await createSalesInvoice(salesPlan, 'CNLEDGE', 'SO-500', 'SO-SO-500');
+    expect(result.reference_number).toBe('SO-500');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8080/sales/invoice',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 });
 

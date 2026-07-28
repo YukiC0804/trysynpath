@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { allocateLandedCost, resolveImportPool, sheetWeightKg } from '../api/_lib/ghost/landedCost';
 import type { DocumentExtract } from '../shared/ghost';
 import { buildDescription, buildSkuId, firstBrandWord, normalizeSheetSize } from '../api/_lib/ghost/sku';
-import { documentAiToExtract, parseThicknessSize, propagateAcrylicDims } from '../api/_lib/ghost/mapToExtract';
+import {
+  customerIdFromName,
+  documentAiToExtract,
+  parseThicknessSize,
+  propagateAcrylicDims,
+  vendorIdFromName,
+} from '../api/_lib/ghost/mapToExtract';
 import type { InvoiceData } from '../api/_lib/ghost/documentAi';
 
 function purchase(partial: Partial<DocumentExtract> = {}): DocumentExtract {
@@ -187,7 +193,61 @@ describe('sku helpers', () => {
       }),
     ).toBe("Ghost Gokai Acrylic 18mm x 4' x 8' Clear.");
   });
+
+  it('vendorIdFromName falls back to word-initials when the brand word is too short', () => {
+    expect(vendorIdFromName('JM Kaplan Co')).toBe('JKC'); // "JM" too short -> initials fallback: J+K+C
+    expect(vendorIdFromName('CN Ledge')).toBe('CL'); // "CN" too short -> initials fallback: C+L
+  });
+
+  it('customerIdFromName strips spaces and takes the first 3 characters, unlike vendorIdFromName', () => {
+    expect(customerIdFromName('CN Ledge')).toBe('CNL');
+    expect(customerIdFromName('JM Kaplan Co')).toBe('JMK');
+    expect(customerIdFromName('')).toBe('UNK');
+  });
 });
+
+function emptyInvoiceFixture(): InvoiceData {
+  return {
+    invoice_id: '',
+    invoice_type: '',
+    purchase_order: '',
+    invoice_date: '',
+    due_date: '',
+    delivery_date: '',
+    currency: '',
+    currency_exchange_rate: null,
+    net_amount: null,
+    total_amount: null,
+    total_tax_amount: null,
+    freight_amount: null,
+    amount_paid_since_last_invoice: null,
+    supplier_name: '',
+    supplier_address: '',
+    supplier_email: '',
+    supplier_phone: '',
+    supplier_website: '',
+    supplier_tax_id: '',
+    supplier_iban: '',
+    supplier_registration: '',
+    supplier_payment_ref: '',
+    receiver_name: '',
+    receiver_address: '',
+    receiver_email: '',
+    receiver_phone: '',
+    receiver_website: '',
+    receiver_tax_id: '',
+    ship_to_name: '',
+    ship_to_address: '',
+    ship_from_name: '',
+    ship_from_address: '',
+    remit_to_name: '',
+    remit_to_address: '',
+    carrier: '',
+    payment_terms: '',
+    line_items: [],
+    raw_text: '',
+  };
+}
 
 describe('document AI map', () => {
   it('maps supplier and line kinds', () => {
@@ -254,6 +314,22 @@ describe('document AI map', () => {
     expect(doc.vendor?.id).toBe('GOK');
     expect(doc.lines.some((l) => l.line_kind === 'acrylic')).toBe(true);
     expect(doc.lines.some((l) => l.line_kind === 'packing')).toBe(true);
+  });
+
+  it('maps due_date the same way as invoice_date', () => {
+    const invoice: InvoiceData = {
+      ...emptyInvoiceFixture(),
+      invoice_date: '2026-01-08',
+      due_date: '2026-01-08',
+    };
+    const doc = documentAiToExtract(invoice, 'purchase_invoice');
+    expect(doc.invoice_date).toBe('2026-01-08');
+    expect(doc.due_date).toBe('2026-01-08');
+  });
+
+  it('due_date is null when blank on the source document', () => {
+    const doc = documentAiToExtract(emptyInvoiceFixture(), 'purchase_invoice');
+    expect(doc.due_date).toBeNull();
   });
 
   it('parses cut-to inch sizes and propagates dims across acrylic rows', () => {

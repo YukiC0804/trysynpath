@@ -45,6 +45,7 @@ export interface DocumentExtract {
   vendor?: VendorExtract | null;
   invoice_number?: string | null;
   invoice_date?: string | null;
+  due_date?: string | null;
   currency?: string | null;
   invoice_total?: number | null;
   includes_ddp: boolean;
@@ -156,6 +157,7 @@ export interface SalesOrderPlan {
   po_number?: string | null;
   invoice_number?: string | null;
   invoice_date?: string | null;
+  due_date?: string | null;
   currency: string;
   lines: SalesOrderLine[];
   totals: { subtotal: number; freight: number; total: number };

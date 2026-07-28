@@ -9,12 +9,13 @@ import { reapplyLandedCost } from '../ghost/landedCost';
 import { clearSkuCatalog, upsertSkuCatalogEntries } from '../ghost/skuCatalog';
 import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder';
 import { clearSalesOrderRecords, upsertSalesOrderRecord } from '../ghost/salesOrderStore';
-import { propagateAcrylicDims, vendorIdFromName } from '../ghost/mapToExtract';
+import { customerIdFromName, propagateAcrylicDims } from '../ghost/mapToExtract';
 import { computePnlSummary } from '../ghost/pnl';
 import { fetchHubspotLeads, hubspotConfigured, pingHubspot } from '../hubspot/client';
 import {
   createPurchaseOrder,
   createPurchaseReceive,
+  createSalesInvoice,
   createSalesOrder,
   findMissingSkuIds,
   pingSageConnector,
@@ -392,8 +393,9 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     }
 
     try {
-      const customerId = vendorIdFromName(plan.customer);
-      const referenceNumber = `SO-${plan.invoice_number}`;
+      const customerId = customerIdFromName(plan.customer);
+      const soReferenceNumber = `SO-${plan.invoice_number}`;
+      const invoiceReferenceNumber = plan.invoice_number;
       const acrylicSkuIds = plan.lines.filter((l) => l.line_kind === 'acrylic').map((l) => l.sku);
       const missingSkuIds = await findMissingSkuIds(acrylicSkuIds);
       if (missingSkuIds.length) {
@@ -405,13 +407,26 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       }
 
       await upsertCustomer(customerId, plan.customer);
-      const order = await createSalesOrder(plan, customerId, referenceNumber);
+      const order = await createSalesOrder(plan, customerId, soReferenceNumber);
+      const soReference = order?.reference_number || soReferenceNumber;
+
+      const warnings: string[] = [];
+      let invoiceReference: string | null = null;
+      try {
+        const invoice = await createSalesInvoice(plan, customerId, invoiceReferenceNumber, soReference);
+        invoiceReference = invoice?.reference_number || invoiceReferenceNumber;
+      } catch (error) {
+        warnings.push(
+          `Sales Order ${soReference} was created, but the Sales Invoice failed: ${errorMessage(error)}. Retry once fixed — the order already exists in Sage.`,
+        );
+      }
 
       return json(res, 200, {
         ok: true,
-        message:
-          'Sales Order written to Sage 50 — this creates the order record only. It does not post an invoice or reduce inventory yet (the connector has no Sales Invoice endpoint).',
-        sageResult: { referenceNumber: order?.reference_number || referenceNumber },
+        message: invoiceReference
+          ? 'Sales Order + Invoice written to Sage 50 — revenue posted and inventory reduced.'
+          : 'Sales Order written to Sage 50, but the Sales Invoice did not post — see warnings.',
+        sageResult: { soReference, invoiceReference, warnings },
       });
     } catch (error) {
       return json(res, 502, { ok: false, error: `Sage connector write failed: ${errorMessage(error)}` });
