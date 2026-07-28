@@ -20,6 +20,7 @@ import {
   findMissingSkuIds,
   listInventoryItems,
   pingSageConnector,
+  purgeSageDemoData,
   resetSageSession,
   sageConnectorConfigured,
   upsertCustomer,
@@ -451,6 +452,28 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
     // with a real Sage-backed call so this can't report "ok" while still hung.
     const verified = await verifySageReachable();
     return json(res, 200, { ok: verified.ok, detail: verified.detail });
+  }
+
+  if (method === 'POST' && path[0] === 'sage' && path[1] === 'purge-demo-data') {
+    if (!sageConnectorConfigured()) {
+      return json(res, 200, { ok: false, error: 'SAGE_CONNECTOR_URL not set' });
+    }
+    const body = bodyOf(req);
+    if (body.confirm !== true) {
+      return json(res, 400, {
+        ok: false,
+        error:
+          'Pass { "confirm": true } to permanently delete every Order, Invoice, Vendor, ' +
+          'and Customer in the connected Sage company (inventory items are kept). ' +
+          'This cannot be undone — demo companies only.',
+      });
+    }
+    try {
+      const result = await purgeSageDemoData();
+      return json(res, 200, { ok: true, ...result });
+    } catch (error) {
+      return json(res, 502, { ok: false, error: `Sage connector purge failed: ${errorMessage(error)}` });
+    }
   }
 
   if (method === 'GET' && path[0] === 'sage' && path[1] === 'inventory-items') {

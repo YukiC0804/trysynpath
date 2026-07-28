@@ -60,6 +60,21 @@ export async function resetSageSession(): Promise<unknown> {
   return connectorFetch('/session/reset', { method: 'POST' });
 }
 
+/**
+ * Permanently deletes every Order, Invoice, Vendor, and Customer in the
+ * connected Sage company — keeps InventoryItem/StockItem records. Demo
+ * companies only; Sage has no undo for Delete().
+ */
+export async function purgeSageDemoData(): Promise<{
+  deleted: Record<string, number>;
+  failed: Record<string, string[]>;
+}> {
+  return connectorFetch('/admin/purge-demo-data', {
+    method: 'POST',
+    body: JSON.stringify({ confirm: true }),
+  });
+}
+
 export async function pingSageConnector(): Promise<{ ok: boolean; detail: string }> {
   if (!sageConnectorConfigured()) {
     return { ok: false, detail: 'SAGE_CONNECTOR_URL not set — Sage write disabled, preview only' };

@@ -34,6 +34,25 @@ export async function reconnectSage() {
   return parseJson<{ ok: boolean; detail: string }>(res);
 }
 
+/**
+ * Permanently deletes every Order, Invoice, Vendor, and Customer in the
+ * connected Sage company — keeps InventoryItem/StockItem records (e.g. from
+ * a CSV import). Demo companies only; Sage has no undo for this.
+ */
+export async function purgeSageDemoData() {
+  const res = await fetch('/api/agents/sage/purge-demo-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  });
+  return parseJson<{
+    ok: boolean;
+    deleted?: Record<string, number>;
+    failed?: Record<string, string[]>;
+    error?: string;
+  }>(res);
+}
+
 export async function fetchHubspotLeads() {
   const res = await fetch('/api/agents/outreach/leads');
   return parseJson<{ ok: boolean; leads: OutreachLead[] }>(res);

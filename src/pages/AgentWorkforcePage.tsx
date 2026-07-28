@@ -9,6 +9,7 @@ import {
   Mail,
   Send,
   Sparkles,
+  Trash2,
   Upload,
   X,
   Zap,
@@ -46,6 +47,7 @@ import {
   fileToBase64,
   processSales,
   processSupply,
+  purgeSageDemoData,
   recalculateSupply,
   reconnectSage,
   resetSupplyAndSalesData,
@@ -233,6 +235,8 @@ export function AgentWorkforcePage() {
   const [sageReconnecting, setSageReconnecting] = useState(false);
   const [sageReconnectMsg, setSageReconnectMsg] = useState<string | null>(null);
   const [sageHelpModal, setSageHelpModal] = useState(false);
+  const [sagePurging, setSagePurging] = useState(false);
+  const [sagePurgeMsg, setSagePurgeMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -316,6 +320,38 @@ export function AgentWorkforcePage() {
       setSageHelpModal(true);
     } finally {
       setSageReconnecting(false);
+    }
+  };
+
+  const runPurgeSageDemoData = async () => {
+    if (
+      !window.confirm(
+        'This permanently deletes every Order, Invoice, Vendor, and Customer in the ' +
+          'connected Sage company — inventory items stay. Sage has no undo. Continue?',
+      )
+    ) {
+      return;
+    }
+    setSagePurging(true);
+    setSagePurgeMsg(null);
+    try {
+      const result = await purgeSageDemoData();
+      if (!result.ok) {
+        setSagePurgeMsg(result.error || 'Purge failed.');
+      } else {
+        const parts = Object.entries(result.deleted || {}).map(([k, v]) => `${k}: ${v}`);
+        const failedParts = Object.entries(result.failed || {}).flatMap(([k, ids]) =>
+          ids.map((id) => `${k} ${id}`),
+        );
+        setSagePurgeMsg(
+          `Deleted — ${parts.join(', ') || 'nothing to delete'}.` +
+            (failedParts.length ? ` Could not delete: ${failedParts.join('; ')}.` : ''),
+        );
+      }
+    } catch (e) {
+      setSagePurgeMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSagePurging(false);
     }
   };
 
@@ -907,6 +943,25 @@ export function AgentWorkforcePage() {
                     the subject.
                     {gmail.connected ? null : ' Connect Gmail on the Outreach tab first.'}
                   </p>
+                </div>
+
+                <div className="mt-2 border-t border-neutral-200 pt-4">
+                  <button
+                    type="button"
+                    disabled={sagePurging}
+                    onClick={() => void runPurgeSageDemoData()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-rose-300 px-3 py-2 text-xs font-medium text-rose-700 disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                    {sagePurging ? 'Purging Sage…' : 'Reset for demo (Sage)'}
+                  </button>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Permanently deletes every Order, Invoice, Vendor, and Customer in the
+                    connected Sage company — inventory items stay. No undo. Demo companies only.
+                  </p>
+                  {sagePurgeMsg ? (
+                    <p className="mt-1 text-[11px] text-neutral-500">{sagePurgeMsg}</p>
+                  ) : null}
                 </div>
               </div>
             ) : null}
