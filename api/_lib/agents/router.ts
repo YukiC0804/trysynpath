@@ -6,7 +6,11 @@ import { llmEnrichConfigured, resolveParseModel } from '../ghost/enrichAcrylic';
 import { parsePdf, resolveParseBackend } from '../ghost/parsePdf';
 import { buildSkuCatalogEntries, buildWritePlan, MissingAcrylicDimsError } from '../ghost/orchestrator';
 import { reapplyLandedCost } from '../ghost/landedCost';
-import { clearSkuCatalog, upsertSkuCatalogEntries } from '../ghost/skuCatalog';
+import {
+  clearSkuCatalog,
+  resetSkuCatalogToMasterData,
+  upsertSkuCatalogEntries,
+} from '../ghost/skuCatalog';
 import { buildSalesOrderPlan, buildSalesOrderRecord } from '../ghost/salesOrder';
 import { clearSalesOrderRecords, upsertSalesOrderRecord } from '../ghost/salesOrderStore';
 import { customerIdFromName, propagateAcrylicDims } from '../ghost/mapToExtract';
@@ -541,6 +545,23 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       }
       await Promise.all([clearSkuCatalog(), clearSalesOrderRecords()]);
       return json(res, 200, { ok: true, cleared: ['sku-catalog', 'sales-orders'] });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: errorMessage(error) });
+    }
+  }
+
+  if (method === 'POST' && path[0] === 'admin' && path[1] === 'reset-demo-data') {
+    try {
+      const body = bodyOf(req);
+      if (body.confirm !== true) {
+        return json(res, 400, {
+          ok: false,
+          error:
+            'Pass { "confirm": true } to reset qty/price/history and clear Sales Order data, keeping SKU identity and specs.',
+        });
+      }
+      const [skuCount] = await Promise.all([resetSkuCatalogToMasterData(), clearSalesOrderRecords()]);
+      return json(res, 200, { ok: true, cleared: ['sales-orders'], skusKept: skuCount });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });
     }

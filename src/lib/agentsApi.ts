@@ -260,3 +260,17 @@ export async function resetSupplyAndSalesData() {
   });
   return parseJson<{ ok: boolean; cleared: string[] }>(res);
 }
+
+/**
+ * Resets SKU catalog qty/price/invoice history (keeping sku_id, description,
+ * spec, and vendor fields) and clears Sales Order records — for resetting a
+ * demo company without re-uploading the inventory CSV.
+ */
+export async function resetDemoData() {
+  const res = await fetch('/api/agents/admin/reset-demo-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  });
+  return parseJson<{ ok: boolean; cleared: string[]; skusKept: number }>(res);
+}

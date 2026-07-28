@@ -165,6 +165,45 @@ export async function clearSkuCatalog(): Promise<void> {
   );
 }
 
+const DEMO_RESET_INVOICE_KEY = '__demo_reset__';
+
+/**
+ * Collapses the catalog to one row per sku_id, keeping identity/spec fields
+ * (description, product_code, color, thickness, size, vendor) and zeroing
+ * everything transactional (qty, price, cost, invoice/customer history) —
+ * lets a demo company be reset to "inventory master data exists, nothing
+ * transacted yet" without re-uploading the inventory CSV. Returns the
+ * number of distinct SKUs kept.
+ */
+export async function resetSkuCatalogToMasterData(): Promise<number> {
+  const catalog = await readCatalog();
+  const bySku = new Map<string, SkuCatalogEntry>();
+  for (const entry of Object.values(catalog).flat()) {
+    const existing = bySku.get(entry.sku_id);
+    if (!existing || dateRank(entry.date) >= dateRank(existing.date)) {
+      bySku.set(entry.sku_id, entry);
+    }
+  }
+  const reset: SkuCatalogEntry[] = [...bySku.values()].map((entry) => ({
+    ...entry,
+    quantity: 0,
+    raw_unit_price: 0,
+    sheet_weight_kg: 0,
+    land_cost_per_sheet: 0,
+    landed_unit_cost: 0,
+    amount: 0,
+    raw_description: null,
+    freight_cost: null,
+    duty_cost: null,
+    ddp_cost: null,
+    customer_names: [],
+    invoice_number: DEMO_RESET_INVOICE_KEY,
+    date: '',
+  }));
+  await writeCatalog(reset.length ? { [DEMO_RESET_INVOICE_KEY]: reset } : {});
+  return reset.length;
+}
+
 export function __resetMemorySkuCatalog(): void {
   memory.clear();
 }

@@ -4,6 +4,7 @@ import {
   findSkuCatalogByCustomerAndThickness,
   getSkuCatalogEntry,
   listSkuCatalog,
+  resetSkuCatalogToMasterData,
   upsertSkuCatalogEntries,
 } from '../api/_lib/ghost/skuCatalog';
 import type { SkuCatalogEntry } from '../shared/ghost';
@@ -89,5 +90,54 @@ describe('SKU catalog', () => {
 
     const matches = await findSkuCatalogByCustomerAndThickness('CN LEDGE', 18);
     expect(matches.map((m) => m.invoice_number)).toEqual(['INV-NEW', 'INV-OLD']);
+  });
+
+  it('resetSkuCatalogToMasterData keeps identity/spec, zeroes transactional fields, dedupes by sku_id', async () => {
+    await upsertSkuCatalogEntries([
+      entry({
+        sku_id: 'A',
+        invoice_number: 'INV-OLD',
+        date: '01/01/2026',
+        quantity: 5,
+        customer_names: ['OLD CO'],
+      }),
+    ]);
+    await upsertSkuCatalogEntries([
+      entry({
+        sku_id: 'A',
+        invoice_number: 'INV-NEW',
+        date: '02/01/2026',
+        quantity: 10,
+        raw_unit_price: 50,
+        landed_unit_cost: 55,
+        amount: 550,
+        customer_names: ['NEW CO'],
+        product_code: 'PC-1',
+        color_code: 'CLR',
+      }),
+    ]);
+
+    const kept = await resetSkuCatalogToMasterData();
+    expect(kept).toBe(1);
+
+    const all = await listSkuCatalog();
+    expect(all).toHaveLength(1);
+    const reset = all[0]!;
+    // identity/spec preserved from the most recent entry
+    expect(reset.sku_id).toBe('A');
+    expect(reset.description).toBe(entry().description);
+    expect(reset.product_code).toBe('PC-1');
+    expect(reset.color_code).toBe('CLR');
+    expect(reset.thickness_mm).toBe(18);
+    expect(reset.size).toBe('4x8');
+    expect(reset.vendor_id).toBe('GOK');
+    // transactional fields zeroed/cleared
+    expect(reset.quantity).toBe(0);
+    expect(reset.raw_unit_price).toBe(0);
+    expect(reset.landed_unit_cost).toBe(0);
+    expect(reset.amount).toBe(0);
+    expect(reset.customer_names).toEqual([]);
+
+    expect(await getSkuCatalogEntry('A')).toMatchObject({ quantity: 0, sku_id: 'A' });
   });
 });
