@@ -2,8 +2,7 @@ export type AgentId =
   | 'supply'
   | 'sales'
   | 'outreach'
-  | 'intelligence'
-  | 'sourcing';
+  | 'intelligence';
 
 export const AGENTS: Array<{
   id: AgentId;
@@ -35,12 +34,6 @@ export const AGENTS: Array<{
     blurb: 'Executive visibility across sales, spend, and exceptions.',
     commands: ['Show P&L and spend anomalies'],
   },
-  {
-    id: 'sourcing',
-    title: 'Smart Sourcing',
-    blurb: 'RFQs, compare quotes, recommend suppliers.',
-    commands: ['Prepare RFQ and compare suppliers'],
-  },
 ];
 
 export function matchAgentFromPrompt(prompt: string): AgentId | null {
@@ -49,7 +42,6 @@ export function matchAgentFromPrompt(prompt: string): AgentId | null {
   if (/sales order|customer po|quote confirm|sales/.test(p)) return 'sales';
   if (/gmail|outreach|email|follow-?up/.test(p)) return 'outreach';
   if (/p&l|pnl|spend|dashboard|margin|intelligence|forecast/.test(p)) return 'intelligence';
-  if (/rfq|sourc|supplier|compare quote/.test(p)) return 'sourcing';
   return null;
 }
 
@@ -87,18 +79,15 @@ export const FAKE_SALES_PIPELINE = [
   },
 ];
 
-export const FAKE_SOURCING = {
-  item: 'Acrylic sheet 4mm Clear 4x8',
-  qty: 200,
-  quotes: [
-    { supplier: 'Gokai', unit: 42.5, leadDays: 28, moq: 50, terms: 'Net 30', score: 92 },
-    { supplier: 'AsiaPlas', unit: 39.8, leadDays: 45, moq: 100, terms: 'Net 45', score: 78 },
-    { supplier: 'ClearSheet EU', unit: 51.0, leadDays: 14, moq: 20, terms: 'Net 15', score: 81 },
-  ],
-  recommended: 'Gokai',
-};
-
 export const FAKE_PROSPECTS = [
   { company: 'Northline Interiors', email: '', contact: 'Alex Rivera', territory: 'West' },
   { company: 'Harbor Sign Co', email: '', contact: 'Sam Chen', territory: 'East' },
+];
+
+/** Placeholder — no real chat-history persistence wired up yet. */
+export const FAKE_RECENT_CONVERSATIONS = [
+  { title: 'Landed cost review — Gokai invoice', when: 'Today, 09:14' },
+  { title: 'Sales Order follow-up · Trophy Depot', when: 'Yesterday, 15:32' },
+  { title: 'Duplicate PO check — GKGLB030126JN', when: 'Yesterday, 11:08' },
+  { title: 'P&L anomaly: freight allocation', when: '2 days ago' },
 ];

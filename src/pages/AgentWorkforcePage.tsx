@@ -6,10 +6,14 @@ import {
   Circle,
   Download,
   Loader2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Mail,
+  MessageSquare,
+  MoreHorizontal,
   Paperclip,
+  Pencil,
   Send,
   Sparkles,
   Trash2,
@@ -28,8 +32,8 @@ import type {
 import type { EmailStep, OutreachLead, OutreachSequence } from '../../shared/outreach';
 import {
   AGENTS,
+  FAKE_RECENT_CONVERSATIONS,
   FAKE_SALES_PIPELINE,
-  FAKE_SOURCING,
   matchAgentFromPrompt,
   type AgentId,
 } from '../data/agentWorkforce';
@@ -133,16 +137,28 @@ const ACTIVITY_PAGE_SIZE = 20;
 
 const SUPPLY_PROCESSING_STAGES = [
   'Downloading PDF attachments…',
-  'Reading purchase invoice…',
-  'Extracting SKU lines…',
-  'Calculating landed cost…',
+  'Opening purchase invoice…',
+  'Reading vendor and invoice header…',
+  'Scanning line items…',
+  'Matching SKUs to catalog…',
+  'Classifying acrylic vs. freight/duty lines…',
+  'Extracting thickness and sheet size…',
+  'Resolving unit pricing and decimals…',
+  'Allocating freight & duty across lines…',
+  'Calculating landed cost per sheet…',
+  'Finalizing purchase plan…',
 ];
 
 const SALES_PROCESSING_STAGES = [
   'Downloading PDF attachment…',
-  'Reading sales order…',
-  'Extracting line items…',
-  'Checking price & stock…',
+  'Opening sales order…',
+  'Reading customer and order header…',
+  'Scanning line items…',
+  'Matching SKUs to catalog…',
+  'Checking price against catalog…',
+  'Checking stock availability…',
+  'Flagging duplicate orders…',
+  'Finalizing sales order preview…',
 ];
 
 /** Advances through `stages` on a timer (looping on the last one) until the
@@ -155,7 +171,7 @@ function startStageCycle(stages: string[], setStage: (s: string | null) => void)
   const id = window.setInterval(() => {
     i = Math.min(i + 1, stages.length - 1);
     setStage(stages[i] ?? null);
-  }, 1400);
+  }, 2600);
   return () => {
     window.clearInterval(id);
     setStage(null);
@@ -327,6 +343,8 @@ export function AgentWorkforcePage() {
   const [sagePurging, setSagePurging] = useState(false);
   const [sagePurgeMsg, setSagePurgeMsg] = useState<string | null>(null);
   const [activityPage, setActivityPage] = useState(0);
+  const [savedCommandsOpen, setSavedCommandsOpen] = useState(true);
+  const [recentConversationsOpen, setRecentConversationsOpen] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -928,14 +946,6 @@ export function AgentWorkforcePage() {
     }
   };
 
-  const runSourcing = () => {
-    activity.push(
-      'Smart Sourcing',
-      `RFQ ${FAKE_SOURCING.item} · recommended ${FAKE_SOURCING.recommended}`,
-      'recommended',
-    );
-  };
-
   const active = AGENTS.find((a) => a.id === agent)!;
 
   const activityTotalPages = Math.max(1, Math.ceil(activity.events.length / ACTIVITY_PAGE_SIZE));
@@ -1496,57 +1506,6 @@ export function AgentWorkforcePage() {
                 </div>
               </div>
             ) : null}
-
-            {agent === 'sourcing' ? (
-              <div className="space-y-4">
-                <p className="text-sm text-neutral-600">
-                  RFQ for <strong>{FAKE_SOURCING.item}</strong> · qty {FAKE_SOURCING.qty}
-                </p>
-                <div className="overflow-x-auto rounded-xl border border-neutral-200">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
-                      <tr>
-                        <th className="px-3 py-2">Supplier</th>
-                        <th className="px-3 py-2">Unit</th>
-                        <th className="px-3 py-2">Lead</th>
-                        <th className="px-3 py-2">MOQ</th>
-                        <th className="px-3 py-2">Terms</th>
-                        <th className="px-3 py-2">Score</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {FAKE_SOURCING.quotes.map((q) => (
-                        <tr
-                          key={q.supplier}
-                          className={
-                            q.supplier === FAKE_SOURCING.recommended
-                              ? 'bg-emerald-50'
-                              : 'border-t border-neutral-100'
-                          }
-                        >
-                          <td className="px-3 py-2 font-medium">
-                            {q.supplier}
-                            {q.supplier === FAKE_SOURCING.recommended ? ' ★' : ''}
-                          </td>
-                          <td className="px-3 py-2">{money(q.unit)}</td>
-                          <td className="px-3 py-2">{q.leadDays}d</td>
-                          <td className="px-3 py-2">{q.moq}</td>
-                          <td className="px-3 py-2">{q.terms}</td>
-                          <td className="px-3 py-2">{q.score}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <button
-                  type="button"
-                  onClick={runSourcing}
-                  className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white"
-                >
-                  Recommend {FAKE_SOURCING.recommended}
-                </button>
-              </div>
-            ) : null}
           </section>
 
           <section className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
@@ -1671,8 +1630,20 @@ export function AgentWorkforcePage() {
         </div>
 
         {/* Right chat */}
-        <aside className="h-fit rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm lg:sticky lg:top-4">
-          <h2 className="font-display text-sm font-semibold">New chat</h2>
+        <aside className="flex flex-col rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              className="flex items-center gap-1 text-sm font-semibold text-neutral-900"
+            >
+              New chat
+              <ChevronDown size={14} className="text-neutral-400" />
+            </button>
+            <div className="flex items-center gap-2 text-neutral-400">
+              <MoreHorizontal size={16} />
+              <Pencil size={14} />
+            </div>
+          </div>
           <p className="mt-1 text-xs text-neutral-500">
             Ask a question — opens the matching agent workspace.
           </p>
@@ -1694,28 +1665,73 @@ export function AgentWorkforcePage() {
               <Send size={16} />
             </button>
           </div>
-          <p className="mt-4 text-[11px] font-medium uppercase tracking-wide text-neutral-400">
-            Saved commands
-          </p>
-          <ul className="mt-2 space-y-1">
-            {AGENTS.flatMap((a) =>
-              a.commands.map((cmd) => (
-                <li key={`${a.id}-${cmd}`}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-50"
-                    onClick={() => {
-                      setAgent(a.id);
-                      setChat(cmd);
-                    }}
-                  >
-                    <Zap size={12} className="text-neutral-400" />
-                    {cmd}
-                  </button>
-                </li>
-              )),
-            )}
-          </ul>
+
+          <div className="mt-5 border-t border-neutral-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setSavedCommandsOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-wide text-neutral-400"
+            >
+              Saved commands
+              <ChevronDown
+                size={14}
+                className={`transition-transform ${savedCommandsOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {savedCommandsOpen ? (
+              <ul className="mt-2 space-y-1">
+                {AGENTS.flatMap((a) =>
+                  a.commands.map((cmd) => (
+                    <li key={`${a.id}-${cmd}`}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-50"
+                        onClick={() => {
+                          setAgent(a.id);
+                          setChat(cmd);
+                        }}
+                      >
+                        <Zap size={12} className="text-emerald-500" />
+                        {cmd}
+                      </button>
+                    </li>
+                  )),
+                )}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="mt-5 border-t border-neutral-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setRecentConversationsOpen((v) => !v)}
+              className="flex w-full items-center justify-between text-[11px] font-medium uppercase tracking-wide text-neutral-400"
+            >
+              Recent conversations
+              <ChevronDown
+                size={14}
+                className={`transition-transform ${recentConversationsOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {recentConversationsOpen ? (
+              <ul className="mt-2 space-y-1">
+                {FAKE_RECENT_CONVERSATIONS.map((c) => (
+                  <li key={c.title}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-50"
+                    >
+                      <MessageSquare size={12} className="shrink-0 text-neutral-400" />
+                      <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                      <span className="shrink-0 text-[10px] text-neutral-400">{c.when}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="flex-1" />
         </aside>
       </div>
 

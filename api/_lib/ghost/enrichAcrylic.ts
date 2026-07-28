@@ -166,12 +166,15 @@ export async function enrichAcrylicAttrsWithLlm(
             'Return ONLY JSON: {"lines":[...]} matching the input lines ' +
             '1:1 (same order/count). For each line set: is_acrylic, ' +
             'is_packing_or_misc, line_kind, product_code (default ACR), ' +
-            'color_code, color_name, thickness_mm, size (e.g. 4x8 or 18x24), ' +
+            'color_code, color_name, thickness_mm, size as WIDTHxLENGTH in feet ' +
+            '(the actual sheet dimensions printed in THIS line/invoice — never ' +
+            'reuse a size from another line or from these instructions), ' +
             'quantity, unit_price, amount, raw_description, price_decimals ' +
             '(digits printed after the decimal point on the unit price, default 3). ' +
             'Acrylic sheets need thickness_mm + size. ' +
-            'Infer thickness_mm and size from OCR text, product codes (GK-*), ' +
-            'and phrases like "cut to 18\\" x 24\\"" when line text is fragmented. ' +
+            'Infer thickness_mm and size from OCR text and product codes (GK-*). ' +
+            'Fragmented line text may state size as inches after a cut/trim ' +
+            'instruction (e.g. \'cut to W" x L"\') — convert inches to feet. ' +
             'Do NOT invent money — keep quantity/unit_price/amount from ' +
             'input when present. Density/kg/mm are NOT prices.',
         },
