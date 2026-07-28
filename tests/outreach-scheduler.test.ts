@@ -27,6 +27,22 @@ describe('renderTemplate', () => {
   it('substitutes {{name}} and {{company}} case-insensitively', () => {
     expect(renderTemplate('Hi {{Name}} at {{ COMPANY }}', lead)).toBe('Hi Cesar Orozco at CN Ledge');
   });
+
+  it('substitutes {{first_name}}/{{last_name}} as the first/last word of the name', () => {
+    expect(renderTemplate('Hi {{first_name}}, this is for {{last_name}}', lead)).toBe(
+      'Hi Cesar, this is for Orozco',
+    );
+  });
+
+  it('first_name and last_name are the same single word for a one-word name', () => {
+    const soloLead: OutreachLead = { ...lead, name: 'Madonna' };
+    expect(renderTemplate('{{first_name}}/{{last_name}}', soloLead)).toBe('Madonna/Madonna');
+  });
+
+  it('first_name/last_name use the outer words of a multi-word name', () => {
+    const longNameLead: OutreachLead = { ...lead, name: 'Mary Jane Watson' };
+    expect(renderTemplate('{{first_name}}/{{last_name}}', longNameLead)).toBe('Mary/Watson');
+  });
 });
 
 describe('computeStepSchedule', () => {

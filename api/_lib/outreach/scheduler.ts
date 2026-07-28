@@ -1,9 +1,16 @@
 import type { EmailStep, OutreachLead, OutreachSequence, SequenceStepState } from '../../../shared/outreach';
 
-/** {{name}} / {{company}} — case-insensitive, tolerant of stray whitespace inside the braces. */
+/** {{name}} / {{first_name}} / {{last_name}} / {{company}} — case-insensitive,
+ * tolerant of stray whitespace inside the braces. first_name/last_name are the
+ * first and last word of the lead's full name (the same word for a one-word name). */
 export function renderTemplate(text: string, lead: OutreachLead): string {
+  const words = lead.name.trim().split(/\s+/).filter(Boolean);
+  const firstName = words[0] ?? lead.name;
+  const lastName = words[words.length - 1] ?? lead.name;
   return text
     .replace(/\{\{\s*name\s*\}\}/gi, lead.name)
+    .replace(/\{\{\s*first_name\s*\}\}/gi, firstName)
+    .replace(/\{\{\s*last_name\s*\}\}/gi, lastName)
     .replace(/\{\{\s*company\s*\}\}/gi, lead.company);
 }
 
