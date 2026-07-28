@@ -201,6 +201,9 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
         emailSource: {
           messageId: bundle.messageId,
           subject: bundle.subject,
+          from: bundle.from,
+          receivedAt: bundle.receivedAt,
+          snippet: bundle.snippet,
           fileNames: {
             purchase: bundle.purchase.fileName,
             freight: bundle.freight?.fileName ?? null,
@@ -362,7 +365,14 @@ export async function handleAgentsRequest(req: VercelRequest, res: VercelRespons
       const result = await processSalesPdf(found.content);
       return json(res, 200, {
         ...result,
-        emailSource: { messageId: found.messageId, subject: found.subject, fileName: found.fileName },
+        emailSource: {
+          messageId: found.messageId,
+          subject: found.subject,
+          from: found.from,
+          receivedAt: found.receivedAt,
+          snippet: found.snippet,
+          fileName: found.fileName,
+        },
       });
     } catch (error) {
       return json(res, 400, { ok: false, error: errorMessage(error) });

@@ -6,7 +6,10 @@ import {
   Circle,
   Download,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
   Mail,
+  Paperclip,
   Send,
   Sparkles,
   Trash2,
@@ -122,12 +125,60 @@ function money(n: number, currency = 'USD') {
   }).format(Number.isFinite(n) ? n : 0);
 }
 
+/** Live activity list: ~10 rows visible at once (scrollable within a page up to
+ * 20), paginated beyond that. */
+const ACTIVITY_PAGE_SIZE = 20;
+
 function relativeTime(iso: string) {
   const ms = Date.now() - new Date(iso).getTime();
   if (ms < 15_000) return 'just now';
   if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
   if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
   return new Date(iso).toLocaleTimeString();
+}
+
+interface EmailPreview {
+  from: string;
+  subject: string;
+  receivedAt: string;
+  snippet: string;
+  attachments: string[];
+}
+
+function EmailPreviewCard({ preview }: { preview: EmailPreview }) {
+  const nameOnly = preview.from.split('<')[0]?.trim() || preview.from;
+  const initial = nameOnly.charAt(0).toUpperCase() || '?';
+  return (
+    <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
+          {initial}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="truncate text-sm font-medium text-neutral-900">{preview.from}</p>
+            <span className="shrink-0 text-[11px] text-neutral-400">
+              {new Date(preview.receivedAt).toLocaleString()}
+            </span>
+          </div>
+          <p className="truncate text-sm font-semibold text-neutral-800">{preview.subject}</p>
+          <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500">{preview.snippet}</p>
+          {preview.attachments.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {preview.attachments.map((name) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-[11px] text-neutral-600"
+                >
+                  <Paperclip size={11} /> {name}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function StatusDot({
@@ -237,6 +288,7 @@ export function AgentWorkforcePage() {
   const [sageHelpModal, setSageHelpModal] = useState(false);
   const [sagePurging, setSagePurging] = useState(false);
   const [sagePurgeMsg, setSagePurgeMsg] = useState<string | null>(null);
+  const [activityPage, setActivityPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -255,6 +307,7 @@ export function AgentWorkforcePage() {
   >({});
   const [poolEdit, setPoolEdit] = useState('');
   const [audit, setAudit] = useState<CfoAuditRecord | null>(null);
+  const [supplyEmailPreview, setSupplyEmailPreview] = useState<EmailPreview | null>(null);
   const [sageResult, setSageResult] = useState<SageWriteResult | null>(null);
 
   // Sales
@@ -263,6 +316,7 @@ export function AgentWorkforcePage() {
   const [salesModal, setSalesModal] = useState(false);
   const [salesSageResult, setSalesSageResult] = useState<SageWriteResult | null>(null);
   const [salesConfirmed, setSalesConfirmed] = useState(false);
+  const [salesEmailPreview, setSalesEmailPreview] = useState<EmailPreview | null>(null);
 
   // Outreach
   const [leads, setLeads] = useState<OutreachLead[]>([]);
@@ -478,6 +532,21 @@ export function AgentWorkforcePage() {
       setSupplyPurchase(result.purchase ?? null);
       setSupplyFreight(result.freight ?? null);
       setSupplyDuty(result.duty ?? null);
+      setSupplyEmailPreview(
+        result.emailSource
+          ? {
+              from: result.emailSource.from,
+              subject: result.emailSource.subject,
+              receivedAt: result.emailSource.receivedAt,
+              snippet: result.emailSource.snippet,
+              attachments: [
+                result.emailSource.fileNames.purchase,
+                result.emailSource.fileNames.freight,
+                result.emailSource.fileNames.duty,
+              ].filter((name): name is string => Boolean(name)),
+            }
+          : null,
+      );
 
       if (result.code === 'MISSING_ACRYLIC_DIMS' && result.purchase) {
         const edits: Record<number, { thickness_mm: string; size: string; quantity: string }> =
@@ -670,6 +739,17 @@ export function AgentWorkforcePage() {
       const result = await fetchSalesFromEmail();
       setSalesPlan(result.plan);
       setSalesModal(true);
+      setSalesEmailPreview(
+        result.emailSource
+          ? {
+              from: result.emailSource.from,
+              subject: result.emailSource.subject,
+              receivedAt: result.emailSource.receivedAt,
+              snippet: result.emailSource.snippet,
+              attachments: [result.emailSource.fileName].filter(Boolean),
+            }
+          : null,
+      );
       const src = result.emailSource;
       activity.push(
         'Sales Order',
@@ -810,6 +890,13 @@ export function AgentWorkforcePage() {
 
   const active = AGENTS.find((a) => a.id === agent)!;
 
+  const activityTotalPages = Math.max(1, Math.ceil(activity.events.length / ACTIVITY_PAGE_SIZE));
+  const activityPageClamped = Math.min(activityPage, activityTotalPages - 1);
+  const activityPageEvents = activity.events.slice(
+    activityPageClamped * ACTIVITY_PAGE_SIZE,
+    activityPageClamped * ACTIVITY_PAGE_SIZE + ACTIVITY_PAGE_SIZE,
+  );
+
   return (
     <div className="min-h-screen bg-[#f3f4f6] text-neutral-900">
       <header className="border-b border-neutral-200 bg-white">
@@ -943,6 +1030,7 @@ export function AgentWorkforcePage() {
                     the subject.
                     {gmail.connected ? null : ' Connect Gmail on the Outreach tab first.'}
                   </p>
+                  {supplyEmailPreview ? <EmailPreviewCard preview={supplyEmailPreview} /> : null}
                 </div>
 
                 <div className="mt-2 border-t border-neutral-200 pt-4">
@@ -998,6 +1086,7 @@ export function AgentWorkforcePage() {
                     subject.
                     {gmail.connected ? null : ' Connect Gmail on the Outreach tab first.'}
                   </p>
+                  {salesEmailPreview ? <EmailPreviewCard preview={salesEmailPreview} /> : null}
                 </div>
               </div>
             ) : null}
@@ -1420,25 +1509,50 @@ export function AgentWorkforcePage() {
                 <Circle size={14} /> Run an agent to see activity here
               </p>
             ) : (
-              <ul className="space-y-2">
-                {activity.events.map((ev) => (
-                  <li
-                    key={ev.id}
-                    className="flex items-start gap-3 rounded-xl border border-neutral-100 px-3 py-2.5"
-                  >
-                    <span className="mt-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                      AGENT
+              <>
+                <ul className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
+                  {activityPageEvents.map((ev) => (
+                    <li
+                      key={ev.id}
+                      className="flex items-start gap-3 rounded-xl border border-neutral-100 px-3 py-2.5"
+                    >
+                      <span className="mt-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        AGENT
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-neutral-900">{ev.agent}</p>
+                        <p className="truncate text-xs text-neutral-600">{ev.summary}</p>
+                      </div>
+                      <span className="shrink-0 text-[11px] text-neutral-400">
+                        {relativeTime(ev.at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {activityTotalPages > 1 ? (
+                  <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3">
+                    <button
+                      type="button"
+                      disabled={activityPageClamped === 0}
+                      onClick={() => setActivityPage((p) => Math.max(0, p - 1))}
+                      className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-xs text-neutral-600 disabled:opacity-40"
+                    >
+                      <ChevronLeft size={14} /> Prev
+                    </button>
+                    <span className="text-[11px] text-neutral-400">
+                      Page {activityPageClamped + 1} of {activityTotalPages}
                     </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-neutral-900">{ev.agent}</p>
-                      <p className="truncate text-xs text-neutral-600">{ev.summary}</p>
-                    </div>
-                    <span className="shrink-0 text-[11px] text-neutral-400">
-                      {relativeTime(ev.at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                    <button
+                      type="button"
+                      disabled={activityPageClamped >= activityTotalPages - 1}
+                      onClick={() => setActivityPage((p) => Math.min(activityTotalPages - 1, p + 1))}
+                      className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-xs text-neutral-600 disabled:opacity-40"
+                    >
+                      Next <ChevronRight size={14} />
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </section>
 

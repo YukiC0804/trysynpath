@@ -18,6 +18,9 @@ export interface RolePdf {
 interface LatestEmailPdfs {
   messageId: string;
   subject: string;
+  from: string;
+  receivedAt: string;
+  snippet: string;
   pdfs: RolePdf[];
 }
 
@@ -32,7 +35,9 @@ async function fetchLatestMatchingPdfs(accessToken: string, subjectKeyword: stri
   const full = await Promise.all(messages.map((m) => getGmailMessage(accessToken, m.id)));
   full.sort((a, b) => Number(b.internalDate ?? 0) - Number(a.internalDate ?? 0));
   const latest = full[0]!;
-  const subject = headerValue(latest.payload?.headers, 'Subject');
+  const headers = latest.payload?.headers;
+  const subject = headerValue(headers, 'Subject');
+  const from = headerValue(headers, 'From');
 
   const parsed = parseGmailMime(latest.payload);
   const pdfAttachments = parsed.attachments.filter(
@@ -56,7 +61,16 @@ async function fetchLatestMatchingPdfs(accessToken: string, subjectKeyword: stri
     }),
   );
 
-  return { messageId: latest.id, subject, pdfs };
+  return {
+    messageId: latest.id,
+    subject,
+    from,
+    receivedAt: latest.internalDate
+      ? new Date(Number(latest.internalDate)).toISOString()
+      : headerValue(headers, 'Date'),
+    snippet: latest.snippet ?? parsed.text.slice(0, 180),
+    pdfs,
+  };
 }
 
 export type PdfRole = 'purchase' | 'freight' | 'duty';
@@ -71,6 +85,9 @@ export function classifyPdfRole(fileName: string): PdfRole {
 export interface PoPdfBundle {
   messageId: string;
   subject: string;
+  from: string;
+  receivedAt: string;
+  snippet: string;
   purchase: RolePdf;
   freight?: RolePdf;
   duty?: RolePdf;
@@ -84,7 +101,10 @@ export interface PoPdfBundle {
  * the attachments.
  */
 export async function fetchLatestSynpathPricingPoPdfs(accessToken: string): Promise<PoPdfBundle> {
-  const { messageId, subject, pdfs } = await fetchLatestMatchingPdfs(accessToken, 'PO');
+  const { messageId, subject, from, receivedAt, snippet, pdfs } = await fetchLatestMatchingPdfs(
+    accessToken,
+    'PO',
+  );
   const classified = pdfs.map((p) => ({ ...p, role: classifyPdfRole(p.fileName) }));
 
   const purchase = classified.filter((d) => d.role === 'purchase');
@@ -109,6 +129,9 @@ export async function fetchLatestSynpathPricingPoPdfs(accessToken: string): Prom
   return {
     messageId,
     subject,
+    from,
+    receivedAt,
+    snippet,
     purchase: { fileName: purchase[0]!.fileName, content: purchase[0]!.content },
     freight: freight[0] ? { fileName: freight[0].fileName, content: freight[0].content } : undefined,
     duty: duty[0] ? { fileName: duty[0].fileName, content: duty[0].content } : undefined,
@@ -118,6 +141,9 @@ export async function fetchLatestSynpathPricingPoPdfs(accessToken: string): Prom
 export interface SoPdf {
   messageId: string;
   subject: string;
+  from: string;
+  receivedAt: string;
+  snippet: string;
   fileName: string;
   content: Buffer;
 }
@@ -129,7 +155,10 @@ export interface SoPdf {
  * guess at.
  */
 export async function fetchLatestSynpathPricingSoPdf(accessToken: string): Promise<SoPdf> {
-  const { messageId, subject, pdfs } = await fetchLatestMatchingPdfs(accessToken, 'SO');
+  const { messageId, subject, from, receivedAt, snippet, pdfs } = await fetchLatestMatchingPdfs(
+    accessToken,
+    'SO',
+  );
   if (pdfs.length !== 1) {
     const names = pdfs.map((p) => p.fileName).join(', ');
     throw new Error(
@@ -138,5 +167,5 @@ export async function fetchLatestSynpathPricingSoPdf(accessToken: string): Promi
         : `Latest matching email ("${subject}") has no PDF attachments`,
     );
   }
-  return { messageId, subject, fileName: pdfs[0]!.fileName, content: pdfs[0]!.content };
+  return { messageId, subject, from, receivedAt, snippet, fileName: pdfs[0]!.fileName, content: pdfs[0]!.content };
 }

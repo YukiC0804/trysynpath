@@ -146,6 +146,9 @@ export async function fetchSupplyFromEmail() {
     emailSource?: {
       messageId: string;
       subject: string;
+      from: string;
+      receivedAt: string;
+      snippet: string;
       fileNames: { purchase: string; freight: string | null; duty: string | null };
     };
   };
@@ -261,7 +264,14 @@ export async function fetchSalesFromEmail() {
     ok: boolean;
     document: DocumentExtract;
     plan: SalesOrderPlan;
-    emailSource?: { messageId: string; subject: string; fileName: string };
+    emailSource?: {
+      messageId: string;
+      subject: string;
+      from: string;
+      receivedAt: string;
+      snippet: string;
+      fileName: string;
+    };
   }>(res);
 }
 
